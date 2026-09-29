@@ -1,128 +1,649 @@
 import { useState } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
-import { BookOpen, LogIn, ShieldCheck, Store, User as UserIcon } from 'lucide-react';
-import { useApp, useAuth, useToast } from '../../hooks/useStore';
 
-/** Tài khoản bấm-một-phát để demo nhanh từng vai trò trước hội đồng. */
-const QUICK = [
-  { id: 'u1', label: 'Độc giả', name: 'Trần Đức Anh', icon: UserIcon, desc: 'Mua sách, đọc, trao đổi, chat' },
-  { id: 's1', label: 'Chủ shop', name: 'Fahasa Official', icon: Store, desc: 'Quản lý sản phẩm & đơn hàng' },
-  { id: 'a1', label: 'Quản trị viên', name: 'Admin Bookigma', icon: ShieldCheck, desc: 'Dashboard, người dùng, báo cáo' },
-];
+import {
+  useLocation,
+  useNavigate,
+} from 'react-router-dom';
+
+import {
+  BookOpen,
+  LogIn,
+  UserPlus,
+} from 'lucide-react';
+
+import {
+  useAuth,
+  useToast,
+} from '../../hooks/useStore';
 
 export default function LoginPage() {
-  const { login, loginAs } = useAuth();
-  const { users } = useApp();
+
+  const {
+    login,
+    register,
+    loading,
+  } = useAuth();
+
   const toast = useToast();
-  const navigate = useNavigate();
-  const location = useLocation();
-  const from = location.state?.from || '/';
 
-  const [email, setEmail] = useState('user@bookigma.vn');
-  const [password, setPassword] = useState('123456');
-  const [error, setError] = useState('');
+  const navigate =
+    useNavigate();
 
-  const submit = (e) => {
-    e.preventDefault();
-    const res = login(email, password);
-    if (!res.ok) return setError(res.error);
+  const location =
+    useLocation();
+
+  const from =
+    location.state?.from || '/';
+
+  const [mode, setMode] =
+    useState('login');
+
+  const [loginUsername, setLoginUsername] =
+    useState('');
+
+  const [loginPassword, setLoginPassword] =
+    useState('');
+
+  const [regFullName, setRegFullName] =
+    useState('');
+
+  const [regUsername, setRegUsername] =
+    useState('');
+
+  const [regEmail, setRegEmail] =
+    useState('');
+
+  const [regPassword, setRegPassword] =
+    useState('');
+
+  const [regConfirmPassword, setRegConfirmPassword] =
+    useState('');
+
+  const [error, setError] =
+    useState('');
+
+  const switchMode = (nextMode) => {
+
+    setMode(nextMode);
+
     setError('');
-    toast(`Xin chào ${res.user.name}!`);
-    navigate(res.user.role === 'admin' ? '/admin' : res.user.role === 'shop' ? '/shop-admin' : from);
   };
 
-  const quickLogin = (id) => {
-    const u = users.find((x) => x.id === id);
-    loginAs(id);
-    toast(`Đang dùng thử với vai trò: ${u.name}`);
-    navigate(u.role === 'admin' ? '/admin' : u.role === 'shop' ? '/shop-admin' : '/');
-  };
+  const handleLoginSubmit =
+    async (event) => {
+
+      event.preventDefault();
+
+      setError('');
+
+      if (!loginUsername.trim()) {
+
+        setError(
+          'Vui lòng nhập tên đăng nhập hoặc email.'
+        );
+
+        return;
+      }
+
+      if (!loginPassword) {
+
+        setError(
+          'Vui lòng nhập mật khẩu.'
+        );
+
+        return;
+      }
+
+      const result =
+        await login(
+          loginUsername,
+          loginPassword
+        );
+
+      if (!result.ok) {
+
+        setError(result.error);
+
+        return;
+      }
+
+      toast(
+        `Xin chào ${
+          result.user.fullName ||
+          result.user.username
+        }!`
+      );
+
+      navigate(
+        from,
+        { replace: true }
+      );
+    };
+
+  const handleRegisterSubmit =
+    async (event) => {
+
+      event.preventDefault();
+
+      setError('');
+
+      if (
+        regPassword.length < 6
+      ) {
+
+        setError(
+          'Mật khẩu phải có ít nhất 6 ký tự.'
+        );
+
+        return;
+      }
+
+      if (
+        regPassword !==
+        regConfirmPassword
+      ) {
+
+        setError(
+          'Mật khẩu nhập lại không khớp.'
+        );
+
+        return;
+      }
+
+      const result =
+        await register({
+          fullName:
+            regFullName,
+
+          username:
+            regUsername,
+
+          email:
+            regEmail,
+
+          password:
+            regPassword,
+        });
+
+      if (!result.ok) {
+
+        setError(result.error);
+
+        return;
+      }
+
+      toast(
+        'Đăng ký tài khoản thành công!'
+      );
+
+      navigate(
+        '/',
+        { replace: true }
+      );
+    };
 
   return (
-    <div style={{ minHeight: '100vh', display: 'grid', gridTemplateColumns: '1fr 1fr' }}>
-      {/* Cột giới thiệu */}
+    <div
+      style={{
+        minHeight: '100vh',
+        display: 'grid',
+        gridTemplateColumns:
+          '1fr 1fr',
+      }}
+    >
+
       <div
         className="hide-lg"
         style={{
-          background: 'linear-gradient(140deg, #16a34a 0%, #15803d 55%, #064e3b 100%)',
-          color: '#fff', padding: '56px 48px', display: 'flex', flexDirection: 'column', justifyContent: 'center',
+          background:
+            'linear-gradient(140deg, #16a34a 0%, #15803d 55%, #064e3b 100%)',
+
+          color: '#fff',
+
+          padding:
+            '56px 48px',
+
+          display: 'flex',
+
+          flexDirection:
+            'column',
+
+          justifyContent:
+            'center',
         }}
       >
-        <div className="row" style={{ gap: 12, fontSize: 30, fontWeight: 800, marginBottom: 20 }}>
-          <BookOpen size={38} /> Bookigma
+
+        <div
+          className="row"
+          style={{
+            gap: 12,
+            fontSize: 30,
+            fontWeight: 800,
+            marginBottom: 20,
+          }}
+        >
+
+          <BookOpen size={38} />
+
+          Bookigma
+
         </div>
-        <h2 style={{ color: '#fff', fontSize: 30, lineHeight: 1.25, margin: '0 0 14px', maxWidth: 460 }}>
-          Nơi người yêu sách mua, đọc, trao đổi và kết nối với nhau
+
+        <h2
+          style={{
+            color: '#fff',
+            fontSize: 30,
+            lineHeight: 1.25,
+            margin:
+              '0 0 14px',
+            maxWidth: 460,
+          }}
+        >
+          Nơi người yêu sách mua,
+          đọc, trao đổi và kết nối
+          với nhau
         </h2>
-        <p style={{ opacity: 0.9, maxWidth: 460, lineHeight: 1.65, margin: '0 0 28px' }}>
-          Một nền tảng duy nhất gộp mạng xã hội đọc sách, sàn thương mại sách chính hãng,
-          sàn trao đổi sách cũ và trình đọc có trợ lý AI.
+
+        <p
+          style={{
+            opacity: 0.9,
+            maxWidth: 460,
+            lineHeight: 1.65,
+            margin:
+              '0 0 28px',
+          }}
+        >
+          Tạo tài khoản Bookigma
+          để lưu thông tin cá nhân,
+          đăng bài và kết nối với
+          cộng đồng.
         </p>
-        <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'grid', gap: 12, maxWidth: 460 }}>
-          {[
-            'Mua sách từ NXB và nhà sách uy tín, theo dõi đơn hàng theo thời gian thực',
-            'Trao đổi sách cũ miễn phí với độc giả cùng gu đọc',
-            'Trình đọc lưu vị trí và phần trăm hoàn thành trên mọi thiết bị',
-            'Trợ lý AI gợi ý sách dựa trên chính thói quen đọc của bạn',
-          ].map((t) => (
-            <li key={t} className="row" style={{ gap: 10, fontSize: 14.5, alignItems: 'flex-start' }}>
-              <span style={{ width: 7, height: 7, borderRadius: 4, background: '#bbf7d0', marginTop: 7, flexShrink: 0 }} />
-              {t}
-            </li>
-          ))}
-        </ul>
+
       </div>
 
-      {/* Cột đăng nhập */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, background: 'var(--bg-primary)' }}>
-        <div style={{ width: '100%', maxWidth: 400 }}>
-          <h1 style={{ margin: '0 0 6px', fontSize: 26 }}>Đăng nhập</h1>
-          <p className="muted small" style={{ margin: '0 0 24px' }}>
-            Đăng nhập để mua sách, lưu tiến trình đọc và trò chuyện với cộng đồng.
-          </p>
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: 24,
+          background:
+            'var(--bg-primary)',
+        }}
+      >
 
-          <form onSubmit={submit} className="card" style={{ padding: 20 }}>
-            <div className="field">
-              <label className="label" htmlFor="email">Email</label>
-              <input id="email" className="input" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
-            </div>
-            <div className="field">
-              <label className="label" htmlFor="pw">Mật khẩu</label>
-              <input id="pw" className="input" type="password" value={password} onChange={(e) => setPassword(e.target.value)} required />
-            </div>
+        <div
+          style={{
+            width: '100%',
+            maxWidth: 420,
+          }}
+        >
 
-            {error && (
-              <div className="badge badge-red" style={{ display: 'flex', marginBottom: 12, padding: '8px 10px' }}>{error}</div>
-            )}
+          <div
+            style={{
+              display: 'flex',
+              marginBottom: 20,
+              borderBottom:
+                '1px solid var(--border-color)',
+            }}
+          >
 
-            <button type="submit" className="btn btn-primary btn-block btn-lg">
-              <LogIn size={17} /> Đăng nhập
+            <button
+              type="button"
+              onClick={() =>
+                switchMode('login')
+              }
+              style={{
+                flex: 1,
+                padding:
+                  '10px 0',
+                background:
+                  'transparent',
+                border: 'none',
+                cursor: 'pointer',
+                fontWeight:
+                  mode === 'login'
+                    ? 'bold'
+                    : 'normal',
+                color:
+                  mode === 'login'
+                    ? '#16a34a'
+                    : 'inherit',
+                borderBottom:
+                  mode === 'login'
+                    ? '2px solid #16a34a'
+                    : 'none',
+              }}
+            >
+              Đăng nhập
             </button>
 
-            <p className="tiny muted" style={{ textAlign: 'center', margin: '12px 0 0' }}>
-              Tài khoản mẫu: <code>user@bookigma.vn</code> / <code>123456</code>
-            </p>
-          </form>
+            <button
+              type="button"
+              onClick={() =>
+                switchMode('register')
+              }
+              style={{
+                flex: 1,
+                padding:
+                  '10px 0',
+                background:
+                  'transparent',
+                border: 'none',
+                cursor: 'pointer',
+                fontWeight:
+                  mode === 'register'
+                    ? 'bold'
+                    : 'normal',
+                color:
+                  mode === 'register'
+                    ? '#16a34a'
+                    : 'inherit',
+                borderBottom:
+                  mode === 'register'
+                    ? '2px solid #16a34a'
+                    : 'none',
+              }}
+            >
+              Đăng ký
+            </button>
 
-          <div className="row" style={{ margin: '22px 0 12px' }}>
-            <hr style={{ flex: 1, border: 0, borderTop: '1px solid var(--border-color)' }} />
-            <span className="tiny muted">hoặc dùng thử nhanh theo vai trò</span>
-            <hr style={{ flex: 1, border: 0, borderTop: '1px solid var(--border-color)' }} />
           </div>
 
-          <div className="stack" style={{ gap: 10 }}>
-            {QUICK.map(({ id, label, name, icon: Icon, desc }) => (
-              <button key={id} className="card card-hover row" style={{ padding: 12, cursor: 'pointer', textAlign: 'left', border: '1px solid var(--border-color)' }} onClick={() => quickLogin(id)}>
-                <div className="stat-icon" style={{ background: 'var(--accent-soft)' }}>
-                  <Icon size={18} color="var(--accent-green)" />
+          {mode === 'login' ? (
+
+            <form
+              onSubmit={
+                handleLoginSubmit
+              }
+              className="card"
+              style={{
+                padding: 20,
+              }}
+            >
+
+              <h2
+                style={{
+                  margin:
+                    '0 0 16px',
+                }}
+              >
+                Đăng nhập hệ thống
+              </h2>
+
+              <div
+                className="field"
+                style={{
+                  marginBottom: 12,
+                }}
+              >
+
+                <label className="label">
+                  Tên đăng nhập hoặc Email
+                </label>
+
+                <input
+                  className="input"
+                  type="text"
+                  value={
+                    loginUsername
+                  }
+                  onChange={(event) =>
+                    setLoginUsername(
+                      event.target.value
+                    )
+                  }
+                  autoComplete="username"
+                  required
+                />
+
+              </div>
+
+              <div
+                className="field"
+                style={{
+                  marginBottom: 12,
+                }}
+              >
+
+                <label className="label">
+                  Mật khẩu
+                </label>
+
+                <input
+                  className="input"
+                  type="password"
+                  value={
+                    loginPassword
+                  }
+                  onChange={(event) =>
+                    setLoginPassword(
+                      event.target.value
+                    )
+                  }
+                  autoComplete="current-password"
+                  required
+                />
+
+              </div>
+
+              {error && (
+                <div
+                  className="badge badge-red"
+                  style={{
+                    marginBottom: 12,
+                    padding: 8,
+                  }}
+                >
+                  {error}
                 </div>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div className="strong small">{label} — {name}</div>
-                  <div className="tiny muted">{desc}</div>
-                </div>
+              )}
+
+              <button
+                type="submit"
+                className="btn btn-primary btn-block btn-lg"
+                disabled={loading}
+              >
+                <LogIn size={17} />
+
+                {loading
+                  ? 'Đang đăng nhập...'
+                  : 'Đăng nhập'}
               </button>
-            ))}
-          </div>
+
+            </form>
+
+          ) : (
+
+            <form
+              onSubmit={
+                handleRegisterSubmit
+              }
+              className="card"
+              style={{
+                padding: 20,
+              }}
+            >
+
+              <h2
+                style={{
+                  margin:
+                    '0 0 16px',
+                }}
+              >
+                Tạo tài khoản mới
+              </h2>
+
+              <div
+                className="field"
+                style={{
+                  marginBottom: 10,
+                }}
+              >
+
+                <label className="label">
+                  Họ và tên
+                </label>
+
+                <input
+                  className="input"
+                  type="text"
+                  value={
+                    regFullName
+                  }
+                  onChange={(event) =>
+                    setRegFullName(
+                      event.target.value
+                    )
+                  }
+                  required
+                />
+
+              </div>
+
+              <div
+                className="field"
+                style={{
+                  marginBottom: 10,
+                }}
+              >
+
+                <label className="label">
+                  Tên đăng nhập
+                </label>
+
+                <input
+                  className="input"
+                  type="text"
+                  value={
+                    regUsername
+                  }
+                  onChange={(event) =>
+                    setRegUsername(
+                      event.target.value
+                    )
+                  }
+                  autoComplete="username"
+                  required
+                />
+
+              </div>
+
+              <div
+                className="field"
+                style={{
+                  marginBottom: 10,
+                }}
+              >
+
+                <label className="label">
+                  Email
+                </label>
+
+                <input
+                  className="input"
+                  type="email"
+                  value={
+                    regEmail
+                  }
+                  onChange={(event) =>
+                    setRegEmail(
+                      event.target.value
+                    )
+                  }
+                  autoComplete="email"
+                  required
+                />
+
+              </div>
+
+              <div
+                className="field"
+                style={{
+                  marginBottom: 10,
+                }}
+              >
+
+                <label className="label">
+                  Mật khẩu
+                </label>
+
+                <input
+                  className="input"
+                  type="password"
+                  value={
+                    regPassword
+                  }
+                  onChange={(event) =>
+                    setRegPassword(
+                      event.target.value
+                    )
+                  }
+                  autoComplete="new-password"
+                  minLength={6}
+                  required
+                />
+
+              </div>
+
+              <div
+                className="field"
+                style={{
+                  marginBottom: 12,
+                }}
+              >
+
+                <label className="label">
+                  Xác nhận mật khẩu
+                </label>
+
+                <input
+                  className="input"
+                  type="password"
+                  value={
+                    regConfirmPassword
+                  }
+                  onChange={(event) =>
+                    setRegConfirmPassword(
+                      event.target.value
+                    )
+                  }
+                  autoComplete="new-password"
+                  minLength={6}
+                  required
+                />
+
+              </div>
+
+              {error && (
+                <div
+                  className="badge badge-red"
+                  style={{
+                    marginBottom: 12,
+                    padding: 8,
+                  }}
+                >
+                  {error}
+                </div>
+              )}
+
+              <button
+                type="submit"
+                className="btn btn-primary btn-block btn-lg"
+                disabled={loading}
+              >
+
+                <UserPlus size={17} />
+
+                {loading
+                  ? 'Đang đăng ký...'
+                  : 'Đăng ký ngay'}
+
+              </button>
+
+            </form>
+          )}
+
         </div>
       </div>
     </div>

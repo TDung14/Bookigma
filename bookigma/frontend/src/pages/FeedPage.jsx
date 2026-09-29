@@ -46,16 +46,20 @@ export default function FeedPage() {
     [user, getProgress, books]
   );
 
-  const submitPost = (e) => {
+  const submitPost = async (e) => {
     e.preventDefault();
     if (!user) return navigate('/login');
     if (!draft.trim()) return toast('Hãy viết gì đó trước khi đăng nhé.', 'error');
-    addPost({
-      authorId: user.id,
-      content: draft.trim(),
-      image: draftImage.trim() || (draftBookId ? bookById(draftBookId)?.cover : null),
-      bookId: draftBookId || null,
-    });
+    try {
+      await addPost({
+        authorId: user.id,
+        content: draft.trim(),
+        image: draftImage.trim() || (draftBookId ? bookById(draftBookId)?.cover : null),
+        bookId: draftBookId || null,
+      });
+    } catch (error) {
+      return toast(error.message || 'Không thể đăng bài.', 'error');
+    }
     setDraft('');
     setDraftImage('');
     setDraftBookId('');
@@ -152,7 +156,13 @@ export default function FeedPage() {
 
           {/* Danh sách bài đăng */}
           {visiblePosts.map((post) => {
-            const author = userById(post.authorId);
+            const localAuthor = userById(post.authorId);
+            const author = localAuthor || {
+              id: post.authorId,
+              name: post.authorName || 'Người dùng',
+              avatar: post.avatarUrl || 'https://i.pravatar.cc/150?img=12',
+              role: 'user',
+            };
             const book = post.bookId ? bookById(post.bookId) : null;
             const liked = user && post.likedBy.includes(user.id);
             const showComments = openComments[post.id];

@@ -3,6 +3,7 @@ import { AppContext } from './contexts';
 import * as seed from '../data/seed';
 import { load, save, uid } from '../lib/storage';
 import { DAILY_TASKS, FEED_XP, POINT_RULES, todayKey } from '../lib/gamification';
+import { apiCall } from '../services/api';
 
 /**
  * Kho dữ liệu trung tâm của bản demo.
@@ -26,6 +27,30 @@ export function AppProvider({ children }) {
   useEffect(() => save('users', users), [users]);
   useEffect(() => save('books', books), [books]);
   useEffect(() => save('posts', posts), [posts]);
+
+  // Feed là dữ liệu thật từ MySQL. Nếu backend chưa chạy, giữ seed/local data để UI vẫn mở được.
+  useEffect(() => {
+    let cancelled = false;
+    apiCall('/posts')
+      .then((data) => {
+        if (cancelled || !Array.isArray(data)) return;
+        setPosts(data.map((p) => ({
+          id: p.id,
+          authorId: p.userId,
+          authorName: p.authorName,
+          avatarUrl: p.avatarUrl,
+          content: p.content,
+          image: p.imageUrl || null,
+          bookId: p.bookId ?? null,
+          time: p.createdAt ? new Date(p.createdAt).getTime() : Date.now(),
+          likedBy: [],
+          comments: [],
+          hidden: false,
+        })));
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
   useEffect(() => save('exchanges', exchanges), [exchanges]);
   useEffect(() => save('orders', orders), [orders]);
   useEffect(() => save('reports', reports), [reports]);
@@ -105,8 +130,32 @@ export function AppProvider({ children }) {
   }, []);
 
   // ---------- Bài đăng ----------
-  const addPost = useCallback((post) => {
-    setPosts((prev) => [{ ...post, id: uid('p'), time: Date.now(), likedBy: [], comments: [], hidden: false }, ...prev]);
+  const addPost = useCallback(async (post) => {
+    const saved = await apiCall('/posts', 'POST', {
+      userId: post.authorId,
+      content: post.content,
+      imageUrl: post.image || null,
+      // books trong seed dùng id dạng b1/b2, không tương thích BIGINT của DB nên chỉ gửi id số.
+      bookId: /^\d+$/.test(String(post.bookId || '')) ? Number(post.bookId) : null,
+      visibility: 'PUBLIC',
+    });
+
+    const normalized = {
+      id: saved.id,
+      authorId: saved.userId,
+      authorName: saved.authorName,
+      avatarUrl: saved.avatarUrl,
+      content: saved.content,
+      image: saved.imageUrl || null,
+      bookId: saved.bookId ?? null,
+      time: saved.createdAt ? new Date(saved.createdAt).getTime() : Date.now(),
+      likedBy: [],
+      comments: [],
+      hidden: false,
+    };
+
+    setPosts((prev) => [normalized, ...prev]);
+    return normalized;
   }, []);
 
   const toggleLike = useCallback((postId, userId) => {
