@@ -27,7 +27,7 @@ CREATE TABLE `users` (
     `full_name` VARCHAR(100) NULL,
     `avatar_url` VARCHAR(255) NULL,
     `bio` TEXT NULL,
-    `role` VARCHAR(20) NOT NULL DEFAULT 'USER',
+    `role` ENUM('USER', 'MODERATOR', 'ADMIN') DEFAULT 'USER',
     `is_active` BOOLEAN NOT NULL DEFAULT TRUE,
     `created_at` DATETIME(6) NOT NULL,
 
