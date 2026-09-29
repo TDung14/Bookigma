@@ -27,15 +27,22 @@ CREATE TABLE `users` (
     `full_name` VARCHAR(100) NULL,
     `avatar_url` VARCHAR(255) NULL,
     `bio` TEXT NULL,
-    `role` ENUM('USER', 'MODERATOR', 'ADMIN') DEFAULT 'USER',
-    `is_active` BOOLEAN NOT NULL DEFAULT TRUE,
-    `created_at` DATETIME(6) NOT NULL,
 
+    `role` ENUM('USER', 'MODERATOR', 'ADMIN')
+        NOT NULL DEFAULT 'USER',
+
+    `is_active` BOOLEAN NOT NULL DEFAULT TRUE,
+
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    
     PRIMARY KEY (`user_id`),
+
     UNIQUE KEY `uk_users_username` (`username`),
     UNIQUE KEY `uk_users_email` (`email`),
+
     KEY `idx_users_role` (`role`),
     KEY `idx_users_active` (`is_active`)
+
 ) ENGINE=InnoDB
   DEFAULT CHARSET=utf8mb4
   COLLATE=utf8mb4_unicode_ci;
@@ -169,11 +176,15 @@ CREATE TABLE `posts` (
     `book_id` BIGINT NULL,
     `content` TEXT NOT NULL,
     `media_url` VARCHAR(255) NULL,
-    `visibility` VARCHAR(20) NOT NULL DEFAULT 'PUBLIC',
-    `created_at` DATETIME(6) NOT NULL,
+    `visibility` ENUM('PUBLIC', 'FRIENDS', 'CLUB_ONLY') NOT NULL DEFAULT 'PUBLIC',
+    `created_at` DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
 
     PRIMARY KEY (`post_id`),
+
     KEY `idx_posts_user_id` (`user_id`),
+    KEY `idx_posts_page_id` (`page_id`),
+    KEY `idx_posts_club_id` (`club_id`),
+    KEY `idx_posts_book_id` (`book_id`),
     KEY `idx_posts_created_at` (`created_at`),
     KEY `idx_posts_visibility` (`visibility`),
 
@@ -181,7 +192,26 @@ CREATE TABLE `posts` (
         FOREIGN KEY (`user_id`)
         REFERENCES `users` (`user_id`)
         ON DELETE CASCADE
+        ON UPDATE CASCADE,
+
+    CONSTRAINT `fk_posts_page`
+        FOREIGN KEY (`page_id`)
+        REFERENCES `pages` (`page_id`)
+        ON DELETE CASCADE
+        ON UPDATE CASCADE,
+
+    CONSTRAINT `fk_posts_club`
+        FOREIGN KEY (`club_id`)
+        REFERENCES `book_clubs` (`club_id`)
+        ON DELETE CASCADE
+        ON UPDATE CASCADE,
+
+    CONSTRAINT `fk_posts_book`
+        FOREIGN KEY (`book_id`)
+        REFERENCES `books` (`book_id`)
+        ON DELETE SET NULL
         ON UPDATE CASCADE
+
 ) ENGINE=InnoDB
   DEFAULT CHARSET=utf8mb4
   COLLATE=utf8mb4_unicode_ci;
