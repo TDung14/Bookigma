@@ -16,6 +16,8 @@ import {
   useToast,
 } from '../../hooks/useStore';
 
+import { ROLES } from '../../context/AuthProvider';
+
 export default function LoginPage() {
 
   const {
@@ -33,7 +35,7 @@ export default function LoginPage() {
     useLocation();
 
   const from =
-    location.state?.from || '/';
+    location.state?.from || null;
 
   const [mode, setMode] =
     useState('login');
@@ -114,8 +116,28 @@ export default function LoginPage() {
         }!`
       );
 
+      // Redirect theo ROLE lấy trực tiếp từ backend/database.
+      // USER      -> /
+      // MODERATOR -> /shop-admin
+      // ADMIN     -> /admin
+      const roleRedirect = {
+        [ROLES.USER]: '/',
+        [ROLES.MODERATOR]: '/shop-admin',
+        [ROLES.ADMIN]: '/admin',
+      };
+
+      // Nếu người dùng đang cố mở một route cần đăng nhập trước đó,
+      // có thể quay lại route đó. Riêng /, /shop-admin, /admin
+      // phải luôn được chọn theo role để đúng yêu cầu phân quyền.
+      const roleTarget = roleRedirect[result.user.role] || '/';
+      const requestedPath = from && from !== '/login' ? from : null;
+      const isRoleHome =
+        requestedPath === '/' ||
+        requestedPath === '/shop-admin' ||
+        requestedPath === '/admin';
+
       navigate(
-        from,
+        isRoleHome || !requestedPath ? roleTarget : requestedPath,
         { replace: true }
       );
     };

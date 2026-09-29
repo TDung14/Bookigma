@@ -175,10 +175,13 @@ public class UserServiceImpl implements UserService {
         dto.setBio(user.getBio());
         dto.setAvatarUrl(user.getAvatarUrl());
 
+        // API trả đúng giá trị enum trong database:
+        // USER / MODERATOR / ADMIN.
+        // Frontend sẽ chuẩn hóa về user / moderator / admin khi hiển thị.
         dto.setRole(
                 user.getRole() == null
-                        ? "user"
-                        : user.getRole().name().toLowerCase()
+                        ? User.Role.USER.name()
+                        : user.getRole().name()
         );
 
         dto.setActive(user.getActive());
