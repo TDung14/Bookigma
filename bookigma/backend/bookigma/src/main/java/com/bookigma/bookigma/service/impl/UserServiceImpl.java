@@ -1,3 +1,4 @@
+
 package com.bookigma.bookigma.service.impl;
 
 import com.bookigma.bookigma.dto.AuthRequest;
@@ -11,26 +12,34 @@ import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class UserServiceImpl implements UserService {
+
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
 
-    public UserServiceImpl(UserRepository userRepository, PasswordEncoder passwordEncoder) {
+    public UserServiceImpl(
+            UserRepository userRepository,
+            PasswordEncoder passwordEncoder
+    ) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
     }
 
+    // Đăng ký tài khoản
     @Override
     @Transactional
     public UserProfileDto register(AuthRequest request) {
         String username = request.getUsername().trim();
+
         if (request.getEmail() == null || request.getEmail().isBlank()) {
             throw new IllegalArgumentException("Email không được để trống!");
         }
+
         String email = request.getEmail().trim().toLowerCase();
 
         if (userRepository.existsByUsername(username)) {
             throw new IllegalArgumentException("Tên đăng nhập đã tồn tại!");
         }
+
         if (userRepository.existsByEmail(email)) {
             throw new IllegalArgumentException("Email này đã được đăng ký!");
         }
@@ -44,83 +53,137 @@ public class UserServiceImpl implements UserService {
                 .active(true)
                 .build();
 
-        return toDto(userRepository.save(user));
+        User savedUser = userRepository.save(user);
+
+        return toDto(savedUser);
     }
 
+    // Đăng nhập
     @Override
     @Transactional
     public UserProfileDto login(AuthRequest request) {
         String username = request.getUsername().trim();
+
         User user = userRepository.findByUsername(username)
                 .or(() -> userRepository.findByEmail(username.toLowerCase()))
-                .orElseThrow(() -> new IllegalArgumentException("Sai tên đăng nhập/email hoặc mật khẩu!"));
+                .orElseThrow(() ->
+                        new IllegalArgumentException(
+                                "Sai tên đăng nhập/email hoặc mật khẩu!"
+                        )
+                );
 
         if (!Boolean.TRUE.equals(user.getActive())) {
-            throw new IllegalArgumentException("Tài khoản đã bị khóa hoặc vô hiệu hóa!");
+            throw new IllegalArgumentException(
+                    "Tài khoản đã bị khóa hoặc vô hiệu hóa!"
+            );
         }
 
-        boolean valid = passwordEncoder.matches(request.getPassword(), user.getPasswordHash());
+        boolean valid = passwordEncoder.matches(
+                request.getPassword(),
+                user.getPasswordHash()
+        );
+
         if (!valid) {
-            throw new IllegalArgumentException("Sai tên đăng nhập hoặc mật khẩu!");
+            throw new IllegalArgumentException(
+                    "Sai tên đăng nhập hoặc mật khẩu!"
+            );
         }
 
         return toDto(user);
     }
 
+    // Lấy thông tin hồ sơ
     @Override
     @Transactional(readOnly = true)
     public UserProfileDto getUserProfile(Long userId) {
-        return toDto(findUser(userId));
+        User user = findUser(userId);
+        return toDto(user);
     }
 
+    // Cập nhật thông tin hồ sơ
     @Override
     @Transactional
-    public UserProfileDto updateUserProfile(Long userId, UserProfileDto dto) {
+    public UserProfileDto updateUserProfile(
+            Long userId,
+            UserProfileDto dto
+    ) {
         User user = findUser(userId);
 
+        // Cập nhật email
         if (dto.getEmail() != null && !dto.getEmail().isBlank()) {
             String newEmail = dto.getEmail().trim().toLowerCase();
-            if (!newEmail.equalsIgnoreCase(user.getEmail()) && userRepository.existsByEmail(newEmail)) {
-                throw new IllegalArgumentException("Email này đã được tài khoản khác sử dụng!");
+
+            if (!newEmail.equalsIgnoreCase(user.getEmail())
+                    && userRepository.existsByEmail(newEmail)) {
+                throw new IllegalArgumentException(
+                        "Email này đã được tài khoản khác sử dụng!"
+                );
             }
+
             user.setEmail(newEmail);
         }
 
+        // Cập nhật họ tên
         if (dto.getFullName() != null) {
             user.setFullName(normalize(dto.getFullName()));
         }
+
+        // Cập nhật tiểu sử
         if (dto.getBio() != null) {
             user.setBio(dto.getBio().trim());
         }
+
+        // Cập nhật ảnh đại diện
         if (dto.getAvatarUrl() != null) {
             user.setAvatarUrl(dto.getAvatarUrl().trim());
         }
 
-        return toDto(userRepository.save(user));
+        User updatedUser = userRepository.save(user);
+
+        return toDto(updatedUser);
     }
 
+    // Tìm người dùng theo ID
     private User findUser(Long userId) {
         return userRepository.findById(userId)
-                .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy người dùng!"));
+                .orElseThrow(() ->
+                        new IllegalArgumentException(
+                                "Không tìm thấy người dùng!"
+                        )
+                );
     }
 
+    // Chuẩn hóa chuỗi
     private String normalize(String value) {
-        if (value == null) return null;
+        if (value == null) {
+            return null;
+        }
+
         String result = value.trim();
+
         return result.isBlank() ? null : result;
     }
 
+    // Chuyển User entity thành UserProfileDto
     private UserProfileDto toDto(User user) {
-        return UserProfileDto.builder()
-                .id(user.getId())
-                .username(user.getUsername())
-                .email(user.getEmail())
-                .fullName(user.getFullName())
-                .bio(user.getBio())
-                .avatarUrl(user.getAvatarUrl())
-                .role(user.getRole() == null ? "user" : user.getRole().name().toLowerCase())
-                .active(user.getActive())
-                .createdAt(user.getCreatedAt())
-                .build();
+        UserProfileDto dto = new UserProfileDto();
+
+        dto.setId(user.getId());
+        dto.setUsername(user.getUsername());
+        dto.setEmail(user.getEmail());
+        dto.setFullName(user.getFullName());
+        dto.setBio(user.getBio());
+        dto.setAvatarUrl(user.getAvatarUrl());
+
+        dto.setRole(
+                user.getRole() == null
+                        ? "user"
+                        : user.getRole().name().toLowerCase()
+        );
+
+        dto.setActive(user.getActive());
+        dto.setCreatedAt(user.getCreatedAt());
+
+        return dto;
     }
 }

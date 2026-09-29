@@ -1,13 +1,10 @@
-package com.bookigma.bookigma.dto;
 
-import lombok.Builder;
-import lombok.Data;
+package com.bookigma.bookigma.dto;
 
 import java.time.LocalDateTime;
 
-@Data
-@Builder
 public class UserProfileDto {
+
     private Long id;
     private String username;
     private String email;
@@ -17,4 +14,103 @@ public class UserProfileDto {
     private String role;
     private Boolean active;
     private LocalDateTime createdAt;
+
+    // Constructor không tham số để Jackson đọc JSON
+    public UserProfileDto() {
+    }
+
+    // Constructor đầy đủ tham số
+    public UserProfileDto(
+            Long id,
+            String username,
+            String email,
+            String fullName,
+            String bio,
+            String avatarUrl,
+            String role,
+            Boolean active,
+            LocalDateTime createdAt
+    ) {
+        this.id = id;
+        this.username = username;
+        this.email = email;
+        this.fullName = fullName;
+        this.bio = bio;
+        this.avatarUrl = avatarUrl;
+        this.role = role;
+        this.active = active;
+        this.createdAt = createdAt;
+    }
+
+    public Long getId() {
+        return id;
+    }
+
+    public void setId(Long id) {
+        this.id = id;
+    }
+
+    public String getUsername() {
+        return username;
+    }
+
+    public void setUsername(String username) {
+        this.username = username;
+    }
+
+    public String getEmail() {
+        return email;
+    }
+
+    public void setEmail(String email) {
+        this.email = email;
+    }
+
+    public String getFullName() {
+        return fullName;
+    }
+
+    public void setFullName(String fullName) {
+        this.fullName = fullName;
+    }
+
+    public String getBio() {
+        return bio;
+    }
+
+    public void setBio(String bio) {
+        this.bio = bio;
+    }
+
+    public String getAvatarUrl() {
+        return avatarUrl;
+    }
+
+    public void setAvatarUrl(String avatarUrl) {
+        this.avatarUrl = avatarUrl;
+    }
+
+    public String getRole() {
+        return role;
+    }
+
+    public void setRole(String role) {
+        this.role = role;
+    }
+
+    public Boolean getActive() {
+        return active;
+    }
+
+    public void setActive(Boolean active) {
+        this.active = active;
+    }
+
+    public LocalDateTime getCreatedAt() {
+        return createdAt;
+    }
+
+    public void setCreatedAt(LocalDateTime createdAt) {
+        this.createdAt = createdAt;
+    }
 }
