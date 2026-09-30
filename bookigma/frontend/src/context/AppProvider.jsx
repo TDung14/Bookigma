@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Client } from '@stomp/stompjs';
 import { AppContext } from './contexts';
 import * as seed from '../data/seed';
 import { load, save, uid } from '../lib/storage';
@@ -10,6 +11,48 @@ import { apiCall } from '../services/api';
  * Mọi thay đổi đều được ghi xuống localStorage nên tải lại trang vẫn giữ nguyên trạng thái —
  * điều này quan trọng khi đi demo trước hội đồng.
  */
+const normalizeId = (value) => String(value ?? '');
+
+const normalizeChatMessage = (message) => ({
+  ...message,
+  id: normalizeId(message?.id ?? `${Date.now()}-${Math.random()}`),
+  senderId: normalizeId(message?.senderId),
+  text: message?.text ?? message?.content ?? '',
+  at: Number(message?.at ?? (message?.createdAt ? new Date(message.createdAt).getTime() : Date.now())),
+});
+
+const normalizeConversation = (conversation) => ({
+  ...conversation,
+  participants: Array.isArray(conversation?.participants)
+   ? [...new Set(conversation.participants.map((id) => normalizeId(id)))]
+   : Array.isArray(conversation?.participantIds)
+     ? [...new Set(conversation.participantIds.map((id) => normalizeId(id)))]
+     : [],
+  messages: Array.isArray(conversation?.messages)
+   ? conversation.messages.map((message) => normalizeChatMessage(message))
+   : [],
+  readBy: Object.fromEntries(
+   Object.entries(conversation?.readBy || {}).map(([key, value]) => [normalizeId(key), Number(value) || 0])
+  ),
+});
+
+const mergeConversationState = (prev, incoming) => {
+  const next = new Map(prev.map((c) => [String(c.id), c]));
+  const key = String(incoming.id);
+  const current = next.get(key) || { id: key, participants: [], messages: [], readBy: {}, updatedAt: Date.now() };
+  const merged = {
+   ...current,
+   ...incoming,
+   id: key,
+   participants: [...new Set([...(current.participants || []), ...(incoming.participants || [])])],
+   messages: incoming.messages?.length ? incoming.messages : current.messages || [],
+   updatedAt: Number(incoming.updatedAt || current.updatedAt || Date.now()),
+   readBy: { ...(current.readBy || {}), ...(incoming.readBy || {}) },
+  };
+  next.set(key, merged);
+  return Array.from(next.values()).sort((a, b) => Number(b.updatedAt) - Number(a.updatedAt));
+};
+
 export function AppProvider({ children }) {
   const [users, setUsers] = useState(() => load('users', seed.users));
   const [books, setBooks] = useState(() => load('books', seed.books));
@@ -17,16 +60,24 @@ export function AppProvider({ children }) {
   const [exchanges, setExchanges] = useState(() => load('exchanges', seed.exchanges));
   const [orders, setOrders] = useState(() => load('orders', seed.orders));
   const [reports, setReports] = useState(() => load('reports', seed.reports));
-  const [conversations, setConversations] = useState(() => load('conversations', seed.conversations));
+  const [conversations, setConversations] = useState(() =>
+    (load('conversations', seed.conversations) || []).map(normalizeConversation)
+  );
   const [social, setSocial] = useState(() => load('social', {
     friends: { u1: ['u2', 'u3'], u2: ['u1'], u3: ['u1'], u5: ['u2'] },
     followings: { u1: ['u3', 'u5'], u2: ['u3'], u3: ['u5'], u5: ['u1'] },
+    friendRequestsSent: {},
+    friendRequestsReceived: {},
   }));
   const [progressAll, setProgressAll] = useState(() => load('progress', seed.readingProgress));
   const [carts, setCarts] = useState(() => load('carts', {}));
   const [notifications, setNotifications] = useState(() => load('notifications', seed.notifications));
   const [daily, setDaily] = useState(() => load('daily', {}));
   const [redemptions, setRedemptions] = useState(() => load('redemptions', seed.redemptions));
+  const chatClientRef = useRef(null);
+  const subscribedConversationIdsRef = useRef(new Set());
+  const socketUserIdRef = useRef(null);
+  const pollTimerRef = useRef(null);
 
   useEffect(() => save('users', users), [users]);
   useEffect(() => save('books', books), [books]);
@@ -58,6 +109,9 @@ export function AppProvider({ children }) {
   useEffect(() => save('exchanges', exchanges), [exchanges]);
   useEffect(() => save('orders', orders), [orders]);
   useEffect(() => save('reports', reports), [reports]);
+  useEffect(() => {
+    setConversations((prev) => prev.map(normalizeConversation));
+  }, []);
   useEffect(() => save('conversations', conversations), [conversations]);
   useEffect(() => save('social', social), [social]);
   useEffect(() => save('progress', progressAll), [progressAll]);
@@ -67,7 +121,7 @@ export function AppProvider({ children }) {
   useEffect(() => save('redemptions', redemptions), [redemptions]);
 
   // ---------- Tra cứu ----------
-  const userById = useCallback((id) => users.find((u) => String(u.id) === String(id)), [users]);
+  const userById = useCallback((id) => users.find((u) => normalizeId(u.id) === normalizeId(id)), [users]);
   const bookById = useCallback((id) => books.find((b) => b.id === id), [books]);
   const shopById = useCallback((id) => seed.shops.find((s) => s.id === id), []);
   const upsertUser = useCallback((userData) => {
@@ -125,32 +179,88 @@ export function AppProvider({ children }) {
   }, []);
   const getFriends = useCallback((userId) => social.friends?.[userId] || [], [social]);
   const getFollowing = useCallback((userId) => social.followings?.[userId] || [], [social]);
+  const getFriendRequestsSent = useCallback((userId) => social.friendRequestsSent?.[userId] || [], [social]);
+  const getFriendRequestsReceived = useCallback((userId) => social.friendRequestsReceived?.[userId] || [], [social]);
   const getFollowers = useCallback(
     (userId) => Object.entries(social.followings || {}).filter(([, ids]) => ids.includes(userId)).map(([id]) => id),
     [social]
   );
   const isFriend = useCallback((userId, otherId) => !!userId && !!otherId && userId !== otherId && getFriends(userId).includes(otherId), [getFriends]);
   const isFollowing = useCallback((userId, otherId) => !!userId && !!otherId && userId !== otherId && getFollowing(userId).includes(otherId), [getFollowing]);
+  const hasSentFriendRequest = useCallback((userId, otherId) => !!userId && !!otherId && userId !== otherId && getFriendRequestsSent(userId).includes(otherId), [getFriendRequestsSent]);
+  const hasReceivedFriendRequest = useCallback((userId, otherId) => !!userId && !!otherId && userId !== otherId && getFriendRequestsReceived(userId).includes(otherId), [getFriendRequestsReceived]);
+
+  const acceptFriendRequest = useCallback((userId, otherId) => {
+    if (!userId || !otherId || userId === otherId) return false;
+    let accepted = false;
+    setSocial((prev) => {
+      const nextFriends = { ...(prev.friends || {}) };
+      const nextSent = { ...(prev.friendRequestsSent || {}) };
+      const nextReceived = { ...(prev.friendRequestsReceived || {}) };
+
+      const mineFriends = new Set(nextFriends[userId] || []);
+      const theirsFriends = new Set(nextFriends[otherId] || []);
+      mineFriends.add(otherId);
+      theirsFriends.add(userId);
+      nextFriends[userId] = Array.from(mineFriends);
+      nextFriends[otherId] = Array.from(theirsFriends);
+
+      nextSent[userId] = (nextSent[userId] || []).filter((id) => id !== otherId);
+      nextReceived[otherId] = (nextReceived[otherId] || []).filter((id) => id !== userId);
+      nextReceived[userId] = (nextReceived[userId] || []).filter((id) => id !== otherId);
+      nextSent[otherId] = (nextSent[otherId] || []).filter((id) => id !== userId);
+
+      if (!nextSent[userId]?.length) delete nextSent[userId];
+      if (!nextReceived[otherId]?.length) delete nextReceived[otherId];
+      if (!nextReceived[userId]?.length) delete nextReceived[userId];
+      if (!nextSent[otherId]?.length) delete nextSent[otherId];
+
+      accepted = true;
+      return { ...prev, friends: nextFriends, friendRequestsSent: nextSent, friendRequestsReceived: nextReceived };
+    });
+    return accepted;
+  }, []);
 
   const toggleFriend = useCallback((userId, otherId) => {
     if (!userId || !otherId || userId === otherId) return false;
     let nextValue = false;
     setSocial((prev) => {
       const nextFriends = { ...(prev.friends || {}) };
+      const nextSent = { ...(prev.friendRequestsSent || {}) };
+      const nextReceived = { ...(prev.friendRequestsReceived || {}) };
       const mine = new Set(nextFriends[userId] || []);
       const theirs = new Set(nextFriends[otherId] || []);
+
       if (mine.has(otherId)) {
         mine.delete(otherId);
         theirs.delete(userId);
+        nextFriends[userId] = Array.from(mine);
+        nextFriends[otherId] = Array.from(theirs);
         nextValue = false;
       } else {
-        mine.add(otherId);
-        theirs.add(userId);
-        nextValue = true;
+        const sent = new Set(nextSent[userId] || []);
+        const received = new Set(nextReceived[userId] || []);
+        if (sent.has(otherId)) {
+          sent.delete(otherId);
+          nextSent[userId] = Array.from(sent);
+          nextReceived[otherId] = (nextReceived[otherId] || []).filter((id) => id !== userId);
+          if (!nextSent[userId].length) delete nextSent[userId];
+          if (!nextReceived[otherId].length) delete nextReceived[otherId];
+          nextValue = false;
+        } else {
+          sent.add(otherId);
+          nextSent[userId] = Array.from(sent);
+          const receivedList = new Set(nextReceived[otherId] || []);
+          receivedList.add(userId);
+          nextReceived[otherId] = Array.from(receivedList);
+          nextValue = true;
+        }
       }
-      nextFriends[userId] = Array.from(mine);
-      nextFriends[otherId] = Array.from(theirs);
-      return { ...prev, friends: nextFriends };
+
+      if (!nextFriends[userId]?.length) delete nextFriends[userId];
+      if (!nextFriends[otherId]?.length) delete nextFriends[otherId];
+
+      return { ...prev, friends: nextFriends, friendRequestsSent: nextSent, friendRequestsReceived: nextReceived };
     });
     return nextValue;
   }, []);
@@ -351,50 +461,333 @@ export function AppProvider({ children }) {
   }, []);
 
   // ---------- Chat ----------
-  const findOrCreateConversation = useCallback((userA, userB) => {
-    let found = conversations.find(
-      (c) => c.participants.includes(userA) && c.participants.includes(userB)
+  const syncConversationsForUser = useCallback(async (userId) => {
+    const numericUserId = Number(userId);
+    if (!Number.isFinite(numericUserId)) return [];
+
+    try {
+      const data = await apiCall(`/chat/conversations?userId=${numericUserId}`);
+      if (!Array.isArray(data)) return [];
+
+      const normalized = data.map((conversation) => normalizeConversation({
+        ...conversation,
+        id: conversation.id,
+        participantIds: conversation.participantIds || conversation.participants || [],
+        messages: conversation.messages || [],
+        updatedAt: conversation.updatedAt || Date.now(),
+      }));
+
+      setConversations((prev) => {
+        let next = [...prev];
+        normalized.forEach((item) => {
+          next = mergeConversationState(next, item);
+        });
+        return next;
+      });
+      return normalized;
+    } catch {
+      return [];
+    }
+  }, []);
+
+  const handleIncomingSocketMessage = useCallback((payload) => {
+    if (!payload || !payload.conversationId) return;
+    const normalized = normalizeChatMessage({
+      ...payload,
+      id: payload.id,
+      senderId: payload.senderId ?? payload.sender_id,
+      text: payload.text ?? payload.content ?? '',
+      at: payload.at ?? payload.createdAt,
+    });
+
+    setConversations((prev) => {
+      const matchId = String(payload.conversationId);
+      const exists = prev.some((c) => String(c.id) === matchId);
+      if (!exists) return prev;
+
+      return prev.map((conversation) => {
+        if (String(conversation.id) !== matchId) return conversation;
+        const nextMessages = [...(conversation.messages || [])].filter((message) => String(message.id) !== String(normalized.id));
+        return {
+          ...conversation,
+          messages: [...nextMessages, normalized],
+          updatedAt: Date.now(),
+        };
+      });
+    });
+  }, []);
+
+  const ensureSocketSubscriptions = useCallback((currentUserId) => {
+    const userKey = normalizeId(currentUserId);
+    if (!chatClientRef.current || !chatClientRef.current.connected) return;
+
+    setConversations((prev) => {
+      prev.filter((conversation) => conversation.participants.map((participant) => normalizeId(participant)).includes(userKey))
+        .forEach((conversation) => {
+          const conversationId = String(conversation.id);
+          if (subscribedConversationIdsRef.current.has(conversationId)) return;
+
+          chatClientRef.current.subscribe(`/topic/chat/${conversationId}`, (frame) => {
+            try {
+              const payload = JSON.parse(frame.body);
+              handleIncomingSocketMessage(payload);
+            } catch {
+              // Ignore malformed real-time messages and rely on polling fallback.
+            }
+          });
+          subscribedConversationIdsRef.current.add(conversationId);
+        });
+      return prev;
+    });
+  }, [handleIncomingSocketMessage]);
+
+  const disconnectChatSocket = useCallback(() => {
+    const client = chatClientRef.current;
+    if (client) {
+      try {
+        client.deactivate();
+      } catch {
+        // Ignore deactivation errors when a browser tab is already tearing down.
+      }
+      chatClientRef.current = null;
+    }
+    subscribedConversationIdsRef.current = new Set();
+    socketUserIdRef.current = null;
+  }, []);
+
+  const connectChatSocket = useCallback((userId) => {
+    const nextUserId = normalizeId(userId);
+    if (!nextUserId || typeof window === 'undefined' || typeof WebSocket === 'undefined') return;
+
+    if (chatClientRef.current && socketUserIdRef.current === nextUserId && chatClientRef.current.connected) {
+      ensureSocketSubscriptions(nextUserId);
+      return;
+    }
+
+    disconnectChatSocket();
+
+    const apiBase = (import.meta.env.VITE_API_URL || 'http://localhost:8080').replace(/\/$/, '');
+    const baseUrl = apiBase.replace(/\/api$/, '');
+    const wsUrl = new URL(baseUrl);
+    wsUrl.protocol = wsUrl.protocol === 'https:' ? 'wss:' : 'ws:';
+    wsUrl.pathname = '/ws';
+    wsUrl.searchParams.set('userId', String(nextUserId));
+
+    const client = new Client({
+      webSocketFactory: () => new WebSocket(wsUrl.toString()),
+      connectHeaders: {
+        userId: String(nextUserId),
+        'X-User-Id': String(nextUserId),
+      },
+      reconnectDelay: 3000,
+      heartbeatIncoming: 15000,
+      heartbeatOutgoing: 15000,
+      debug: () => {},
+      onConnect: () => {
+        socketUserIdRef.current = nextUserId;
+        client.subscribe('/user/queue/messages', (frame) => {
+          try {
+            const payload = JSON.parse(frame.body);
+            handleIncomingSocketMessage(payload);
+          } catch {
+            // Ignore malformed real-time messages and rely on polling fallback.
+          }
+        });
+        ensureSocketSubscriptions(nextUserId);
+      },
+      onDisconnect: () => {
+        if (socketUserIdRef.current === nextUserId) {
+          socketUserIdRef.current = null;
+        }
+      },
+      onStompError: () => {
+        socketUserIdRef.current = null;
+      },
+    });
+
+    chatClientRef.current = client;
+    client.activate();
+  }, [disconnectChatSocket, ensureSocketSubscriptions, handleIncomingSocketMessage]);
+
+  const findOrCreateConversation = useCallback(async (userA, userB) => {
+    const a = normalizeId(userA);
+    const b = normalizeId(userB);
+    const numericA = Number(a);
+    const numericB = Number(b);
+    const existing = conversations.find(
+      (c) => c.participants.map(normalizeId).includes(a) && c.participants.map(normalizeId).includes(b)
     );
-    if (found) return found.id;
-    const conv = {
-      id: uid('cv'), participants: [userA, userB], messages: [], updatedAt: Date.now(), readBy: {},
+    if (existing) return String(existing.id);
+
+    const localPlaceholder = {
+      id: uid('cv'),
+      participants: [a, b],
+      messages: [],
+      updatedAt: Date.now(),
+      readBy: {},
     };
-    setConversations((prev) => [conv, ...prev]);
-    return conv.id;
+    setConversations((prev) => [normalizeConversation(localPlaceholder), ...prev.map(normalizeConversation)]);
+
+    if (Number.isFinite(numericA) && Number.isFinite(numericB) && numericA > 0 && numericB > 0) {
+      try {
+        const created = await apiCall('/chat/conversations/direct', 'POST', {
+          userId: numericA,
+          otherUserId: numericB,
+        });
+        const realConversation = normalizeConversation({
+          ...created,
+          participantIds: created.participantIds || [numericA, numericB],
+          messages: created.messages || [],
+          updatedAt: created.updatedAt || Date.now(),
+        });
+
+        setConversations((prev) => {
+          const filtered = prev.filter((c) => String(c.id) !== String(localPlaceholder.id));
+          return mergeConversationState(filtered, realConversation);
+        });
+        return String(realConversation.id);
+      } catch {
+        return String(localPlaceholder.id);
+      }
+    }
+
+    return String(localPlaceholder.id);
   }, [conversations]);
 
-  const sendMessage = useCallback((convId, senderId, text) => {
+  const createGroupConversation = useCallback(async (creatorId, participantIds, name) => {
+    const creator = normalizeId(creatorId);
+    const safeParticipants = [...new Set(
+      [creator, ...participantIds.map((id) => normalizeId(id))]
+        .filter(Boolean)
+    )];
+
+    if (safeParticipants.length < 3) {
+      throw new Error('Nhóm tối thiểu 3 người, bao gồm bạn.');
+    }
+
+    const numericCreator = Number(creator);
+    const numericParticipants = safeParticipants
+      .filter((id) => String(id) !== String(creator))
+      .map(Number)
+      .filter((id) => Number.isFinite(id) && id > 0);
+
+    if (!Number.isFinite(numericCreator) || numericCreator <= 0) {
+      throw new Error('Không thể tạo nhóm khi chưa đăng nhập.');
+    }
+
+    const localPlaceholder = {
+      id: uid('cv'),
+      name: name || 'Nhóm chat',
+      participants: safeParticipants,
+      messages: [],
+      updatedAt: Date.now(),
+      readBy: {},
+    };
+    setConversations((prev) => [normalizeConversation(localPlaceholder), ...prev.map(normalizeConversation)]);
+
+    try {
+      const created = await apiCall('/chat/conversations/group', 'POST', {
+        creatorId: numericCreator,
+        participantIds: numericParticipants,
+        name: name || `Nhóm của ${creator}`,
+      });
+      const realConversation = normalizeConversation({
+        ...created,
+        id: created.id,
+        participantIds: created.participantIds || safeParticipants,
+        messages: created.messages || [],
+        updatedAt: created.updatedAt || Date.now(),
+      });
+
+      setConversations((prev) => {
+        const filtered = prev.filter((c) => String(c.id) !== String(localPlaceholder.id));
+        return mergeConversationState(filtered, realConversation);
+      });
+      return realConversation;
+    } catch (error) {
+      console.error('Failed to create group conversation', error);
+      throw error;
+    }
+  }, []);
+
+  const sendMessage = useCallback(async (convId, senderId, text) => {
+    const senderKey = normalizeId(senderId);
+    const content = String(text ?? '').trim();
+    if (!content || !convId) return null;
+
+    const localMessage = normalizeChatMessage({
+      id: uid('m'),
+      senderId: senderKey,
+      text: content,
+      at: Date.now(),
+    });
+
     setConversations((prev) =>
       prev.map((c) =>
-        c.id === convId
+        String(c.id) === String(convId)
           ? {
               ...c,
-              messages: [...c.messages, { id: uid('m'), senderId, text, at: Date.now() }],
+              messages: [...(c.messages || []), localMessage],
               updatedAt: Date.now(),
-              readBy: { ...c.readBy, [senderId]: c.messages.length + 1 },
+              readBy: { ...(c.readBy || {}), [senderKey]: (c.messages || []).length + 1 },
             }
           : c
       )
     );
+
+    const numericConvId = Number(convId);
+    const numericSenderId = Number(senderKey);
+    if (!Number.isFinite(numericConvId) || !Number.isFinite(numericSenderId)) {
+      return localMessage;
+    }
+
+    try {
+      const created = await apiCall(`/chat/conversations/${numericConvId}/messages`, 'POST', {
+        senderId: numericSenderId,
+        content,
+      });
+      const persisted = normalizeChatMessage({
+        ...created,
+        text: created.text ?? created.content ?? content,
+        at: created.at ?? created.createdAt,
+      });
+      setConversations((prev) =>
+        prev.map((c) =>
+          String(c.id) === String(convId)
+            ? { ...c, messages: [...(c.messages || []).filter((m) => String(m.id) !== String(localMessage.id)), persisted], updatedAt: Date.now() }
+            : c
+        )
+      );
+      return persisted;
+    } catch {
+      return localMessage;
+    }
   }, []);
 
   const markConversationRead = useCallback((convId, userId) => {
+    const target = normalizeId(userId);
     setConversations((prev) => {
       const conv = prev.find((c) => c.id === convId);
       // Trả về đúng mảng cũ khi không có gì thay đổi, nếu không React sẽ render lại
       // vô hạn: effect đánh dấu đã đọc -> state mới -> effect chạy lại.
-      if (!conv || (conv.readBy?.[userId] ?? 0) >= conv.messages.length) return prev;
+      const currentRead = Object.fromEntries(Object.entries(conv?.readBy || {}).map(([key, value]) => [normalizeId(key), Number(value) || 0]));
+      if (!conv || (currentRead[target] ?? 0) >= conv.messages.length) return prev;
       return prev.map((c) =>
-        c.id === convId ? { ...c, readBy: { ...c.readBy, [userId]: c.messages.length } } : c
+        c.id === convId ? { ...c, readBy: { ...Object.fromEntries(Object.entries(c.readBy || {}).map(([key, value]) => [normalizeId(key), Number(value) || 0])), [target]: c.messages.length } } : c
       );
     });
   }, []);
 
   const unreadCount = useCallback(
-    (userId) =>
-      conversations
-        .filter((c) => c.participants.includes(userId))
-        .reduce((sum, c) => sum + Math.max(0, c.messages.length - (c.readBy?.[userId] ?? 0)), 0),
+    (userId) => {
+      const target = normalizeId(userId);
+      return conversations
+        .filter((c) => c.participants.map(normalizeId).includes(target))
+        .reduce((sum, c) => {
+          const readBy = Object.fromEntries(Object.entries(c.readBy || {}).map(([key, value]) => [normalizeId(key), Number(value) || 0]));
+          return sum + Math.max(0, c.messages.length - (readBy[target] ?? 0));
+        }, 0);
+    },
     [conversations]
   );
 
@@ -556,12 +949,52 @@ export function AppProvider({ children }) {
     syncUsers();
   }, [syncUsers]);
 
+  useEffect(() => {
+    const onAuthChange = () => {
+      const authUser = load('authUser', null);
+
+      if (pollTimerRef.current) {
+        window.clearInterval(pollTimerRef.current);
+        pollTimerRef.current = null;
+      }
+
+      if (authUser?.id) {
+        syncConversationsForUser(authUser.id);
+        connectChatSocket(authUser.id);
+        pollTimerRef.current = window.setInterval(() => {
+          syncConversationsForUser(authUser.id);
+        }, 3000);
+        return;
+      }
+
+      disconnectChatSocket();
+    };
+
+    onAuthChange();
+    window.addEventListener('bookigma-auth-user-updated', onAuthChange);
+    return () => {
+      if (pollTimerRef.current) {
+        window.clearInterval(pollTimerRef.current);
+        pollTimerRef.current = null;
+      }
+      disconnectChatSocket();
+      window.removeEventListener('bookigma-auth-user-updated', onAuthChange);
+    };
+  }, [connectChatSocket, disconnectChatSocket, syncConversationsForUser]);
+
+  useEffect(() => {
+    const authUser = load('authUser', null);
+    if (!authUser?.id || !chatClientRef.current || !chatClientRef.current.connected) return;
+    ensureSocketSubscriptions(authUser.id);
+  }, [conversations, ensureSocketSubscriptions]);
+
   const value = useMemo(
     () => ({
       users, books, posts, exchanges, orders, reports, conversations, notifications,
       shops: seed.shops, categories: seed.CATEGORIES, vouchers: seed.vouchers,
       userById, bookById, shopById, upsertUser, syncUsers,
-      getFriends, getFollowing, getFollowers, isFriend, isFollowing, toggleFriend, toggleFollow,
+      getFriends, getFollowing, getFriendRequestsSent, getFriendRequestsReceived, getFollowers,
+      isFriend, isFollowing, hasSentFriendRequest, hasReceivedFriendRequest, toggleFriend, acceptFriendRequest, toggleFollow,
       getCart, addToCart, setCartQty, removeFromCart, clearCart, carts,
       placeOrder, updateOrderStatus,
       addPost, toggleLike, addComment, setPostHidden, deletePost,
@@ -569,7 +1002,7 @@ export function AppProvider({ children }) {
       setUserStatus, registerUser,
       upsertBook, setBookStatus, deleteBook,
       addExchange,
-      findOrCreateConversation, sendMessage, markConversationRead, unreadCount,
+      findOrCreateConversation, createGroupConversation, sendMessage, markConversationRead, unreadCount,
       getProgress, saveProgress,
       pushNotification, markNotificationsRead,
       daily, getDaily, earnPoints, trackDaily, claimTask, touchStreak,
@@ -578,11 +1011,13 @@ export function AppProvider({ children }) {
     }),
     [
       users, books, posts, exchanges, orders, reports, conversations, notifications, carts, social,
-      userById, bookById, shopById, upsertUser, syncUsers, getFriends, getFollowing, getFollowers, isFriend, isFollowing, toggleFriend, toggleFollow,
+      userById, bookById, shopById, upsertUser, syncUsers,
+      getFriends, getFollowing, getFriendRequestsSent, getFriendRequestsReceived, getFollowers,
+      isFriend, isFollowing, hasSentFriendRequest, hasReceivedFriendRequest, toggleFriend, acceptFriendRequest, toggleFollow,
       getCart, addToCart, setCartQty, removeFromCart, clearCart,
       placeOrder, updateOrderStatus, addPost, toggleLike, addComment, setPostHidden, deletePost,
       addReport, resolveReport, setUserStatus, registerUser, upsertBook, setBookStatus, deleteBook,
-      addExchange, findOrCreateConversation, sendMessage, markConversationRead, unreadCount,
+      addExchange, findOrCreateConversation, createGroupConversation, sendMessage, markConversationRead, unreadCount,
       getProgress, saveProgress, pushNotification, markNotificationsRead,
       daily, getDaily, earnPoints, trackDaily, claimTask, touchStreak,
       feedPet, growPet, renamePet, redeemReward, redemptions,

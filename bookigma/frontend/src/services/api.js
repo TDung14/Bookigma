@@ -1,5 +1,17 @@
 const API_URL = `${import.meta.env.VITE_API_URL || 'http://localhost:8080'}/api`;
 
+export function getApiErrorMessage(error) {
+  if (!error) return 'Không thể thực hiện yêu cầu.';
+
+  const raw = typeof error === 'string' ? error : error.message || String(error);
+
+  if (/Failed to fetch|NetworkError|fetch.*failed/i.test(raw)) {
+    return 'Không thể kết nối tới máy chủ. Hãy chắc chắn backend đang chạy ở http://localhost:8080.';
+  }
+
+  return raw;
+}
+
 export async function apiCall(endpoint, method = 'GET', body = null) {
   const config = {
     method,
@@ -10,24 +22,29 @@ export async function apiCall(endpoint, method = 'GET', body = null) {
     config.body = JSON.stringify(body);
   }
 
-  const response = await fetch(`${API_URL}${endpoint}`, config);
-  const text = await response.text();
-  let data = {};
+  try {
+    const response = await fetch(`${API_URL}${endpoint}`, config);
+    const text = await response.text();
+    let data = {};
 
-  if (text) {
-    try {
-      data = JSON.parse(text);
-    } catch {
-      data = text;
+    if (text) {
+      try {
+        data = JSON.parse(text);
+      } catch {
+        data = text;
+      }
     }
-  }
 
-  if (!response.ok) {
-    const message = typeof data === 'string'
-      ? data
-      : data?.message || `HTTP ${response.status}`;
+    if (!response.ok) {
+      const message = typeof data === 'string'
+        ? data
+        : data?.message || `HTTP ${response.status}`;
+      throw new Error(message);
+    }
+
+    return data;
+  } catch (error) {
+    const message = getApiErrorMessage(error);
     throw new Error(message);
   }
-
-  return data;
 }

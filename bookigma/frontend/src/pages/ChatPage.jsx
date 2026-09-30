@@ -9,14 +9,7 @@ import ReportModal from '../components/common/ReportModal';
 
 const EMOJIS = ['😀', '😄', '😍', '👍', '🔥', '📚', '❤️', '😢', '🎉', '🙏', '😎', '🤔'];
 
-/** Câu trả lời tự động để cuộc trò chuyện trong bản demo có phản hồi hai chiều. */
-const AUTO_REPLIES = [
-  'Ok bạn, mình xem rồi trả lời sớm nhé!',
-  'Nghe hay đấy, cuốn đó mình cũng đang muốn đọc.',
-  'Bạn cho mình xin thêm ảnh cuốn sách với.',
-  'Mình đồng ý, khi nào bạn rảnh thì mình trao đổi nhé.',
-  'Cảm ơn bạn đã nhắn tin, mình phản hồi ngay đây.',
-];
+const normalizeId = (value) => String(value ?? '');
 
 export default function ChatPage() {
   const { convId } = useParams();
@@ -25,34 +18,35 @@ export default function ChatPage() {
   const { user } = useAuth();
   const {
     conversations, users, userById, sendMessage, markConversationRead, findOrCreateConversation,
+    createGroupConversation, isFriend,
   } = useApp();
 
   const [query, setQuery] = useState('');
   const [draft, setDraft] = useState('');
   const [showNew, setShowNew] = useState(false);
+  const [groupMode, setGroupMode] = useState(false);
+  const [groupMembers, setGroupMembers] = useState([]);
+  const [groupName, setGroupName] = useState('');
   const [showEmoji, setShowEmoji] = useState(false);
-  const [typing, setTyping] = useState(false);
   const [reporting, setReporting] = useState(false);
   const bodyRef = useRef(null);
-  const replyTimer = useRef(null);
 
-  const myConvs = useMemo(
-    () =>
-      conversations
-        .filter((c) => c.participants.includes(user.id))
-        .sort((a, b) => b.updatedAt - a.updatedAt),
-    [conversations, user.id]
-  );
+  const myConvs = useMemo(() => {
+    const currentId = normalizeId(user.id);
+    return conversations
+      .filter((c) => c.participants.map((p) => normalizeId(p)).includes(currentId))
+      .sort((a, b) => b.updatedAt - a.updatedAt);
+  }, [conversations, user.id]);
 
   const active = myConvs.find((c) => c.id === convId) || null;
-  const partnerId = active?.participants.find((p) => p !== user.id);
+  const partnerId = active?.participants.find((p) => normalizeId(p) !== normalizeId(user.id));
   const partner = partnerId ? userById(partnerId) : null;
 
   const filteredConvs = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return myConvs;
     return myConvs.filter((c) => {
-      const other = userById(c.participants.find((p) => p !== user.id));
+      const other = userById(c.participants.find((p) => normalizeId(p) !== normalizeId(user.id)));
       return other?.name.toLowerCase().includes(q);
     });
   }, [myConvs, query, userById, user.id]);
@@ -62,16 +56,13 @@ export default function ChatPage() {
   // hội thoại — object được tạo mới sau mỗi lần cập nhật nên sẽ khiến effect chạy lại liên tục.
   const activeMessageCount = active?.messages.length ?? 0;
   useEffect(() => {
-    if (convId) markConversationRead(convId, user.id);
+    if (convId) markConversationRead(convId, normalizeId(user.id));
   }, [convId, activeMessageCount, markConversationRead, user.id]);
 
   // Luôn cuộn xuống tin mới nhất.
   useEffect(() => {
     if (bodyRef.current) bodyRef.current.scrollTop = bodyRef.current.scrollHeight;
-  }, [activeMessageCount, typing]);
-
-  // Dọn timer trả lời tự động khi rời trang hoặc đổi hội thoại.
-  useEffect(() => () => clearTimeout(replyTimer.current), [convId]);
+  }, [activeMessageCount]);
 
   const submit = (e) => {
     e?.preventDefault();
@@ -80,19 +71,44 @@ export default function ChatPage() {
     sendMessage(active.id, user.id, text);
     setDraft('');
     setShowEmoji(false);
-
-    // Người nhận "gõ" rồi trả lời — chỉ để demo, không thay cho backend thật.
-    setTyping(true);
-    replyTimer.current = setTimeout(() => {
-      setTyping(false);
-      sendMessage(active.id, partnerId, AUTO_REPLIES[Math.floor(Math.random() * AUTO_REPLIES.length)]);
-    }, 1600);
   };
 
-  const startChat = (otherId) => {
-    const id = findOrCreateConversation(user.id, otherId);
+  const startChat = async (otherId) => {
+    const id = await findOrCreateConversation(user.id, otherId);
     setShowNew(false);
+    setGroupMode(false);
+    setGroupMembers([]);
+    setGroupName('');
     navigate(`/chat/${id}`);
+  };
+
+  const friendUsers = useMemo(
+    () => users.filter((u) => String(u.id) !== String(user.id) && u.role !== 'admin' && isFriend(user.id, u.id)),
+    [isFriend, user.id, users]
+  );
+
+  const toggleGroupMember = (friendId) => {
+    setGroupMembers((prev) => (prev.includes(String(friendId))
+      ? prev.filter((id) => id !== String(friendId))
+      : [...prev, String(friendId)]));
+  };
+
+  const submitGroupChat = async () => {
+    if (groupMembers.length + 1 < 3) {
+      toast('Nhóm tối thiểu 3 người, bao gồm bạn.', 'error');
+      return;
+    }
+
+    try {
+      const created = await createGroupConversation(user.id, groupMembers, groupName.trim() || `Nhóm của ${user.name}`);
+      setShowNew(false);
+      setGroupMode(false);
+      setGroupMembers([]);
+      setGroupName('');
+      navigate(`/chat/${created.id}`);
+    } catch (error) {
+      toast(error.message || 'Không thể tạo nhóm chat.', 'error');
+    }
   };
 
   return (
@@ -102,14 +118,19 @@ export default function ChatPage() {
           <h1>Tin nhắn</h1>
           <p>Trao đổi với độc giả khác và các shop trên Bookigma</p>
         </div>
-        <button className="btn btn-primary btn-sm" onClick={() => setShowNew(true)}>
-          <Plus size={16} /> Cuộc trò chuyện mới
-        </button>
+        <div className="row" style={{ gap: 8 }}>
+          <button className="btn btn-primary btn-sm" onClick={() => { setGroupMode(false); setShowNew(true); }}>
+            <Plus size={16} /> Cuộc trò chuyện mới
+          </button>
+          <button className="btn btn-ghost btn-sm" onClick={() => { setGroupMode(true); setGroupMembers([]); setShowNew(true); }}>
+            <Plus size={16} /> Tạo nhóm
+          </button>
+        </div>
       </div>
 
       <div
         className="card"
-        style={{ padding: 0, display: 'grid', gridTemplateColumns: 'minmax(0,300px) minmax(0,1fr)', height: 'calc(100vh - 210px)', minHeight: 460, overflow: 'hidden' }}
+        style={{ padding: 0, display: 'grid', gridTemplateColumns: 'minmax(0,300px) minmax(0,1fr)', height: 'calc(100vh - 210px)', minHeight: 460, overflow: 'hidden', minWidth: 0, minHeight: 0 }}
       >
         {/* Danh sách hội thoại */}
         <div style={{ borderRight: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column', minWidth: 0 }}>
@@ -129,9 +150,9 @@ export default function ChatPage() {
               <div className="small muted" style={{ padding: 16, textAlign: 'center' }}>Chưa có cuộc trò chuyện nào.</div>
             )}
             {filteredConvs.map((c) => {
-              const other = userById(c.participants.find((p) => p !== user.id));
+              const other = userById(c.participants.find((p) => normalizeId(p) !== normalizeId(user.id)));
               const last = c.messages[c.messages.length - 1];
-              const unread = Math.max(0, c.messages.length - (c.readBy?.[user.id] ?? 0));
+              const unread = Math.max(0, c.messages.length - (c.readBy?.[normalizeId(user.id)] ?? 0));
               return (
                 <button
                   key={c.id}
@@ -147,7 +168,7 @@ export default function ChatPage() {
                     </div>
                     <div className="row" style={{ gap: 6 }}>
                       <span className="tiny muted truncate" style={{ flex: 1, fontWeight: unread ? 700 : 400, color: unread ? 'var(--text-main)' : undefined }}>
-                        {last ? `${last.senderId === user.id ? 'Bạn: ' : ''}${last.text}` : 'Bắt đầu trò chuyện'}
+                        {last ? `${normalizeId(last.senderId) === normalizeId(user.id) ? 'Bạn: ' : ''}${last.text}` : 'Bắt đầu trò chuyện'}
                       </span>
                       {unread > 0 && (
                         <span className="badge" style={{ background: 'var(--accent-green)', color: '#fff', minWidth: 19, justifyContent: 'center', padding: '2px 6px' }}>
@@ -173,9 +194,15 @@ export default function ChatPage() {
             />
           </div>
         ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0, minHeight: 0, height: '100%' }}>
             <div className="row-between" style={{ padding: '12px 16px', borderBottom: '1px solid var(--border-color)' }}>
-              <div className="row">
+              <button
+                type="button"
+                className="row"
+                onClick={() => partner?.id && navigate(`/profile/${partner.id}`)}
+                style={{ background: 'transparent', border: 'none', padding: 0, cursor: 'pointer', textAlign: 'left' }}
+                aria-label={`Xem trang cá nhân của ${partner?.name || 'người dùng'}`}
+              >
                 <img src={partner?.avatar} alt="" className="avatar" style={{ width: 40, height: 40 }} />
                 <div>
                   <div className="small strong">{partner?.name}</div>
@@ -184,18 +211,18 @@ export default function ChatPage() {
                     {partner?.role === 'shop' ? 'Đối tác bán hàng' : partner?.status === 'active' ? 'Đang hoạt động' : 'Ngoại tuyến'}
                   </div>
                 </div>
-              </div>
+              </button>
               <button className="btn-icon" onClick={() => setReporting(true)} aria-label="Báo cáo người dùng">
                 <Flag size={17} />
               </button>
             </div>
 
-            <div ref={bodyRef} className="scroll-y" style={{ flex: 1, padding: 16, display: 'flex', flexDirection: 'column', gap: 8, background: 'var(--bg-primary)' }}>
+            <div ref={bodyRef} className="scroll-y" style={{ flex: 1, minHeight: 0, padding: 16, display: 'flex', flexDirection: 'column', gap: 8, background: 'var(--bg-primary)', overflowY: 'auto' }}>
               <div className="tiny muted" style={{ textAlign: 'center', marginBottom: 6 }}>
                 Cuộc trò chuyện với {partner?.name}
               </div>
               {active.messages.map((m, i) => {
-                const mine = m.senderId === user.id;
+                const mine = normalizeId(m.senderId) === normalizeId(user.id);
                 const showTime = i === 0 || m.at - active.messages[i - 1].at > 10 * 60 * 1000;
                 return (
                   <div key={m.id} style={{ display: 'flex', flexDirection: 'column', alignItems: mine ? 'flex-end' : 'flex-start' }}>
@@ -207,14 +234,9 @@ export default function ChatPage() {
                   </div>
                 );
               })}
-              {typing && (
-                <div className="bubble bubble-them typing row" style={{ gap: 4, width: 'fit-content' }}>
-                  <span /><span /><span />
-                </div>
-              )}
             </div>
 
-            <form onSubmit={submit} style={{ padding: 12, borderTop: '1px solid var(--border-color)', position: 'relative' }}>
+            <form onSubmit={submit} style={{ padding: 12, borderTop: '1px solid var(--border-color)', position: 'relative', flexShrink: 0 }}>
               {showEmoji && (
                 <div className="card" style={{ position: 'absolute', bottom: 62, left: 12, padding: 8, display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: 4, boxShadow: 'var(--shadow-lg)', zIndex: 900 }}>
                   {EMOJIS.map((e) => (
@@ -246,20 +268,62 @@ export default function ChatPage() {
       </div>
 
       {/* Chọn người để bắt đầu trò chuyện */}
-      <Modal open={showNew} onClose={() => setShowNew(false)} title="Bắt đầu trò chuyện mới">
-        <div className="stack" style={{ gap: 4 }}>
-          {users
-            .filter((u) => u.id !== user.id && u.role !== 'admin')
-            .map((u) => (
-              <button key={u.id} className="list-item" onClick={() => startChat(u.id)}>
-                <img src={u.avatar} alt="" className="avatar" style={{ width: 38, height: 38 }} />
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div className="small strong truncate">{u.name}</div>
-                  <div className="tiny muted">{u.role === 'shop' ? 'Đối tác bán hàng' : u.badge}</div>
+      <Modal open={showNew} onClose={() => { setShowNew(false); setGroupMode(false); setGroupMembers([]); setGroupName(''); }} title={groupMode ? 'Tạo nhóm chat' : 'Bắt đầu trò chuyện mới'}>
+        {groupMode ? (
+          <div className="stack" style={{ gap: 12 }}>
+            <div className="field" style={{ marginBottom: 0 }}>
+              <label className="label">Tên nhóm</label>
+              <input className="input" value={groupName} onChange={(e) => setGroupName(e.target.value)} placeholder="Ví dụ: Nhóm đọc sách" />
+            </div>
+            <div>
+              <div className="small strong" style={{ marginBottom: 8 }}>Chọn bạn bè đã kết bạn</div>
+              {friendUsers.length === 0 ? (
+                <div className="small muted">Bạn chưa có bạn bè nào để tạo nhóm. Hãy kết bạn trước.</div>
+              ) : (
+                <div className="stack" style={{ gap: 6 }}>
+                  {friendUsers.map((u) => (
+                    <label key={u.id} className="list-item" style={{ justifyContent: 'space-between', padding: '8px 10px' }}>
+                      <div className="row" style={{ minWidth: 0 }}>
+                        <img src={u.avatar} alt="" className="avatar" style={{ width: 32, height: 32 }} />
+                        <div style={{ minWidth: 0 }}>
+                          <div className="small strong truncate">{u.name}</div>
+                          <div className="tiny muted">{u.role === 'shop' ? 'Đối tác bán hàng' : u.badge}</div>
+                        </div>
+                      </div>
+                      <input
+                        type="checkbox"
+                        checked={groupMembers.includes(String(u.id))}
+                        onChange={() => toggleGroupMember(u.id)}
+                        style={{ width: 16, height: 16 }}
+                      />
+                    </label>
+                  ))}
                 </div>
-              </button>
-            ))}
-        </div>
+              )}
+            </div>
+            <div className="small muted">
+              {groupMembers.length + 1 < 3 ? 'Cần ít nhất 3 người (bao gồm bạn) để tạo nhóm.' : `Đã chọn ${groupMembers.length} bạn bè.`}
+            </div>
+            <div className="row-between">
+              <button className="btn btn-ghost btn-sm" type="button" onClick={() => { setGroupMode(false); setGroupMembers([]); setGroupName(''); }}>Quay lại</button>
+              <button className="btn btn-primary btn-sm" type="button" disabled={groupMembers.length + 1 < 3} onClick={submitGroupChat}>Tạo nhóm</button>
+            </div>
+          </div>
+        ) : (
+          <div className="stack" style={{ gap: 4 }}>
+            {users
+              .filter((u) => u.id !== user.id && u.role !== 'admin')
+              .map((u) => (
+                <button key={u.id} className="list-item" onClick={() => startChat(u.id)}>
+                  <img src={u.avatar} alt="" className="avatar" style={{ width: 38, height: 38 }} />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div className="small strong truncate">{u.name}</div>
+                    <div className="tiny muted">{u.role === 'shop' ? 'Đối tác bán hàng' : u.badge}</div>
+                  </div>
+                </button>
+              ))}
+          </div>
+        )}
       </Modal>
 
       <ReportModal

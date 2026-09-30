@@ -45,9 +45,9 @@ export default function ExchangePage() {
     toast('Đã đăng tin trao đổi lên sàn.');
   };
 
-  const sendOffer = () => {
+  const sendOffer = async () => {
     const owner = offerTarget.ownerId;
-    const convId = findOrCreateConversation(user.id, owner);
+    const convId = await findOrCreateConversation(user.id, owner);
     pushNotification(owner, `${user.name} muốn trao đổi cuốn "${offerTarget.bookTitle}" với bạn.`, `/chat/${convId}`);
     toast('Đã gửi đề nghị. Cuộc trò chuyện đã được mở.');
     setOfferTarget(null);
@@ -140,7 +140,7 @@ export default function ExchangePage() {
                     </button>
                     <button
                       className="btn btn-ghost"
-                      onClick={() => (user ? navigate(`/chat/${findOrCreateConversation(user.id, item.ownerId)}`) : navigate('/login'))}
+                      onClick={async () => (user ? navigate(`/chat/${await findOrCreateConversation(user.id, item.ownerId)}`) : navigate('/login'))}
                       aria-label="Nhắn tin"
                     >
                       <MessageSquare size={16} />

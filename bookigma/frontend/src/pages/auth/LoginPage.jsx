@@ -7,6 +7,8 @@ import {
 
 import {
   BookOpen,
+  Eye,
+  EyeOff,
   LogIn,
   UserPlus,
 } from 'lucide-react';
@@ -15,6 +17,8 @@ import {
   useAuth,
   useToast,
 } from '../../hooks/useStore';
+
+import { ROLES } from '../../context/AuthProvider';
 
 export default function LoginPage() {
 
@@ -33,7 +37,7 @@ export default function LoginPage() {
     useLocation();
 
   const from =
-    location.state?.from || '/';
+    location.state?.from || null;
 
   const [mode, setMode] =
     useState('login');
@@ -58,6 +62,15 @@ export default function LoginPage() {
 
   const [regConfirmPassword, setRegConfirmPassword] =
     useState('');
+
+  const [showLoginPassword, setShowLoginPassword] =
+    useState(false);
+
+  const [showRegPassword, setShowRegPassword] =
+    useState(false);
+
+  const [showRegConfirmPassword, setShowRegConfirmPassword] =
+    useState(false);
 
   const [error, setError] =
     useState('');
@@ -114,8 +127,28 @@ export default function LoginPage() {
         }!`
       );
 
+      // Redirect theo ROLE lấy trực tiếp từ backend/database.
+      // USER      -> /
+      // MODERATOR -> /shop-admin
+      // ADMIN     -> /admin
+      const roleRedirect = {
+        [ROLES.USER]: '/',
+        [ROLES.MODERATOR]: '/shop-admin',
+        [ROLES.ADMIN]: '/admin',
+      };
+
+      // Nếu người dùng đang cố mở một route cần đăng nhập trước đó,
+      // có thể quay lại route đó. Riêng /, /shop-admin, /admin
+      // phải luôn được chọn theo role để đúng yêu cầu phân quyền.
+      const roleTarget = roleRedirect[result.user.role] || '/';
+      const requestedPath = from && from !== '/login' ? from : null;
+      const isRoleHome =
+        requestedPath === '/' ||
+        requestedPath === '/shop-admin' ||
+        requestedPath === '/admin';
+
       navigate(
-        from,
+        isRoleHome || !requestedPath ? roleTarget : requestedPath,
         { replace: true }
       );
     };
@@ -420,26 +453,38 @@ export default function LoginPage() {
                   marginBottom: 12,
                 }}
               >
-
+ 
                 <label className="label">
                   Mật khẩu
                 </label>
-
-                <input
-                  className="input"
-                  type="password"
-                  value={
-                    loginPassword
-                  }
-                  onChange={(event) =>
-                    setLoginPassword(
-                      event.target.value
-                    )
-                  }
-                  autoComplete="current-password"
-                  required
-                />
-
+ 
+                <div style={{ position: 'relative' }}>
+                  <input
+                    className="input"
+                    type={showLoginPassword ? 'text' : 'password'}
+                    value={
+                      loginPassword
+                    }
+                    onChange={(event) =>
+                      setLoginPassword(
+                        event.target.value
+                      )
+                    }
+                    autoComplete="current-password"
+                    required
+                    style={{ paddingRight: 42 }}
+                  />
+                  <button
+                    type="button"
+                    className="btn-icon"
+                    onClick={() => setShowLoginPassword((v) => !v)}
+                    aria-label={showLoginPassword ? 'Ẩn mật khẩu' : 'Hiện mật khẩu'}
+                    style={{ position: 'absolute', right: 6, top: '50%', transform: 'translateY(-50%)', padding: 6 }}
+                  >
+                    {showLoginPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                  </button>
+                </div>
+ 
               </div>
 
               {error && (
@@ -578,27 +623,39 @@ export default function LoginPage() {
                   marginBottom: 10,
                 }}
               >
-
+ 
                 <label className="label">
                   Mật khẩu
                 </label>
-
-                <input
-                  className="input"
-                  type="password"
-                  value={
-                    regPassword
-                  }
-                  onChange={(event) =>
-                    setRegPassword(
-                      event.target.value
-                    )
-                  }
-                  autoComplete="new-password"
-                  minLength={6}
-                  required
-                />
-
+ 
+                <div style={{ position: 'relative' }}>
+                  <input
+                    className="input"
+                    type={showRegPassword ? 'text' : 'password'}
+                    value={
+                      regPassword
+                    }
+                    onChange={(event) =>
+                      setRegPassword(
+                        event.target.value
+                      )
+                    }
+                    autoComplete="new-password"
+                    minLength={6}
+                    required
+                    style={{ paddingRight: 42 }}
+                  />
+                  <button
+                    type="button"
+                    className="btn-icon"
+                    onClick={() => setShowRegPassword((v) => !v)}
+                    aria-label={showRegPassword ? 'Ẩn mật khẩu' : 'Hiện mật khẩu'}
+                    style={{ position: 'absolute', right: 6, top: '50%', transform: 'translateY(-50%)', padding: 6 }}
+                  >
+                    {showRegPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                  </button>
+                </div>
+ 
               </div>
 
               <div
@@ -607,27 +664,39 @@ export default function LoginPage() {
                   marginBottom: 12,
                 }}
               >
-
+ 
                 <label className="label">
                   Xác nhận mật khẩu
                 </label>
-
-                <input
-                  className="input"
-                  type="password"
-                  value={
-                    regConfirmPassword
-                  }
-                  onChange={(event) =>
-                    setRegConfirmPassword(
-                      event.target.value
-                    )
-                  }
-                  autoComplete="new-password"
-                  minLength={6}
-                  required
-                />
-
+ 
+                <div style={{ position: 'relative' }}>
+                  <input
+                    className="input"
+                    type={showRegConfirmPassword ? 'text' : 'password'}
+                    value={
+                      regConfirmPassword
+                    }
+                    onChange={(event) =>
+                      setRegConfirmPassword(
+                        event.target.value
+                      )
+                    }
+                    autoComplete="new-password"
+                    minLength={6}
+                    required
+                    style={{ paddingRight: 42 }}
+                  />
+                  <button
+                    type="button"
+                    className="btn-icon"
+                    onClick={() => setShowRegConfirmPassword((v) => !v)}
+                    aria-label={showRegConfirmPassword ? 'Ẩn mật khẩu' : 'Hiện mật khẩu'}
+                    style={{ position: 'absolute', right: 6, top: '50%', transform: 'translateY(-50%)', padding: 6 }}
+                  >
+                    {showRegConfirmPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                  </button>
+                </div>
+ 
               </div>
 
               {error && (

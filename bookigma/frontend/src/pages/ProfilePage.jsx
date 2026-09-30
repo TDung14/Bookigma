@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useParams } from 'react-router-dom';
 import { BookOpen, Calendar, Clock, Flame, Package, ShoppingBag, Pencil, Save, X } from 'lucide-react';
 import { useApp, useAuth, useToast } from '../hooks/useStore';
 import { currency, dateOnly, duration, timeAgo } from '../lib/format';
@@ -7,27 +7,53 @@ import { ProgressBar, StatCard } from '../components/common/ui';
 import { apiCall } from '../services/api';
 
 export default function ProfilePage() {
-  const { user, updateProfile, loading } = useAuth();
-  const { orders, posts, getProgress, books } = useApp();
+  const { userId } = useParams();
+  const { user: authUser, updateProfile, loading } = useAuth();
+  const { users, orders, posts, getProgress, books } = useApp();
   const toast = useToast();
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState({ email: '', fullName: '', bio: '', avatarUrl: '' });
 
+  const isOwnProfile = !userId || String(userId) === String(authUser?.id ?? '');
+  const profileUser = useMemo(() => {
+    if (isOwnProfile) return authUser;
+    return users.find((u) => String(u.id) === String(userId)) || null;
+  }, [isOwnProfile, authUser, userId, users]);
+
   useEffect(() => {
-    if (!user?.id) return;
-    apiCall(`/users/${user.id}/profile`)
+    const currentUserId = profileUser?.id;
+    if (!currentUserId) return;
+    apiCall(`/users/${currentUserId}/profile`)
       .then((profile) => setForm({
         email: profile.email || '',
         fullName: profile.fullName || '',
         bio: profile.bio || '',
         avatarUrl: profile.avatarUrl || '',
       }))
-      .catch(() => {});
-  }, [user?.id]);
+      .catch(() => {
+        setForm({
+          email: profileUser.email || '',
+          fullName: profileUser.name || '',
+          bio: profileUser.bio || '',
+          avatarUrl: profileUser.avatar || '',
+        });
+      });
+  }, [profileUser]);
 
-  const myOrders = useMemo(() => orders.filter((o) => o.userId === user.id), [orders, user.id]);
-  const myPosts = useMemo(() => posts.filter((p) => p.authorId === user.id && !p.hidden), [posts, user.id]);
-  const progress = getProgress(user.id);
+  if (!profileUser) {
+    return (
+      <div className="main-layout" style={{ maxWidth: 720 }}>
+        <div className="card empty">
+          <h3>Không tìm thấy hồ sơ người dùng</h3>
+          <p className="small muted">Trang cá nhân này không tồn tại hoặc đã bị xóa.</p>
+        </div>
+      </div>
+    );
+  }
+
+  const myOrders = useMemo(() => orders.filter((o) => o.userId === profileUser.id), [orders, profileUser.id]);
+  const myPosts = useMemo(() => posts.filter((p) => p.authorId === profileUser.id && !p.hidden), [posts, profileUser.id]);
+  const progress = getProgress(profileUser.id);
 
   const entries = Object.values(progress)
     .map((p) => ({ ...p, book: books.find((b) => b.id === p.bookId) }))
@@ -49,24 +75,28 @@ export default function ProfilePage() {
     <div className="main-layout" style={{ maxWidth: 1000 }}>
       <div className="card" style={{ marginBottom: 20 }}>
         <div className="row" style={{ gap: 18, flexWrap: 'wrap' }}>
-          <img src={user.avatar} alt="" className="avatar" style={{ width: 86, height: 86 }} />
+          <img src={profileUser.avatar} alt="" className="avatar" style={{ width: 86, height: 86 }} />
           <div style={{ flex: 1, minWidth: 220 }}>
-            <h1 style={{ margin: '0 0 4px', fontSize: 23 }}>{user.name}</h1>
-            <p className="small muted" style={{ margin: '0 0 8px' }}>{user.email}</p>
-            {user.bio && <p className="small" style={{ margin: '0 0 10px' }}>{user.bio}</p>}
+            <h1 style={{ margin: '0 0 4px', fontSize: 23 }}>{profileUser.name}</h1>
+            <p className="small muted" style={{ margin: '0 0 8px' }}>{profileUser.email || 'Thành viên Bookigma'}</p>
+            {profileUser.bio && <p className="small" style={{ margin: '0 0 10px' }}>{profileUser.bio}</p>}
             <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
-              <span className="badge badge-green">{user.badge}</span>
-              <span className="badge row" style={{ gap: 5 }}><Flame size={13} /> {user.points.toLocaleString('vi-VN')} điểm</span>
-              <span className="badge row" style={{ gap: 5 }}><Calendar size={13} /> Tham gia {dateOnly(new Date(user.joinedAt).getTime())}</span>
+              <span className="badge badge-green">{profileUser.badge || 'Thành viên'}</span>
+              <span className="badge row" style={{ gap: 5 }}><Flame size={13} /> {(profileUser.points || 0).toLocaleString('vi-VN')} điểm</span>
+              <span className="badge row" style={{ gap: 5 }}><Calendar size={13} /> Tham gia {dateOnly(new Date(profileUser.joinedAt || Date.now()).getTime())}</span>
             </div>
           </div>
-          <div className="row" style={{ gap: 8 }}>
-            <button className="btn btn-ghost btn-sm" onClick={() => setEditing((v) => !v)}>
-              {editing ? <X size={15} /> : <Pencil size={15} />} {editing ? 'Đóng' : 'Chỉnh sửa'}
-            </button>
-            <Link to="/orders" className="btn btn-ghost btn-sm"><Package size={15} /> Đơn hàng</Link>
-            <Link to="/library" className="btn btn-primary btn-sm"><BookOpen size={15} /> Tủ sách</Link>
-          </div>
+          {isOwnProfile ? (
+            <div className="row" style={{ gap: 8 }}>
+              <button className="btn btn-ghost btn-sm" onClick={() => setEditing((v) => !v)}>
+                {editing ? <X size={15} /> : <Pencil size={15} />} {editing ? 'Đóng' : 'Chỉnh sửa'}
+              </button>
+              <Link to="/orders" className="btn btn-ghost btn-sm"><Package size={15} /> Đơn hàng</Link>
+              <Link to="/library" className="btn btn-primary btn-sm"><BookOpen size={15} /> Tủ sách</Link>
+            </div>
+          ) : (
+            <Link to={`/chat`} className="btn btn-primary btn-sm">Nhắn tin</Link>
+          )}
         </div>
 
         {editing && (

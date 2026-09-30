@@ -4,7 +4,7 @@ import './App.css';
 
 import { ThemeProvider } from './context/ThemeProvider';
 import { AppProvider } from './context/AppProvider';
-import { AuthProvider } from './context/AuthProvider';
+import { AuthProvider, ROLES } from './context/AuthProvider';
 import { ToastProvider } from './context/ToastProvider';
 import { useAuth } from './hooks/useStore';
 
@@ -51,7 +51,7 @@ function RequireAuth({ children, role }) {
         <div className="card empty">
           <h3>Bạn không có quyền truy cập khu vực này</h3>
           <p className="small">
-            Trang này chỉ dành cho tài khoản {role === 'admin' ? 'quản trị viên' : 'chủ shop'}.
+            Trang này chỉ dành cho tài khoản {role === ROLES.ADMIN ? 'quản trị viên' : 'moderator/shop'}.
             Hãy đăng nhập bằng tài khoản phù hợp ở trang đăng nhập.
           </p>
         </div>
@@ -63,7 +63,14 @@ function RequireAuth({ children, role }) {
 
 function Shell() {
   const location = useLocation();
+  const { user } = useAuth();
   const isLogin = location.pathname === '/login';
+
+  // Khi mở web tại trang gốc và chưa đăng nhập, luôn bắt đầu ở /login.
+  // Sau khi login, USER mới được phép quay lại /.
+  if (!user && location.pathname === '/') {
+    return <Navigate to="/login" replace />;
+  }
 
   if (isLogin) return <LoginPage />;
 
@@ -91,9 +98,10 @@ function Shell() {
         <Route path="/chat" element={<RequireAuth><ChatPage /></RequireAuth>} />
         <Route path="/chat/:convId" element={<RequireAuth><ChatPage /></RequireAuth>} />
         <Route path="/profile" element={<RequireAuth><ProfilePage /></RequireAuth>} />
+        <Route path="/profile/:userId" element={<RequireAuth><ProfilePage /></RequireAuth>} />
 
-        <Route path="/shop-admin/*" element={<RequireAuth role="shop"><ShopDashboard /></RequireAuth>} />
-        <Route path="/admin/*" element={<RequireAuth role="admin"><AdminDashboard /></RequireAuth>} />
+        <Route path="/shop-admin/*" element={<RequireAuth role={ROLES.MODERATOR}><ShopDashboard /></RequireAuth>} />
+        <Route path="/admin/*" element={<RequireAuth role={ROLES.ADMIN}><AdminDashboard /></RequireAuth>} />
 
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

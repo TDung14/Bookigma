@@ -73,12 +73,19 @@ public class ChatService {
 
     @Transactional
     public ChatDtos.ChatConversationResponse createGroupConversation(Long creatorId, List<Long> participantIds, String name) {
-        if (participantIds == null || participantIds.isEmpty()) {
-            throw new IllegalArgumentException("Group chat must have at least one participant.");
+        if (creatorId == null) {
+            throw new IllegalArgumentException("Creator is required.");
+        }
+
+        if (participantIds == null || participantIds.size() < 2) {
+            throw new IllegalArgumentException("Group chat must have at least 3 people including the creator.");
         }
 
         HashSet<Long> ids = new HashSet<>(participantIds);
         ids.add(creatorId);
+        if (ids.size() < 3) {
+            throw new IllegalArgumentException("Group chat must have at least 3 people including the creator.");
+        }
 
         ChatConversation conversation = new ChatConversation();
         conversation.setType(ChatType.GROUP);
@@ -136,6 +143,11 @@ public class ChatService {
 
         ChatDtos.ChatMessageResponse response = ChatDtos.ChatMessageResponse.from(message);
         messagingTemplate.convertAndSend("/topic/chat/" + conversationId, response);
+
+        for (Long participantId : conversation.getParticipantIds()) {
+            messagingTemplate.convertAndSendToUser(String.valueOf(participantId), "/queue/messages", response);
+        }
+
         return response;
     }
 

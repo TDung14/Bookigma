@@ -240,16 +240,18 @@ h1, h2, h3, h4, h5 { color: var(--text-main); }
 
 .chat-mini-dock {
   position: fixed; right: 20px; bottom: 20px; width: min(360px, calc(100vw - 24px));
+  max-height: calc(100vh - 120px); display: flex; flex-direction: column;
   background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 18px;
   box-shadow: var(--shadow-lg); z-index: 1200; overflow: hidden;
 }
 .chat-mini-header {
   display: flex; align-items: center; justify-content: space-between; gap: 8px;
   padding: 10px 12px; border-bottom: 1px solid var(--border-color); background: var(--bg-soft);
+  flex-shrink: 0;
 }
 .chat-mini-list {
   display: flex; flex-direction: column; padding: 8px 8px 0; border-bottom: 1px solid var(--border-color);
-  background: var(--bg-card);
+  background: var(--bg-card); flex-shrink: 0;
 }
 .chat-mini-item {
   display: flex; align-items: center; gap: 8px; width: 100%; padding: 8px 6px; border: none;
@@ -257,8 +259,8 @@ h1, h2, h3, h4, h5 { color: var(--text-main); }
 }
 .chat-mini-item:hover, .chat-mini-item.active { background: var(--bg-hover); }
 .chat-mini-body {
-  display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; max-height: 200px; overflow-y: auto;
-  background: var(--bg-card);
+  display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; min-height: 120px;
+  max-height: 220px; overflow-y: auto; flex: 1 1 auto; background: var(--bg-card);
 }
 .chat-mini-bubble {
   max-width: 78%; padding: 8px 10px; border-radius: 12px; font-size: 12px; line-height: 1.45;
@@ -272,7 +274,7 @@ h1, h2, h3, h4, h5 { color: var(--text-main); }
 }
 .chat-mini-form {
   display: flex; gap: 8px; padding: 10px 12px 12px; border-top: 1px solid var(--border-color);
-  background: var(--bg-card);
+  background: var(--bg-card); flex-shrink: 0;
 }
 .chat-mini-form .input { width: auto; flex: 1; }
 
@@ -291,6 +293,12 @@ h1, h2, h3, h4, h5 { color: var(--text-main); }
 }
 .list-item:hover { background: var(--bg-hover); }
 .list-item.active { background: var(--bg-hover); }
+
+.scroll-y {
+  overflow-y: auto;
+  overflow-x: hidden;
+  min-height: 0;
+}
 
 ::-webkit-scrollbar { width: 9px; height: 9px; }
 ::-webkit-scrollbar-track { background: transparent; }

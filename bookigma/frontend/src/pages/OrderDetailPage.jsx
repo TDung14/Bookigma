@@ -28,9 +28,10 @@ export default function OrderDetailPage() {
   const currentStep = ORDER_FLOW.indexOf(order.status);
   const shop = shopById(order.items[0]?.shopId);
 
-  const chatShop = () => {
+  const chatShop = async () => {
     if (!shop?.ownerId || shop.ownerId === user.id) return;
-    navigate(`/chat/${findOrCreateConversation(user.id, shop.ownerId)}`);
+    const convId = await findOrCreateConversation(user.id, shop.ownerId);
+    navigate(`/chat/${convId}`);
   };
 
   return (

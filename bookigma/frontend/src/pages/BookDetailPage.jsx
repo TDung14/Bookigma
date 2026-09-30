@@ -64,11 +64,11 @@ export default function BookDetailPage() {
     navigate('/checkout');
   };
 
-  const chatWithShop = () => {
+  const chatWithShop = async () => {
     if (requireLogin()) return;
     const ownerId = shop?.ownerId;
     if (!ownerId || ownerId === user.id) return toast('Đây là shop của bạn.', 'info');
-    const convId = findOrCreateConversation(user.id, ownerId);
+    const convId = await findOrCreateConversation(user.id, ownerId);
     navigate(`/chat/${convId}`);
   };
 

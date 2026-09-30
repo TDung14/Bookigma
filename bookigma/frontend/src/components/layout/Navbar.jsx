@@ -73,16 +73,19 @@ export default function Navbar() {
     [notifications, user]
   );
   const notifUnread = myNotifs.filter((n) => !n.read).length;
-  const myConvs = useMemo(
-    () => (user ? conversations.filter((c) => c.participants.includes(user.id)).sort((a, b) => b.updatedAt - a.updatedAt) : []),
-    [conversations, user]
-  );
+  const myConvs = useMemo(() => {
+    if (!user) return [];
+    const currentId = String(user.id ?? '');
+    return conversations
+      .filter((c) => c.participants.map((p) => String(p ?? '')).includes(currentId))
+      .sort((a, b) => b.updatedAt - a.updatedAt);
+  }, [conversations, user]);
   const activeConv = useMemo(() => {
     if (!user) return null;
     const match = chatTargetId ? myConvs.find((c) => c.id === chatTargetId) : null;
     return match || myConvs[0] || null;
   }, [chatTargetId, myConvs, user]);
-  const activePartner = activeConv ? userById(activeConv.participants.find((p) => p !== user.id)) : null;
+  const activePartner = activeConv ? userById(activeConv.participants.find((p) => String(p ?? '') !== String(user.id ?? ''))) : null;
 
   const suggestions = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -300,7 +303,7 @@ export default function Navbar() {
           {myConvs.length > 1 && (
             <div className="chat-mini-list">
               {myConvs.slice(0, 4).map((conv) => {
-                const other = userById(conv.participants.find((p) => p !== user.id));
+                const other = userById(conv.participants.find((p) => String(p ?? '') !== String(user.id ?? '')));
                 const last = conv.messages[conv.messages.length - 1];
                 if (!other) return null;
                 return (
@@ -322,7 +325,7 @@ export default function Navbar() {
 
           <div className="chat-mini-body">
             {activeConv.messages.slice(-4).map((m) => (
-              <div key={m.id} className={`chat-mini-bubble ${m.senderId === user.id ? 'mine' : 'other'}`}>
+              <div key={m.id} className={`chat-mini-bubble ${String(m.senderId ?? '') === String(user.id ?? '') ? 'mine' : 'other'}`}>
                 {m.text}
               </div>
             ))}
