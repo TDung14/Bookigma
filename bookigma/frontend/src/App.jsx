@@ -114,14 +114,15 @@ export default function App() {
   return (
     <BrowserRouter>
       <ThemeProvider>
-        <AppProvider>
-          <AuthProvider>
+        {/* AppProvider nằm trong AuthProvider để tự tải giỏ hàng, đơn hàng... của người vừa đăng nhập. */}
+        <AuthProvider>
+          <AppProvider>
             <ToastProvider>
               <ScrollToTop />
               <Shell />
             </ToastProvider>
-          </AuthProvider>
-        </AppProvider>
+          </AppProvider>
+        </AuthProvider>
       </ThemeProvider>
     </BrowserRouter>
   );

@@ -135,13 +135,14 @@ export default function RecommendationPage() {
                     className="btn btn-primary btn-sm"
                     onClick={() => {
                       if (!user) return toast('Hãy đăng nhập để thêm vào giỏ.', 'error');
-                      addToCart(user.id, book.id, 1);
-                      toast(`Đã thêm "${book.title}" vào giỏ hàng.`);
+                      addToCart(user.id, book.id, 1)
+                        .then(() => toast(`Đã thêm "${book.title}" vào giỏ hàng.`))
+                        .catch((error) => toast(error.message || 'Không thể thêm vào giỏ hàng.', 'error'));
                     }}
                   >
                     Thêm vào giỏ
                   </button>
-                  {book.chapters?.length > 0 && (
+                  {book.chapterCount > 0 && (
                     <Link to={`/read/${book.id}`} className="btn btn-ghost btn-sm">
                       <BookOpen size={15} /> Đọc thử
                     </Link>

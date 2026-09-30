@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Search, SlidersHorizontal, Store } from 'lucide-react';
+import { RefreshCw, Search, SlidersHorizontal, Store, WifiOff } from 'lucide-react';
 import { useApp } from '../hooks/useStore';
 import BookCard from '../components/book/BookCard';
 import { EmptyState } from '../components/common/ui';
@@ -21,7 +21,7 @@ const PRICE_RANGES = [
 ];
 
 export default function ShopPage() {
-  const { books, categories, shops } = useApp();
+  const { books, categories, shops, catalogStatus, refreshCatalog } = useApp();
   const [params, setParams] = useSearchParams();
 
   const [query, setQuery] = useState(params.get('q') || '');
@@ -49,7 +49,7 @@ export default function ShopPage() {
 
     const sorters = {
       popular: (a, b) => b.sold - a.sold,
-      newest: (a, b) => b.id.localeCompare(a.id),
+      newest: (a, b) => b.createdAt - a.createdAt,
       'price-asc': (a, b) => a.price - b.price,
       'price-desc': (a, b) => b.price - a.price,
       rating: (a, b) => b.rating - a.rating,
@@ -137,7 +137,18 @@ export default function ShopPage() {
             <span className="small muted">{results.length} sản phẩm</span>
           </div>
 
-          {results.length === 0 ? (
+          {catalogStatus === 'loading' ? (
+            <div className="card"><EmptyState icon={Search} title="Đang tải sách..." /></div>
+          ) : catalogStatus === 'error' ? (
+            <div className="card">
+              <EmptyState
+                icon={WifiOff}
+                title="Không kết nối được máy chủ"
+                hint="Hãy kiểm tra backend (cổng 8080) đã chạy chưa rồi thử lại."
+                action={<button className="btn btn-primary btn-sm" onClick={refreshCatalog}><RefreshCw size={15} /> Thử lại</button>}
+              />
+            </div>
+          ) : results.length === 0 ? (
             <div className="card">
               <EmptyState
                 icon={Search}

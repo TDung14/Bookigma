@@ -1,11 +1,11 @@
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Banknote, Check, CreditCard, MapPin, Tag, Truck, Wallet } from 'lucide-react';
 import { useApp, useAuth, useToast } from '../hooks/useStore';
 import { currency } from '../lib/format';
 import { Field } from '../components/common/ui';
 import { POINT_RULES } from '../lib/gamification';
-import { SHIPPING_FEE } from './CartPage';
+import { SHIPPING_FEE, applyVoucher, cartSubtotal, countParcels, linePrice } from '../lib/cart';
 
 const PAYMENTS = [
   { id: 'cod', label: 'Thanh toán khi nhận hàng (COD)', hint: 'Trả tiền mặt cho shipper', icon: Banknote },
@@ -14,16 +14,12 @@ const PAYMENTS = [
 ];
 
 export default function CheckoutPage() {
-  const { getCart, bookById, vouchers, placeOrder, clearCart, pushNotification, earnPoints } = useApp();
+  const { getCart, vouchers, placeOrder, refreshCart, earnPoints } = useApp();
   const { user } = useAuth();
   const toast = useToast();
   const navigate = useNavigate();
 
-  const cart = getCart(user.id);
-  const lines = useMemo(
-    () => cart.map((c) => ({ ...c, book: bookById(c.bookId) })).filter((l) => l.book),
-    [cart, bookById]
-  );
+  const lines = getCart(user.id);
 
   const [address, setAddress] = useState({
     name: user.name,
@@ -36,27 +32,14 @@ export default function CheckoutPage() {
   const [note, setNote] = useState('');
   const [placing, setPlacing] = useState(false);
 
-  const linePrice = (l) => (l.blind ? l.blind.price : l.book.price);
-  const subtotal = lines.reduce((s, l) => s + linePrice(l) * l.qty, 0);
+  const subtotal = cartSubtotal(lines);
+  const parcels = countParcels(lines);
 
-  const { discount, shipping } = useMemo(() => {
-    let d = 0;
-    let ship = lines.length ? SHIPPING_FEE : 0;
-    if (appliedVoucher) {
-      if (appliedVoucher.type === 'percent') {
-        d = Math.min(Math.round((subtotal * appliedVoucher.value) / 100), appliedVoucher.maxDiscount);
-      } else if (appliedVoucher.type === 'amount') {
-        d = appliedVoucher.value;
-      } else if (appliedVoucher.type === 'shipping') {
-        ship = 0;
-      }
-    }
-    return { discount: d, shipping: ship };
-  }, [appliedVoucher, subtotal, lines.length]);
+  const { discount, shipping } = applyVoucher(appliedVoucher, subtotal, parcels);
 
   const total = Math.max(0, subtotal - discount) + shipping;
 
-  const applyVoucher = (code) => {
+  const applyVoucherCode = (code) => {
     const v = vouchers.find((x) => x.code.toLowerCase() === code.trim().toLowerCase());
     if (!v) return toast('Mã giảm giá không tồn tại.', 'error');
     if (subtotal < v.minOrder) {
@@ -67,7 +50,7 @@ export default function CheckoutPage() {
     toast(`Đã áp dụng mã ${v.code}.`);
   };
 
-  const submit = () => {
+  const submit = async () => {
     if (!address.name.trim() || !address.phone.trim() || !address.detail.trim()) {
       return toast('Vui lòng điền đầy đủ thông tin nhận hàng.', 'error');
     }
@@ -75,29 +58,28 @@ export default function CheckoutPage() {
       return toast('Số điện thoại phải gồm 10 chữ số và bắt đầu bằng 0.', 'error');
     }
     if (lines.length === 0) return toast('Giỏ hàng trống.', 'error');
+    if (lines.some((line) => !line.available)) {
+      return toast('Giỏ hàng có sản phẩm không còn đủ hàng, hãy quay lại giỏ để cập nhật.', 'error');
+    }
 
     setPlacing(true);
-    // Giả lập độ trễ của cổng thanh toán để luồng demo trông thật hơn.
-    setTimeout(() => {
-      const order = placeOrder({
-        userId: user.id,
-        items: lines.map((l) => ({
-          bookId: l.book.id,
-          title: l.blind ? `Hộp Blind Book — ${l.blind.moodLabel}` : l.book.title,
-          cover: l.book.cover,
-          price: linePrice(l), qty: l.qty, shopId: l.book.shopId,
-          ...(l.blind ? { blind: l.blind, revealed: false } : {}),
-        })),
-        subtotal, shippingFee: shipping, discount, total,
-        address: { ...address }, payment, note: note.trim(),
-        voucher: appliedVoucher?.code || null,
+    try {
+      // Server tính lại toàn bộ tiền hàng, phí ship và voucher — số hiển thị ở đây chỉ để xem trước.
+      const orders = await placeOrder({
+        recipientName: address.name.trim(),
+        recipientPhone: address.phone.trim(),
+        shippingAddress: address.detail.trim(),
+        paymentMethod: payment,
+        voucherCode: appliedVoucher?.code || null,
+        note: note.trim(),
       });
-      clearCart(user.id);
       earnPoints(user.id, POINT_RULES.placeOrder);
-      pushNotification(user.id, `Đơn hàng ${order.code} đã được tạo và đang chờ shop xác nhận.`, `/orders/${order.id}`);
+      navigate(`/order-success/${orders[0].id}`, { state: { orderIds: orders.map((o) => o.id) } });
+    } catch (error) {
+      toast(error.message || 'Không thể đặt hàng, vui lòng thử lại.', 'error');
+      refreshCart(); // tồn kho có thể vừa thay đổi
       setPlacing(false);
-      navigate(`/order-success/${order.id}`);
-    }, 900);
+    }
   };
 
   if (lines.length === 0) {
@@ -145,20 +127,28 @@ export default function CheckoutPage() {
               <Truck size={18} color="var(--accent-green)" />
               <h3 style={{ margin: 0, fontSize: 16 }}>Sản phẩm ({lines.length})</h3>
             </div>
-            {lines.map(({ book, qty, blind }) => (
-              <div key={blind ? `blind-${book.id}` : book.id} className="row" style={{ padding: '10px 0', borderBottom: '1px solid var(--border-color)' }}>
-                {blind ? (
-                  <div className="book-cover row" style={{ width: 46, height: 62, justifyContent: 'center', fontSize: 24, background: 'var(--accent-soft)' }}>🎁</div>
-                ) : (
-                  <img src={book.cover} alt="" className="book-cover" style={{ width: 46, height: 62 }} />
-                )}
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div className="small strong clamp-2">{blind ? `${blind.tierName} — ${blind.moodLabel}` : book.title}</div>
-                  <div className="tiny muted">{currency(linePrice({ book, blind }))} × {qty}</div>
+            {lines.map((line) => {
+              const { book, qty, blind } = line;
+              return (
+                <div key={line.id} className="row" style={{ padding: '10px 0', borderBottom: '1px solid var(--border-color)' }}>
+                  {blind ? (
+                    <div className="book-cover row" style={{ width: 46, height: 62, justifyContent: 'center', fontSize: 24, background: 'var(--accent-soft)' }}>🎁</div>
+                  ) : (
+                    <img src={book.cover} alt="" className="book-cover" style={{ width: 46, height: 62 }} />
+                  )}
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div className="small strong clamp-2">{blind ? `${blind.tierName} — ${blind.moodLabel}` : book.title}</div>
+                    <div className="tiny muted">{currency(linePrice(line))} × {qty}</div>
+                  </div>
+                  <div className="strong small">{currency(linePrice(line) * qty)}</div>
                 </div>
-                <div className="strong small">{currency(linePrice({ book, blind }) * qty)}</div>
-              </div>
-            ))}
+              );
+            })}
+            {parcels > 1 && (
+              <p className="tiny muted" style={{ margin: '10px 0 0' }}>
+                Giỏ hàng sẽ được tách thành {parcels} đơn (mỗi shop một đơn, mỗi hộp Blind Book một đơn) để từng nhà bán tự xác nhận và giao hàng.
+              </p>
+            )}
             <Field label="Ghi chú cho shop (không bắt buộc)" style={{ marginTop: 14, marginBottom: 0 }}>
               {(id) => <input id={id} className="input" value={note} onChange={(e) => setNote(e.target.value)} placeholder="Ví dụ: gói quà giúp mình nhé" />}
             </Field>
@@ -212,14 +202,14 @@ export default function CheckoutPage() {
             <label className="label"><Tag size={13} style={{ verticalAlign: -2 }} /> Mã giảm giá</label>
             <div className="row" style={{ gap: 8 }}>
               <input className="input" placeholder="Nhập mã" value={voucherCode} onChange={(e) => setVoucherCode(e.target.value)} />
-              <button className="btn btn-soft btn-sm" onClick={() => applyVoucher(voucherCode)}>Áp dụng</button>
+              <button className="btn btn-soft btn-sm" onClick={() => applyVoucherCode(voucherCode)}>Áp dụng</button>
             </div>
             <div className="stack" style={{ gap: 6, marginTop: 10 }}>
               {vouchers.map((v) => (
                 <button
                   key={v.code}
                   className="row"
-                  onClick={() => applyVoucher(v.code)}
+                  onClick={() => applyVoucherCode(v.code)}
                   style={{
                     padding: '7px 10px', borderRadius: 8, cursor: 'pointer', width: '100%', textAlign: 'left',
                     background: appliedVoucher?.code === v.code ? 'var(--accent-soft)' : 'var(--bg-soft)',
@@ -238,7 +228,10 @@ export default function CheckoutPage() {
 
           <hr className="divider" style={{ margin: 0 }} />
           <div className="row-between small"><span className="muted">Tạm tính</span><span>{currency(subtotal)}</span></div>
-          <div className="row-between small"><span className="muted">Phí vận chuyển</span><span>{shipping === 0 ? 'Miễn phí' : currency(shipping)}</span></div>
+          <div className="row-between small">
+            <span className="muted">Phí vận chuyển ({parcels} đơn × {currency(SHIPPING_FEE)})</span>
+            <span>{shipping === 0 ? 'Miễn phí' : currency(shipping)}</span>
+          </div>
           {discount > 0 && (
             <div className="row-between small" style={{ color: 'var(--danger)' }}>
               <span>Giảm giá ({appliedVoucher.code})</span><span>-{currency(discount)}</span>

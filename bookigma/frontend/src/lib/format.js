@@ -49,6 +49,21 @@ export const PAYMENT_LABEL = {
   momo: 'Ví MoMo',
 };
 
+/** Trạng thái tin trên sàn trao đổi. */
+export const LISTING_STATUS = {
+  open: { label: 'Đang mở', badge: 'badge-green' },
+  traded: { label: 'Đã trao đổi', badge: 'badge-blue' },
+  closed: { label: 'Đã đóng', badge: '' },
+};
+
+/** Trạng thái đề nghị trao đổi. */
+export const OFFER_STATUS = {
+  pending: { label: 'Chờ phản hồi', badge: 'badge-amber' },
+  accepted: { label: 'Đã đồng ý', badge: 'badge-green' },
+  rejected: { label: 'Bị từ chối', badge: 'badge-red' },
+  cancelled: { label: 'Đã rút lại', badge: '' },
+};
+
 export const REPORT_STATUS = {
   pending: { label: 'Chờ xử lý', badge: 'badge-amber' },
   resolved: { label: 'Đã xử lý', badge: 'badge-green' },

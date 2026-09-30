@@ -10,6 +10,34 @@ import { POINT_RULES } from '../lib/gamification';
 import { ProgressBar } from '../components/common/ui';
 
 /**
+ * Nội dung chương không nằm trong danh sách sách (API /books chỉ trả số chương),
+ * nên tải chi tiết sách trước rồi mới mở trình đọc. Nhờ vậy trình đọc mount khi đã có
+ * đủ chương và khôi phục đúng vị trí đang đọc dở.
+ */
+export default function ReaderPage() {
+  const { bookId } = useParams();
+  const { bookById, loadBook, catalogStatus } = useApp();
+  const [failedId, setFailedId] = useState(null);
+
+  const book = bookById(bookId);
+  const needsChapters = !!book && !book.chapters && book.chapterCount > 0 && failedId !== bookId;
+
+  useEffect(() => {
+    if (!needsChapters) return;
+    loadBook(bookId).catch(() => setFailedId(bookId));
+  }, [needsChapters, bookId, loadBook]);
+
+  if (catalogStatus === 'loading' || needsChapters) {
+    return (
+      <div className="main-layout">
+        <div className="card empty"><h3>Đang mở sách...</h3></div>
+      </div>
+    );
+  }
+  return <ReaderContent key={bookId} />;
+}
+
+/**
  * Trình đọc sách có lưu tiến trình.
  *
  * Vị trí đọc được xác định bằng cặp (chương, đoạn văn đang hiển thị trên màn hình).
@@ -17,7 +45,7 @@ import { ProgressBar } from '../components/common/ui';
  * hoàn thành trên toàn bộ cuốn sách và ghi xuống kho dữ liệu sau mỗi 1,5 giây
  * để không ghi quá dày.
  */
-export default function ReaderPage() {
+function ReaderContent() {
   const { bookId } = useParams();
   const navigate = useNavigate();
   const toast = useToast();

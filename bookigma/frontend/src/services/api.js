@@ -12,11 +12,19 @@ export function getApiErrorMessage(error) {
   return raw;
 }
 
-export async function apiCall(endpoint, method = 'GET', body = null) {
+/**
+ * Gọi API backend. Truyền `userId` cho các API cần biết ai đang đăng nhập (giỏ hàng, đơn hàng...):
+ * dự án chưa có JWT nên id được gửi qua header X-User-Id (backend đọc ở CurrentUserIdArgumentResolver).
+ */
+export async function apiCall(endpoint, method = 'GET', body = null, { userId } = {}) {
   const config = {
     method,
     headers: { 'Content-Type': 'application/json' },
   };
+
+  if (userId !== null && userId !== undefined) {
+    config.headers['X-User-Id'] = String(userId);
+  }
 
   if (body !== null && body !== undefined) {
     config.body = JSON.stringify(body);
@@ -36,15 +44,15 @@ export async function apiCall(endpoint, method = 'GET', body = null) {
     }
 
     if (!response.ok) {
-      const message = typeof data === 'string'
+      const httpMessage = typeof data === 'string'
         ? data
         : data?.message || `HTTP ${response.status}`;
-      throw new Error(message);
+      throw new Error(httpMessage);
     }
 
     return data;
   } catch (error) {
-    const message = getApiErrorMessage(error);
-    throw new Error(message);
+    
+    throw new Error(getApiErrorMessage(error), { cause: error });
   }
 }

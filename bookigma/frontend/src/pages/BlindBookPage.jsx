@@ -1,54 +1,73 @@
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  Check, ChevronLeft, Gift, HelpCircle, Package, ShoppingCart, Sparkles,
+  Check, ChevronLeft, Gift, HelpCircle, LogIn, Package, RefreshCw, ShoppingCart, Sparkles,
 } from 'lucide-react';
 import { useApp, useAuth, useToast } from '../hooks/useStore';
-import { BOX_TIERS, MOODS, boxHints, pickBook } from '../lib/blindbook';
+import { BOX_TIERS, MOODS } from '../lib/blindbook';
 import { currency } from '../lib/format';
 
 /**
  * Luồng đặt hộp Blind Book: chọn tâm trạng → chọn mức hộp → xem hộp đã ghép.
- * Tên sách bên trong được giấu tới khi đơn hàng giao xong (mở ở trang chi tiết đơn).
+ * Backend chọn sách và chỉ trả về manh mối; tên sách được giấu tới khi đơn hàng giao xong
+ * và người mua bấm "Mở hộp" ở trang chi tiết đơn.
  */
 export default function BlindBookPage() {
   const navigate = useNavigate();
   const toast = useToast();
   const { user } = useAuth();
-  const { books, addBlindBox, getProgress, orders } = useApp();
+  const { matchBlindBox, addBlindBox, getProgress } = useApp();
 
   const [step, setStep] = useState(1);
   const [moodId, setMoodId] = useState(null);
   const [tierId, setTierId] = useState(null);
-  // Giữ cố định một số ngẫu nhiên để hộp không đổi mỗi lần component render lại.
-  const [seed, setSeed] = useState(() => Math.floor(Math.random() * 1000));
-
-  /** Không ghép lại cuốn người dùng đã đọc hoặc đã mua — hộp phải luôn là sách mới với họ. */
-  const excludeIds = useMemo(() => {
-    if (!user) return [];
-    const read = Object.keys(getProgress(user.id));
-    const bought = orders
-      .filter((o) => o.userId === user.id && o.status !== 'cancelled')
-      .flatMap((o) => o.items.map((i) => i.bookId));
-    return [...new Set([...read, ...bought])];
-  }, [user, getProgress, orders]);
+  // status: idle | loading | rerolling | ready | empty
+  const [match, setMatch] = useState({ status: 'idle', box: null, message: '' });
+  const [adding, setAdding] = useState(false);
 
   const mood = MOODS.find((m) => m.id === moodId);
   const tier = BOX_TIERS.find((t) => t.id === tierId);
 
-  const matched = useMemo(
-    () => (moodId && tierId ? pickBook(books, moodId, tierId, excludeIds, seed) : null),
-    [books, moodId, tierId, excludeIds, seed]
-  );
+  /** Ghép sách cho hộp. Gửi kèm id hộp đang xem để backend ghép lại trên chính hộp đó. */
+  const runMatch = async (nextMoodId, nextTierId, reroll = false) => {
+    if (!user) return;
+    setMatch((prev) => ({ ...prev, status: reroll ? 'rerolling' : 'loading' }));
+    // Không ghép lại cuốn người dùng đã đọc (tiến trình đọc lưu ở trình duyệt); sách đã mua backend tự loại.
+    const excludeBookIds = Object.keys(getProgress(user.id)).map(Number).filter(Number.isFinite);
+    try {
+      const box = await matchBlindBox({
+        moodId: nextMoodId, tierId: nextTierId, boxId: match.box?.boxId ?? null, excludeBookIds,
+      });
+      setMatch({ status: 'ready', box, message: '' });
+      if (reroll) toast('Đã ghép lại một cuốn khác cho bạn.', 'info');
+    } catch (error) {
+      if (reroll) {
+        setMatch((prev) => ({ ...prev, status: 'ready' }));
+        toast(error.message, 'error');
+      } else {
+        setMatch({ status: 'empty', box: null, message: error.message });
+      }
+    }
+  };
 
-  const addToCart = () => {
-    if (!user) return navigate('/login');
-    if (!matched) return toast('Hiện chưa ghép được sách phù hợp, thử tâm trạng khác nhé.', 'error');
-    addBlindBox(user.id, matched.id, {
-      moodId, moodLabel: mood.label, tierId, tierName: tier.name, price: tier.price,
-    });
-    toast(`Đã thêm ${tier.name} vào giỏ. Nội dung bên trong vẫn là bí mật!`);
-    navigate('/cart');
+  const chooseTier = (nextTierId) => {
+    setTierId(nextTierId);
+    setStep(3);
+    runMatch(moodId, nextTierId);
+  };
+
+  const addToCart = async () => {
+    if (!user) return navigate('/login', { state: { from: '/blind-book' } });
+    if (!match.box) return toast('Hiện chưa ghép được sách phù hợp, thử tâm trạng khác nhé.', 'error');
+    setAdding(true);
+    try {
+      await addBlindBox(match.box.boxId);
+      toast(`Đã thêm ${tier.name} vào giỏ. Nội dung bên trong vẫn là bí mật!`);
+      navigate('/cart');
+    } catch (error) {
+      toast(error.message || 'Không thể thêm hộp vào giỏ.', 'error');
+      setAdding(false);
+    }
   };
 
   return (
@@ -128,7 +147,7 @@ export default function BlindBookPage() {
               <button
                 key={t.id}
                 className="card card-hover"
-                onClick={() => { setTierId(t.id); setStep(3); }}
+                onClick={() => chooseTier(t.id)}
                 style={{ textAlign: 'left', cursor: 'pointer', display: 'flex', flexDirection: 'column' }}
               >
                 <div style={{ fontSize: 34, marginBottom: 8 }}>{t.emoji}</div>
@@ -160,20 +179,38 @@ export default function BlindBookPage() {
           <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) minmax(0,340px)', gap: 20, alignItems: 'start' }}>
             <div className="card" style={{ textAlign: 'center', padding: '36px 24px' }}>
               <div style={{ fontSize: 88, marginBottom: 10 }}>{tier.emoji}</div>
-              <h2 style={{ margin: '0 0 6px', fontSize: 22 }}>{tier.name} đã sẵn sàng</h2>
-              <p className="muted small" style={{ margin: '0 0 20px' }}>
-                Chúng tôi đã chọn được một cuốn hợp với tâm trạng <b>{mood.label}</b> của bạn.
-              </p>
 
-              {matched ? (
+              {!user ? (
                 <>
+                  <h2 style={{ margin: '0 0 6px', fontSize: 22 }}>Đăng nhập để ghép hộp</h2>
+                  <p className="muted small" style={{ margin: '0 0 20px' }}>
+                    Hệ thống cần biết bạn đã đọc và đã mua những cuốn nào để không ghép trùng.
+                  </p>
+                  <button className="btn btn-primary" onClick={() => navigate('/login', { state: { from: '/blind-book' } })}>
+                    <LogIn size={16} /> Đăng nhập
+                  </button>
+                </>
+              ) : match.status === 'loading' ? (
+                <>
+                  <h2 style={{ margin: '0 0 6px', fontSize: 22 }}>Đang chọn sách cho bạn...</h2>
+                  <p className="muted small" style={{ margin: 0 }}>Đối chiếu tâm trạng <b>{mood.label}</b> với kho sách hiện có.</p>
+                </>
+              ) : match.status === 'empty' ? (
+                <div className="badge badge-amber" style={{ padding: '10px 14px' }}>{match.message}</div>
+              ) : (
+                <>
+                  <h2 style={{ margin: '0 0 6px', fontSize: 22 }}>{tier.name} đã sẵn sàng</h2>
+                  <p className="muted small" style={{ margin: '0 0 20px' }}>
+                    Chúng tôi đã chọn được một cuốn hợp với tâm trạng <b>{mood.label}</b> của bạn.
+                  </p>
+
                   <div style={{ background: 'var(--bg-soft)', borderRadius: 12, padding: 18, textAlign: 'left', maxWidth: 440, margin: '0 auto' }}>
                     <div className="row" style={{ gap: 7, marginBottom: 12 }}>
                       <HelpCircle size={17} color="var(--accent-green)" />
                       <span className="small strong">Manh mối về cuốn sách bên trong</span>
                     </div>
                     <ul className="small" style={{ margin: 0, paddingLeft: 0, listStyle: 'none' }}>
-                      {boxHints(matched).map((h) => (
+                      {(match.box?.hints || []).map((h) => (
                         <li key={h} className="row" style={{ gap: 8, marginBottom: 9, alignItems: 'flex-start' }}>
                           <Sparkles size={13} color="var(--accent-green)" style={{ marginTop: 3, flexShrink: 0 }} />
                           <span>{h}</span>
@@ -189,15 +226,12 @@ export default function BlindBookPage() {
                   <button
                     className="btn btn-ghost btn-sm"
                     style={{ marginTop: 14 }}
-                    onClick={() => { setSeed((x) => x + 1); toast('Đã ghép lại một cuốn khác cho bạn.', 'info'); }}
+                    disabled={match.status === 'rerolling'}
+                    onClick={() => runMatch(moodId, tierId, true)}
                   >
-                    Đổi cuốn khác
+                    <RefreshCw size={14} /> {match.status === 'rerolling' ? 'Đang ghép lại...' : 'Đổi cuốn khác'}
                   </button>
                 </>
-              ) : (
-                <div className="badge badge-amber" style={{ padding: '10px 14px' }}>
-                  Kho hiện chưa có cuốn nào khớp tâm trạng này mà bạn chưa đọc. Thử tâm trạng khác nhé.
-                </div>
               )}
             </div>
 
@@ -210,10 +244,14 @@ export default function BlindBookPage() {
               <hr className="divider" style={{ margin: 0 }} />
               <div className="row-between">
                 <span className="strong">Giá hộp</span>
-                <span className="price" style={{ fontSize: 22 }}>{currency(tier.price)}</span>
+                <span className="price" style={{ fontSize: 22 }}>{currency(match.box?.price ?? tier.price)}</span>
               </div>
-              <button className="btn btn-primary btn-lg btn-block" onClick={addToCart} disabled={!matched}>
-                <ShoppingCart size={17} /> Thêm vào giỏ hàng
+              <button
+                className="btn btn-primary btn-lg btn-block"
+                onClick={addToCart}
+                disabled={!!user && (!match.box || match.status !== 'ready' || adding)}
+              >
+                <ShoppingCart size={17} /> {adding ? 'Đang thêm...' : 'Thêm vào giỏ hàng'}
               </button>
               <p className="tiny muted" style={{ margin: 0, textAlign: 'center' }}>
                 Hộp được gói kín, kèm thiệp viết tay. Không hoàn trả vì lý do "đã đọc cuốn này rồi".

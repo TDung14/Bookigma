@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, Legend, Pie, PieChart,
@@ -49,9 +49,10 @@ function buildDailyBuckets() {
 export default function AdminDashboard() {
   const { user } = useAuth();
   const {
-    users, books, posts, orders, reports, shops, userById, bookById,
+    // Với admin, `books` đã gồm cả sách chờ duyệt / đã gỡ; `adminOrders` là đơn của toàn sàn.
+    users, books, posts, adminOrders: orders, reports, shops, userById, bookById,
     setUserStatus, setBookStatus, deleteBook, setPostHidden, deletePost,
-    resolveReport, pushNotification,
+    resolveReport, pushNotification, refreshAdminData,
   } = useApp();
   const toast = useToast();
 
@@ -59,6 +60,30 @@ export default function AdminDashboard() {
   const [handling, setHandling] = useState(null);
   const [handleNote, setHandleNote] = useState('');
   const [reportFilter, setReportFilter] = useState('pending');
+
+  useEffect(() => {
+    refreshAdminData();
+  }, [refreshAdminData]);
+
+  /** Duyệt / gỡ / xóa sản phẩm qua backend; báo lỗi nếu thao tác không thành công. */
+  const changeBookStatus = async (book, status, message) => {
+    try {
+      await setBookStatus(book.id, status);
+      toast(message);
+    } catch (error) {
+      toast(error.message || 'Không thể cập nhật sản phẩm.', 'error');
+    }
+  };
+
+  const removeBook = async (book) => {
+    if (!window.confirm(`Xóa vĩnh viễn "${book.title}"?`)) return;
+    try {
+      const result = await deleteBook(book.id);
+      toast(result.message, 'info');
+    } catch (error) {
+      toast(error.message || 'Không thể xóa sản phẩm.', 'error');
+    }
+  };
 
   // ---------- Số liệu tổng quan ----------
   const paidOrders = useMemo(() => orders.filter((o) => o.status !== 'cancelled'), [orders]);
@@ -125,8 +150,7 @@ export default function AdminDashboard() {
       setUserStatus(report.targetId, 'suspended');
       toast('Đã khóa tài khoản người dùng.');
     } else if (report.type === 'book') {
-      setBookStatus(report.targetId, 'hidden');
-      toast('Đã gỡ sản phẩm khỏi cửa hàng.');
+      changeBookStatus({ id: report.targetId }, 'hidden', 'Đã gỡ sản phẩm khỏi cửa hàng.');
     } else {
       toast('Đã ghi nhận, cần xử lý thủ công với loại nội dung này.', 'info');
     }
@@ -378,7 +402,7 @@ export default function AdminDashboard() {
                   <td>
                     <div className="row" style={{ gap: 4 }}>
                       {b.status === 'pending' && (
-                        <button className="btn btn-primary btn-sm" onClick={() => { setBookStatus(b.id, 'active'); toast(`Đã duyệt "${b.title}".`); }}>
+                        <button className="btn btn-primary btn-sm" onClick={() => changeBookStatus(b, 'active', `Đã duyệt "${b.title}".`)}>
                           <CheckCircle2 size={14} /> Duyệt
                         </button>
                       )}
@@ -386,8 +410,7 @@ export default function AdminDashboard() {
                         className="btn btn-ghost btn-sm"
                         onClick={() => {
                           const next = b.status === 'hidden' ? 'active' : 'hidden';
-                          setBookStatus(b.id, next);
-                          toast(next === 'hidden' ? 'Đã gỡ sản phẩm.' : 'Đã hiển thị lại sản phẩm.');
+                          changeBookStatus(b, next, next === 'hidden' ? 'Đã gỡ sản phẩm.' : 'Đã hiển thị lại sản phẩm.');
                         }}
                       >
                         {b.status === 'hidden' ? <Eye size={14} /> : <EyeOff size={14} />}
@@ -395,7 +418,7 @@ export default function AdminDashboard() {
                       <button
                         className="btn-icon"
                         style={{ color: 'var(--danger)' }}
-                        onClick={() => { if (window.confirm(`Xóa vĩnh viễn "${b.title}"?`)) { deleteBook(b.id); toast('Đã xóa sản phẩm.', 'info'); } }}
+                        onClick={() => removeBook(b)}
                         aria-label="Xóa"
                       >
                         <Trash2 size={15} />
@@ -468,7 +491,7 @@ export default function AdminDashboard() {
               {[...orders].sort((a, b) => b.createdAt - a.createdAt).map((o) => (
                 <tr key={o.id}>
                   <td className="small strong">{o.code}</td>
-                  <td className="small">{userById(o.userId)?.name}</td>
+                  <td className="small">{o.buyerName || userById(o.userId)?.name}</td>
                   <td className="small truncate" style={{ maxWidth: 220 }}>
                     {o.items.map((i) => `${bookById(i.bookId)?.title || i.title} ×${i.qty}`).join(', ')}
                   </td>
