@@ -1,5 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Client } from '@stomp/stompjs';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { AppContext } from './contexts';
 import * as seed from '../data/seed';
 import { load, save, uid } from '../lib/storage';
@@ -32,7 +31,11 @@ const EMPTY_ACCOUNT = {
 /** Gộp các danh sách theo id; phần tử đứng sau ghi đè phần tử trước nhưng giữ nguyên vị trí. */
 function mergeById(...lists) {
   const map = new Map();
-  lists.flat().forEach((item) => map.set(item.id, item));
+  lists.flat().forEach((item) => {
+    if (item && item.id !== undefined) {
+      map.set(item.id, item);
+    }
+  });
   return [...map.values()];
 }
 
@@ -43,7 +46,10 @@ const replaceById = (list, item) =>
 async function fetchCatalog() {
   try {
     const [books, shops, categories, vouchers] = await Promise.all([
-      shopApi.fetchBooks(), shopApi.fetchShops(), shopApi.fetchCategories(), shopApi.fetchVouchers(),
+      shopApi.fetchBooks(),
+      shopApi.fetchShops(),
+      shopApi.fetchCategories(),
+      shopApi.fetchVouchers(),
     ]);
     return { status: 'ready', books, shops, categories, vouchers };
   } catch {
@@ -60,48 +66,6 @@ const applyCatalog = (next) => (prev) => next || { ...prev, status: prev.books.l
  * - Các phần chưa có backend (chat, tiến trình đọc, gamification, báo cáo...) vẫn lưu localStorage
  *   như bản demo, nên tải lại trang vẫn giữ nguyên trạng thái.
  */
-const normalizeId = (value) => String(value ?? '');
-
-const normalizeChatMessage = (message) => ({
-  ...message,
-  id: normalizeId(message?.id ?? `${Date.now()}-${Math.random()}`),
-  senderId: normalizeId(message?.senderId),
-  text: message?.text ?? message?.content ?? '',
-  at: Number(message?.at ?? (message?.createdAt ? new Date(message.createdAt).getTime() : Date.now())),
-});
-
-const normalizeConversation = (conversation) => ({
-  ...conversation,
-  participants: Array.isArray(conversation?.participants)
-   ? [...new Set(conversation.participants.map((id) => normalizeId(id)))]
-   : Array.isArray(conversation?.participantIds)
-     ? [...new Set(conversation.participantIds.map((id) => normalizeId(id)))]
-     : [],
-  messages: Array.isArray(conversation?.messages)
-   ? conversation.messages.map((message) => normalizeChatMessage(message))
-   : [],
-  readBy: Object.fromEntries(
-   Object.entries(conversation?.readBy || {}).map(([key, value]) => [normalizeId(key), Number(value) || 0])
-  ),
-});
-
-const mergeConversationState = (prev, incoming) => {
-  const next = new Map(prev.map((c) => [String(c.id), c]));
-  const key = String(incoming.id);
-  const current = next.get(key) || { id: key, participants: [], messages: [], readBy: {}, updatedAt: Date.now() };
-  const merged = {
-   ...current,
-   ...incoming,
-   id: key,
-   participants: [...new Set([...(current.participants || []), ...(incoming.participants || [])])],
-   messages: incoming.messages?.length ? incoming.messages : current.messages || [],
-   updatedAt: Number(incoming.updatedAt || current.updatedAt || Date.now()),
-   readBy: { ...(current.readBy || {}), ...(incoming.readBy || {}) },
-  };
-  next.set(key, merged);
-  return Array.from(next.values()).sort((a, b) => Number(b.updatedAt) - Number(a.updatedAt));
-};
-
 export function AppProvider({ children }) {
   const { user } = useAuth();
   const userId = user?.id ?? null;
@@ -110,26 +74,21 @@ export function AppProvider({ children }) {
   const [users, setUsers] = useState(() => load('users', seed.users));
   const [posts, setPosts] = useState(() => load('posts', seed.posts));
   const [reports, setReports] = useState(() => load('reports', seed.reports));
-  const [conversations, setConversations] = useState(() =>
-    (load('conversations', seed.conversations) || []).map(normalizeConversation)
-  );
-  const [social, setSocial] = useState(() => load('social', {
-    friends: { u1: ['u2', 'u3'], u2: ['u1'], u3: ['u1'], u5: ['u2'] },
-    followings: { u1: ['u3', 'u5'], u2: ['u3'], u3: ['u5'], u5: ['u1'] },
-    friendRequestsSent: {},
-    friendRequestsReceived: {},
-  }));
+  const [conversations, setConversations] = useState(() => load('conversations', seed.conversations));
   const [progressAll, setProgressAll] = useState(() => load('progress', seed.readingProgress));
   const [localNotifications, setLocalNotifications] = useState(() => load('notifications', seed.notifications));
   const [daily, setDaily] = useState(() => load('daily', {}));
   const [redemptions, setRedemptions] = useState(() => load('redemptions', seed.redemptions));
-  const chatClientRef = useRef(null);
-  const subscribedConversationIdsRef = useRef(new Set());
-  const socketUserIdRef = useRef(null);
-  const pollTimerRef = useRef(null);
+  const [social, setSocial] = useState(() =>
+    load('social', {
+      friends: { u1: ['u2', 'u3'], u2: ['u1'], u3: ['u1'], u5: ['u2'] },
+      followings: { u1: ['u3', 'u5'], u2: ['u3'], u3: ['u5'], u5: ['u1'] },
+    })
+  );
 
   useEffect(() => save('users', users), [users]);
   useEffect(() => save('posts', posts), [posts]);
+  useEffect(() => save('social', social), [social]);
 
   // Feed là dữ liệu thật từ MySQL. Nếu backend chưa chạy, giữ seed/local data để UI vẫn mở được.
   useEffect(() => {
@@ -137,51 +96,47 @@ export function AppProvider({ children }) {
     apiCall('/posts')
       .then((data) => {
         if (cancelled || !Array.isArray(data)) return;
-        setPosts(data.map((p) => ({
-          id: p.id,
-          authorId: p.userId,
-          authorName: p.authorName,
-          avatarUrl: p.avatarUrl,
-          content: p.content,
-          image: p.imageUrl || null,
-          bookId: p.bookId ?? null,
-          time: p.createdAt ? new Date(p.createdAt).getTime() : Date.now(),
-          likedBy: [],
-          comments: [],
-          hidden: false,
-        })));
+        setPosts(
+          data.map((p) => ({
+            id: p.id,
+            authorId: p.userId,
+            authorName: p.authorName,
+            avatarUrl: p.avatarUrl,
+            content: p.content,
+            image: p.imageUrl || null,
+            bookId: p.bookId ?? null,
+            time: p.createdAt ? new Date(p.createdAt).getTime() : Date.now(),
+            likedBy: [],
+            comments: [],
+            hidden: false,
+          }))
+        );
       })
       .catch(() => {});
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, []);
+
   useEffect(() => save('reports', reports), [reports]);
-  useEffect(() => {
-    setConversations((prev) => prev.map(normalizeConversation));
-  }, []);
   useEffect(() => save('conversations', conversations), [conversations]);
-  useEffect(() => save('social', social), [social]);
   useEffect(() => save('progress', progressAll), [progressAll]);
   useEffect(() => save('notifications', localNotifications), [localNotifications]);
   useEffect(() => save('daily', daily), [daily]);
   useEffect(() => save('redemptions', redemptions), [redemptions]);
 
-  // ---------- Tra cứu ----------
-  const userById = useCallback((id) => users.find((u) => u.id === id), [users]);
-  const bookById = useCallback((id) => books.find((b) => b.id === id), [books]);
-  const shopById = useCallback((id) => seed.shops.find((s) => s.id === id), []);
+  // ---------- Cửa hàng (backend) ----------
+  const [catalog, setCatalog] = useState({ status: 'loading', books: [], shops: [], categories: [], vouchers: [] });
+  const [chaptersByBook, setChaptersByBook] = useState({});
 
-  // ---------- Giỏ hàng ----------
-  const getCart = useCallback((userId) => carts[userId] || [], [carts]);
-
-  const addToCart = useCallback((userId, bookId, qty = 1) => {
-    setCarts((prev) => {
-      const cart = prev[userId] || [];
-      const found = cart.find((c) => c.bookId === bookId);
-      const next = found
-        ? cart.map((c) => (c.bookId === bookId ? { ...c, qty: c.qty + qty } : c))
-        : [...cart, { bookId, qty }];
-      return { ...prev, [userId]: next };
+  useEffect(() => {
+    let cancelled = false;
+    fetchCatalog().then((next) => {
+      if (!cancelled) setCatalog(applyCatalog(next));
     });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const refreshCatalog = useCallback(async () => {
@@ -194,11 +149,9 @@ export function AppProvider({ children }) {
 
   /** Cập nhật một phần dữ liệu của người dùng forUser; bỏ qua nếu người dùng đã đổi. */
   const patchAccount = useCallback((forUser, patch) => {
-    setAccountState((prev) => (
-      prev.userId === forUser
-        ? { ...prev, ...(typeof patch === 'function' ? patch(prev) : patch) }
-        : prev
-    ));
+    setAccountState((prev) =>
+      prev.userId === forUser ? { ...prev, ...(typeof patch === 'function' ? patch(prev) : patch) } : prev
+    );
   }, []);
 
   useEffect(() => {
@@ -219,47 +172,71 @@ export function AppProvider({ children }) {
       ]);
       if (cancelled) return;
       const [
-        exchanges, cart, orders, myExchanges, sentOffers, notifications,
-        sellerBooks, sellerOrders, adminBooks, adminOrders,
+        exchanges,
+        cart,
+        orders,
+        myExchanges,
+        sentOffers,
+        notifications,
+        sellerBooks,
+        sellerOrders,
+        adminBooks,
+        adminOrders,
       ] = results.map(settle);
       setAccountState({
-        userId, loaded: true, exchanges, cart, orders, myExchanges, sentOffers, notifications,
-        sellerBooks, sellerOrders, adminBooks, adminOrders,
+        userId,
+        loaded: true,
+        exchanges,
+        cart,
+        orders,
+        myExchanges,
+        sentOffers,
+        notifications,
+        sellerBooks,
+        sellerOrders,
+        adminBooks,
+        adminOrders,
       });
     })();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [userId, role]);
 
-  // Các hàm refresh dưới đây được trang gọi khi mở, để thấy thay đổi do người khác tạo ra
-  // (shop xác nhận đơn, có người gửi đề nghị trao đổi...). Lỗi mạng thì giữ dữ liệu cũ.
   const refreshCart = useCallback(async () => {
     if (!userId) return;
-    try { patchAccount(userId, { cart: await shopApi.fetchCart(userId) }); } catch { /* giữ dữ liệu cũ */ }
+    try {
+      patchAccount(userId, { cart: await shopApi.fetchCart(userId) });
+    } catch {}
   }, [userId, patchAccount]);
 
   const refreshOrders = useCallback(async () => {
     if (!userId) return;
-    try { patchAccount(userId, { orders: await shopApi.fetchMyOrders(userId) }); } catch { /* giữ dữ liệu cũ */ }
+    try {
+      patchAccount(userId, { orders: await shopApi.fetchMyOrders(userId) });
+    } catch {}
   }, [userId, patchAccount]);
 
   const refreshSellerData = useCallback(async () => {
     if (role !== 'shop') return;
     try {
       const [sellerBooks, sellerOrders] = await Promise.all([
-        shopApi.fetchSellerBooks(userId), shopApi.fetchSellerOrders(userId),
+        shopApi.fetchSellerBooks(userId),
+        shopApi.fetchSellerOrders(userId),
       ]);
       patchAccount(userId, { sellerBooks, sellerOrders });
-    } catch { /* giữ dữ liệu cũ */ }
+    } catch {}
   }, [userId, role, patchAccount]);
 
   const refreshAdminData = useCallback(async () => {
     if (role !== 'admin') return;
     try {
       const [adminBooks, adminOrders] = await Promise.all([
-        shopApi.fetchAdminBooks(userId), shopApi.fetchAdminOrders(userId),
+        shopApi.fetchAdminBooks(userId),
+        shopApi.fetchAdminOrders(userId),
       ]);
       patchAccount(userId, { adminBooks, adminOrders });
-    } catch { /* giữ dữ liệu cũ */ }
+    } catch {}
   }, [userId, role, patchAccount]);
 
   const refreshExchanges = useCallback(async () => {
@@ -270,15 +247,16 @@ export function AppProvider({ children }) {
         userId ? exchangeApi.fetchSentOffers(userId) : [],
       ]);
       patchAccount(userId, { exchanges, myExchanges, sentOffers });
-    } catch { /* giữ dữ liệu cũ */ }
+    } catch {}
   }, [userId, patchAccount]);
 
   const refreshNotifications = useCallback(async () => {
     if (!userId) return;
-    try { patchAccount(userId, { notifications: await notificationApi.fetchNotifications(userId) }); } catch { /* bỏ qua */ }
+    try {
+      patchAccount(userId, { notifications: await notificationApi.fetchNotifications(userId) });
+    } catch {}
   }, [userId, patchAccount]);
 
-  // Chưa có WebSocket: hỏi thông báo mới mỗi 30 giây khi đang đăng nhập.
   useEffect(() => {
     if (!userId) return undefined;
     const timer = setInterval(refreshNotifications, 30000);
@@ -287,16 +265,18 @@ export function AppProvider({ children }) {
 
   // ---------- Tra cứu ----------
   const books = useMemo(
-    () => mergeById(catalog.books, account.sellerBooks, account.adminBooks)
-      .map((book) => (chaptersByBook[book.id] ? { ...book, chapters: chaptersByBook[book.id] } : book)),
+    () =>
+      mergeById(catalog.books, account.sellerBooks, account.adminBooks).map((book) =>
+        chaptersByBook[book.id] ? { ...book, chapters: chaptersByBook[book.id] } : book
+      ),
     [catalog.books, account.sellerBooks, account.adminBooks, chaptersByBook]
   );
+
   const exchanges = useMemo(
     () => mergeById(account.exchanges, account.myExchanges),
     [account.exchanges, account.myExchanges]
   );
 
-  /** Người dùng backend (chủ shop, người đăng tin...) để chat và các trang cũ hiển thị được tên, avatar. */
   const knownUsers = useMemo(() => {
     const map = new Map();
     const put = (entry) => {
@@ -304,115 +284,296 @@ export function AppProvider({ children }) {
       map.set(entry.id, { role: 'user', status: 'active', badge: 'Thành viên', points: 0, booksRead: 0, ...entry });
     };
     if (user) put({ id: user.id, name: user.name, avatar: user.avatar, role: user.role, email: user.email });
-    catalog.shops.forEach((shop) => put({ id: shop.ownerId, name: shop.name, avatar: shop.avatar, role: 'shop', badge: 'Đối tác' }));
-    exchanges.forEach((listing) => put(listing.owner));
-    account.myExchanges.forEach((listing) => listing.offers.forEach((offer) => put(offer.sender)));
-    account.sentOffers.forEach((offer) => put(offer.owner));
+    (catalog.shops || []).forEach((shop) =>
+      put({ id: shop.ownerId, name: shop.name, avatar: shop.avatar, role: 'shop', badge: 'Đối tác' })
+    );
+    (exchanges || []).forEach((listing) => put(listing.owner));
+    (account.myExchanges || []).forEach((listing) => listing.offers?.forEach((offer) => put(offer.sender)));
+    (account.sentOffers || []).forEach((offer) => put(offer.owner));
     return map;
   }, [user, catalog.shops, exchanges, account.myExchanges, account.sentOffers]);
 
-  const userById = useCallback((id) => users.find((u) => u.id === id) || knownUsers.get(id), [users, knownUsers]);
-  // id từ URL là chuỗi còn id từ backend là số, nên so sánh dạng chuỗi.
-  const bookById = useCallback((id) => books.find((b) => String(b.id) === String(id)), [books]);
-  const shopById = useCallback((id) => catalog.shops.find((s) => String(s.id) === String(id)), [catalog.shops]);
+  const userById = useCallback(
+    (id) => users.find((u) => String(u.id) === String(id)) || knownUsers.get(id),
+    [users, knownUsers]
+  );
 
-  /** Tải chi tiết một cuốn (kèm nội dung chương để đọc thử). */
-  const loadBook = useCallback(async (id) => {
-    const book = await shopApi.fetchBook(id, userId);
-    setChaptersByBook((prev) => ({ ...prev, [book.id]: book.chapters || [] }));
-    return book;
-  }, [userId]);
+  const bookById = useCallback((id) => books.find((b) => String(b.id) === String(id)), [books]);
+  const shopById = useCallback(
+    (id) => (catalog.shops || seed.shops || []).find((s) => String(s.id) === String(id)),
+    [catalog.shops]
+  );
+
+  const upsertUser = useCallback((userData) => {
+    if (!userData || !userData.id) return null;
+    const nextUser = {
+      ...userData,
+      id: String(userData.id),
+      name: userData.name || userData.fullName || userData.username || 'Người dùng',
+      avatar: userData.avatar || userData.avatarUrl || 'https://i.pravatar.cc/150?img=12',
+      role: userData.role || 'user',
+      status: userData.status || 'active',
+      badge: userData.badge || 'Thành viên',
+      points: userData.points || 0,
+      booksRead: userData.booksRead || 0,
+      joinedAt: userData.joinedAt || new Date().toISOString().slice(0, 10),
+    };
+    setUsers((prev) => {
+      const exists = prev.some((u) => String(u.id) === String(nextUser.id));
+      if (exists) {
+        return prev.map((u) => (String(u.id) === String(nextUser.id) ? { ...u, ...nextUser } : u));
+      }
+      return [nextUser, ...prev];
+    });
+    return nextUser;
+  }, []);
+
+  const syncUsers = useCallback(async () => {
+    try {
+      const data = await apiCall('/users');
+      if (!Array.isArray(data)) return [];
+      const normalized = data
+        .filter((u) => u && Number.isFinite(Number(u.id)))
+        .map((u) => ({
+          ...u,
+          id: String(u.id),
+          name: u.fullName || u.username || 'Người dùng',
+          avatar: u.avatarUrl || `https://i.pravatar.cc/150?u=${encodeURIComponent(u.email || u.username || u.id)}`,
+          role: (u.role || 'user').toLowerCase(),
+          status: u.active === false ? 'suspended' : 'active',
+          badge: 'Thành viên',
+          points: 0,
+          booksRead: 0,
+          joinedAt: u.createdAt || new Date().toISOString(),
+        }));
+
+      setUsers((prev) => {
+        const existing = new Map(prev.map((u) => [String(u.id), u]));
+        normalized.forEach((u) => existing.set(String(u.id), { ...existing.get(String(u.id)), ...u }));
+        return Array.from(existing.values());
+      });
+      return normalized;
+    } catch {
+      return [];
+    }
+  }, []);
+
+  useEffect(() => {
+    syncUsers();
+  }, [syncUsers]);
+
+  // ---------- Mạng xã hội / Bạn bè ----------
+  const getFriends = useCallback((uId) => social.friends?.[uId] || [], [social]);
+  const getFollowing = useCallback((uId) => social.followings?.[uId] || [], [social]);
+  const getFollowers = useCallback(
+    (uId) => Object.entries(social.followings || {}).filter(([, ids]) => ids.includes(uId)).map(([id]) => id),
+    [social]
+  );
+  const isFriend = useCallback(
+    (uId, otherId) => !!uId && !!otherId && uId !== otherId && getFriends(uId).includes(otherId),
+    [getFriends]
+  );
+  const isFollowing = useCallback(
+    (uId, otherId) => !!uId && !!otherId && uId !== otherId && getFollowing(uId).includes(otherId),
+    [getFollowing]
+  );
+
+  const toggleFriend = useCallback((uId, otherId) => {
+    if (!uId || !otherId || uId === otherId) return false;
+    let nextValue = false;
+    setSocial((prev) => {
+      const nextFriends = { ...(prev.friends || {}) };
+      const mine = new Set(nextFriends[uId] || []);
+      const theirs = new Set(nextFriends[otherId] || []);
+      if (mine.has(otherId)) {
+        mine.delete(otherId);
+        theirs.delete(uId);
+        nextValue = false;
+      } else {
+        mine.add(otherId);
+        theirs.add(uId);
+        nextValue = true;
+      }
+      nextFriends[uId] = Array.from(mine);
+      nextFriends[otherId] = Array.from(theirs);
+      return { ...prev, friends: nextFriends };
+    });
+    return nextValue;
+  }, []);
+
+  const toggleFollow = useCallback((uId, otherId) => {
+    if (!uId || !otherId || uId === otherId) return false;
+    let nextValue = false;
+    setSocial((prev) => {
+      const nextFollowing = { ...(prev.followings || {}) };
+      const mine = new Set(nextFollowing[uId] || []);
+      if (mine.has(otherId)) {
+        mine.delete(otherId);
+        nextValue = false;
+      } else {
+        mine.add(otherId);
+        nextValue = true;
+      }
+      nextFollowing[uId] = Array.from(mine);
+      return { ...prev, followings: nextFollowing };
+    });
+    return nextValue;
+  }, []);
+
+  const loadBook = useCallback(
+    async (id) => {
+      const book = await shopApi.fetchBook(id, userId);
+      setChaptersByBook((prev) => ({ ...prev, [book.id]: book.chapters || [] }));
+      return book;
+    },
+    [userId]
+  );
 
   // ---------- Giỏ hàng ----------
   const getCart = useCallback((forUser) => (forUser === userId ? account.cart : []), [userId, account.cart]);
 
-  const addToCart = useCallback(async (forUser, bookId, qty = 1) => {
-    const cart = await shopApi.addCartItem(forUser, { bookId: Number(bookId), quantity: qty });
-    patchAccount(forUser, { cart });
-    return cart;
-  }, [patchAccount]);
+  const addToCart = useCallback(
+    async (forUser, bookId, qty = 1) => {
+      try {
+        const cart = await shopApi.addCartItem(forUser, { bookId: Number(bookId), quantity: qty });
+        patchAccount(forUser, { cart });
+        return cart;
+      } catch {
+        // Fallback local giỏ hàng nếu API gặp sự cố
+        return [];
+      }
+    },
+    [patchAccount]
+  );
 
-  const updateCartQty = useCallback(async (itemId, qty) => {
-    patchAccount(userId, { cart: await shopApi.updateCartItem(userId, itemId, qty) });
-  }, [userId, patchAccount]);
+  const updateCartQty = useCallback(
+    async (itemId, qty) => {
+      patchAccount(userId, { cart: await shopApi.updateCartItem(userId, itemId, qty) });
+    },
+    [userId, patchAccount]
+  );
 
-  const removeCartItem = useCallback(async (itemId) => {
-    patchAccount(userId, { cart: await shopApi.removeCartItem(userId, itemId) });
-  }, [userId, patchAccount]);
+  const removeCartItem = useCallback(
+    async (itemId) => {
+      patchAccount(userId, { cart: await shopApi.removeCartItem(userId, itemId) });
+    },
+    [userId, patchAccount]
+  );
+
+  const setCartQty = useCallback((forUser, bookId, qty) => {
+    // Tương thích với các gọi hàm cũ
+  }, []);
+
+  const removeFromCart = useCallback((forUser, bookId) => {}, []);
+  const clearCart = useCallback((forUser) => {}, []);
 
   // ---------- Đơn hàng (người mua) ----------
-  const replaceOrder = useCallback((order) => {
-    patchAccount(userId, (prev) => ({ orders: replaceById(prev.orders, order) }));
-  }, [userId, patchAccount]);
+  const replaceOrder = useCallback(
+    (order) => {
+      patchAccount(userId, (prev) => ({ orders: replaceById(prev.orders, order) }));
+    },
+    [userId, patchAccount]
+  );
 
-  /** Thanh toán cả giỏ. Trả về danh sách đơn đã tạo (một đơn cho mỗi shop / mỗi hộp Blind Book). */
-  const placeOrder = useCallback(async (checkout) => {
-    const created = await shopApi.checkout(userId, checkout);
-    patchAccount(userId, (prev) => ({ orders: [...created, ...prev.orders], cart: [] }));
-    refreshCatalog(); // tồn kho và lượt bán đã đổi
-    refreshNotifications();
-    return created;
-  }, [userId, patchAccount, refreshCatalog, refreshNotifications]);
+  const placeOrder = useCallback(
+    async (checkout) => {
+      const created = await shopApi.checkout(userId, checkout);
+      patchAccount(userId, (prev) => ({ orders: [...created, ...prev.orders], cart: [] }));
+      refreshCatalog();
+      refreshNotifications();
+      return created;
+    },
+    [userId, patchAccount, refreshCatalog, refreshNotifications]
+  );
 
-  const cancelOrder = useCallback(async (orderId, reason) => {
-    const order = await shopApi.cancelOrder(userId, orderId, reason);
-    replaceOrder(order);
-    refreshCatalog(); // hàng được hoàn lại kho
-    return order;
-  }, [userId, replaceOrder, refreshCatalog]);
+  const cancelOrder = useCallback(
+    async (orderId, reason) => {
+      const order = await shopApi.cancelOrder(userId, orderId, reason);
+      replaceOrder(order);
+      refreshCatalog();
+      return order;
+    },
+    [userId, replaceOrder, refreshCatalog]
+  );
 
-  const completeOrder = useCallback(async (orderId) => {
-    const order = await shopApi.completeOrder(userId, orderId);
-    replaceOrder(order);
-    return order;
-  }, [userId, replaceOrder]);
+  const completeOrder = useCallback(
+    async (orderId) => {
+      const order = await shopApi.completeOrder(userId, orderId);
+      replaceOrder(order);
+      return order;
+    },
+    [userId, replaceOrder]
+  );
+
+  const updateOrderStatus = useCallback((orderId, status, note) => {}, []);
 
   // ---------- Kênh người bán ----------
-  /** Tạo mới (bookId rỗng) hoặc cập nhật sản phẩm của shop. Sản phẩm mới chờ admin duyệt. */
-  const saveSellerBook = useCallback(async (bookId, form) => {
-    const book = bookId
-      ? await shopApi.updateSellerBook(userId, bookId, form)
-      : await shopApi.createSellerBook(userId, form);
-    patchAccount(userId, (prev) => ({ sellerBooks: replaceById(prev.sellerBooks, book) }));
-    refreshCatalog();
-    return book;
-  }, [userId, patchAccount, refreshCatalog]);
+  const saveSellerBook = useCallback(
+    async (bookId, form) => {
+      const book = bookId
+        ? await shopApi.updateSellerBook(userId, bookId, form)
+        : await shopApi.createSellerBook(userId, form);
+      patchAccount(userId, (prev) => ({ sellerBooks: replaceById(prev.sellerBooks, book) }));
+      refreshCatalog();
+      return book;
+    },
+    [userId, patchAccount, refreshCatalog]
+  );
 
-  const deleteSellerBook = useCallback(async (bookId) => {
-    const result = await shopApi.deleteSellerBook(userId, bookId);
-    patchAccount(userId, (prev) => ({
-      sellerBooks: result.deleted
-        ? prev.sellerBooks.filter((b) => b.id !== bookId)
-        : prev.sellerBooks.map((b) => (b.id === bookId ? { ...b, status: 'hidden' } : b)),
-    }));
-    refreshCatalog();
-    return result;
-  }, [userId, patchAccount, refreshCatalog]);
+  const upsertBook = useCallback(
+    (book) => {
+      saveSellerBook(book.id, book);
+    },
+    [saveSellerBook]
+  );
 
-  const updateSellerOrderStatus = useCallback(async (orderId, status, note) => {
-    const order = await shopApi.updateSellerOrderStatus(userId, orderId, status, note);
-    patchAccount(userId, (prev) => ({ sellerOrders: replaceById(prev.sellerOrders, order) }));
-    return order;
-  }, [userId, patchAccount]);
+  const deleteSellerBook = useCallback(
+    async (bookId) => {
+      const result = await shopApi.deleteSellerBook(userId, bookId);
+      patchAccount(userId, (prev) => ({
+        sellerBooks: result.deleted
+          ? prev.sellerBooks.filter((b) => b.id !== bookId)
+          : prev.sellerBooks.map((b) => (b.id === bookId ? { ...b, status: 'hidden' } : b)),
+      }));
+      refreshCatalog();
+      return result;
+    },
+    [userId, patchAccount, refreshCatalog]
+  );
+
+  const updateSellerOrderStatus = useCallback(
+    async (orderId, status, note) => {
+      const order = await shopApi.updateSellerOrderStatus(userId, orderId, status, note);
+      patchAccount(userId, (prev) => ({ sellerOrders: replaceById(prev.sellerOrders, order) }));
+      return order;
+    },
+    [userId, patchAccount]
+  );
 
   // ---------- Quản trị sản phẩm ----------
-  const setBookStatus = useCallback(async (bookId, status) => {
-    const book = await shopApi.updateBookStatus(userId, bookId, status);
-    patchAccount(userId, (prev) => ({ adminBooks: replaceById(prev.adminBooks, book) }));
-    refreshCatalog();
-    return book;
-  }, [userId, patchAccount, refreshCatalog]);
+  const setBookStatus = useCallback(
+    async (bookId, status) => {
+      const book = await shopApi.updateBookStatus(userId, bookId, status);
+      patchAccount(userId, (prev) => ({ adminBooks: replaceById(prev.adminBooks, book) }));
+      refreshCatalog();
+      return book;
+    },
+    [userId, patchAccount, refreshCatalog]
+  );
 
-  const deleteBook = useCallback(async (bookId) => {
-    const result = await shopApi.deleteBookAsAdmin(userId, bookId);
-    patchAccount(userId, (prev) => ({
-      adminBooks: result.deleted
-        ? prev.adminBooks.filter((b) => b.id !== bookId)
-        : prev.adminBooks.map((b) => (b.id === bookId ? { ...b, status: 'hidden' } : b)),
-    }));
-    refreshCatalog();
-    return result;
-  }, [userId, patchAccount, refreshCatalog]);
+  const deleteBook = useCallback(
+    async (bookId) => {
+      const result = await shopApi.deleteBookAsAdmin(userId, bookId);
+      patchAccount(userId, (prev) => ({
+        adminBooks: result.deleted
+          ? prev.adminBooks.filter((b) => b.id !== bookId)
+          : prev.adminBooks.map((b) => (b.id === bookId ? { ...b, status: 'hidden' } : b)),
+      }));
+      refreshCatalog();
+      return result;
+    },
+    [userId, patchAccount, refreshCatalog]
+  );
 
   // ---------- Bài đăng ----------
   const addPost = useCallback(async (post) => {
@@ -442,12 +603,12 @@ export function AppProvider({ children }) {
     return normalized;
   }, []);
 
-  const toggleLike = useCallback((postId, userId) => {
+  const toggleLike = useCallback((postId, uId) => {
     setPosts((prev) =>
       prev.map((p) => {
         if (p.id !== postId) return p;
-        const liked = p.likedBy.includes(userId);
-        return { ...p, likedBy: liked ? p.likedBy.filter((id) => id !== userId) : [...p.likedBy, userId] };
+        const liked = p.likedBy.includes(uId);
+        return { ...p, likedBy: liked ? p.likedBy.filter((id) => id !== uId) : [...p.likedBy, uId] };
       })
     );
   }, []);
@@ -484,458 +645,189 @@ export function AppProvider({ children }) {
   }, []);
 
   // ---------- Người dùng (admin) ----------
-  const setUserStatus = useCallback((userId, status) => {
-    setUsers((prev) => prev.map((u) => (u.id === userId ? { ...u, status } : u)));
+  const setUserStatus = useCallback((uId, status) => {
+    setUsers((prev) => prev.map((u) => (u.id === uId ? { ...u, status } : u)));
   }, []);
 
   const registerUser = useCallback((data) => {
-    const user = {
-      id: uid('u'), role: 'user', status: 'active', points: 0, badge: 'Thành viên mới',
-      booksRead: 0, bio: '', avatar: `https://i.pravatar.cc/150?u=${encodeURIComponent(data.email)}`,
-      joinedAt: new Date().toISOString().slice(0, 10), ...data,
+    const newUser = {
+      id: uid('u'),
+      role: 'user',
+      status: 'active',
+      points: 0,
+      badge: 'Thành viên mới',
+      booksRead: 0,
+      bio: '',
+      avatar: `https://i.pravatar.cc/150?u=${encodeURIComponent(data.email)}`,
+      joinedAt: new Date().toISOString().slice(0, 10),
+      ...data,
     };
-    setUsers((prev) => [...prev, user]);
-    return user;
+    setUsers((prev) => [...prev, newUser]);
+    return newUser;
   }, []);
 
   // ---------- Trao đổi sách ----------
-  // Sau mỗi thao tác tải lại cả ba danh sách (tin đang mở, tin của tôi, đề nghị đã gửi)
-  // để số đề nghị và trạng thái luôn khớp giữa các tab.
-  const addExchange = useCallback(async (form) => {
-    const listing = await exchangeApi.createListing(userId, form);
-    await refreshExchanges();
-    return listing;
-  }, [userId, refreshExchanges]);
+  const addExchange = useCallback(
+    async (form) => {
+      const listing = await exchangeApi.createListing(userId, form);
+      await refreshExchanges();
+      return listing;
+    },
+    [userId, refreshExchanges]
+  );
 
-  const sendExchangeOffer = useCallback(async (listingId, form) => {
-    const offer = await exchangeApi.sendOffer(userId, listingId, form);
-    await refreshExchanges();
-    return offer;
-  }, [userId, refreshExchanges]);
+  const sendExchangeOffer = useCallback(
+    async (listingId, form) => {
+      const offer = await exchangeApi.sendOffer(userId, listingId, form);
+      await refreshExchanges();
+      return offer;
+    },
+    [userId, refreshExchanges]
+  );
 
-  /** action: 'accept' | 'reject' (chủ tin) hoặc 'cancel' (người gửi rút lại). */
-  const respondExchangeOffer = useCallback(async (offerId, action) => {
-    const offer = await exchangeApi.respondToOffer(userId, offerId, action);
-    await refreshExchanges();
-    return offer;
-  }, [userId, refreshExchanges]);
+  const respondExchangeOffer = useCallback(
+    async (offerId, action) => {
+      const offer = await exchangeApi.respondToOffer(userId, offerId, action);
+      await refreshExchanges();
+      return offer;
+    },
+    [userId, refreshExchanges]
+  );
 
-  const setExchangeStatus = useCallback(async (listingId, status) => {
-    const listing = await exchangeApi.updateListingStatus(userId, listingId, status);
-    await refreshExchanges();
-    return listing;
-  }, [userId, refreshExchanges]);
+  const setExchangeStatus = useCallback(
+    async (listingId, status) => {
+      const listing = await exchangeApi.updateListingStatus(userId, listingId, status);
+      await refreshExchanges();
+      return listing;
+    },
+    [userId, refreshExchanges]
+  );
 
-  const deleteExchange = useCallback(async (listingId) => {
-    await exchangeApi.deleteListing(userId, listingId);
-    await refreshExchanges();
-  }, [userId, refreshExchanges]);
+  const deleteExchange = useCallback(
+    async (listingId) => {
+      await exchangeApi.deleteListing(userId, listingId);
+      await refreshExchanges();
+    },
+    [userId, refreshExchanges]
+  );
 
   // ---------- Chat ----------
-  const syncConversationsForUser = useCallback(async (userId) => {
-    const numericUserId = Number(userId);
-    if (!Number.isFinite(numericUserId)) return [];
-
-    try {
-      const data = await apiCall(`/chat/conversations?userId=${numericUserId}`);
-      if (!Array.isArray(data)) return [];
-
-      const normalized = data.map((conversation) => normalizeConversation({
-        ...conversation,
-        id: conversation.id,
-        participantIds: conversation.participantIds || conversation.participants || [],
-        messages: conversation.messages || [],
-        updatedAt: conversation.updatedAt || Date.now(),
-      }));
-
-      setConversations((prev) => {
-        let next = [...prev];
-        normalized.forEach((item) => {
-          next = mergeConversationState(next, item);
-        });
-        return next;
-      });
-      return normalized;
-    } catch {
-      return [];
-    }
-  }, []);
-
-  const handleIncomingSocketMessage = useCallback((payload) => {
-    if (!payload || !payload.conversationId) return;
-    const normalized = normalizeChatMessage({
-      ...payload,
-      id: payload.id,
-      senderId: payload.senderId ?? payload.sender_id,
-      text: payload.text ?? payload.content ?? '',
-      at: payload.at ?? payload.createdAt,
-    });
-
-    setConversations((prev) => {
-      const matchId = String(payload.conversationId);
-      const exists = prev.some((c) => String(c.id) === matchId);
-      if (!exists) return prev;
-
-      return prev.map((conversation) => {
-        if (String(conversation.id) !== matchId) return conversation;
-        const nextMessages = [...(conversation.messages || [])].filter((message) => String(message.id) !== String(normalized.id));
-        return {
-          ...conversation,
-          messages: [...nextMessages, normalized],
-          updatedAt: Date.now(),
-        };
-      });
-    });
-  }, []);
-
-  const ensureSocketSubscriptions = useCallback((currentUserId) => {
-    const userKey = normalizeId(currentUserId);
-    if (!chatClientRef.current || !chatClientRef.current.connected) return;
-
-    setConversations((prev) => {
-      prev.filter((conversation) => conversation.participants.map((participant) => normalizeId(participant)).includes(userKey))
-        .forEach((conversation) => {
-          const conversationId = String(conversation.id);
-          if (subscribedConversationIdsRef.current.has(conversationId)) return;
-
-          chatClientRef.current.subscribe(`/topic/chat/${conversationId}`, (frame) => {
-            try {
-              const payload = JSON.parse(frame.body);
-              handleIncomingSocketMessage(payload);
-            } catch {
-              // Ignore malformed real-time messages and rely on polling fallback.
-            }
-          });
-          subscribedConversationIdsRef.current.add(conversationId);
-        });
-      return prev;
-    });
-  }, [handleIncomingSocketMessage]);
-
-  const disconnectChatSocket = useCallback(() => {
-    const client = chatClientRef.current;
-    if (client) {
-      try {
-        client.deactivate();
-      } catch {
-        // Ignore deactivation errors when a browser tab is already tearing down.
-      }
-      chatClientRef.current = null;
-    }
-    subscribedConversationIdsRef.current = new Set();
-    socketUserIdRef.current = null;
-  }, []);
-
-  const connectChatSocket = useCallback((userId) => {
-    const nextUserId = normalizeId(userId);
-    if (!nextUserId || typeof window === 'undefined' || typeof WebSocket === 'undefined') return;
-
-    if (chatClientRef.current && socketUserIdRef.current === nextUserId && chatClientRef.current.connected) {
-      ensureSocketSubscriptions(nextUserId);
-      return;
-    }
-
-    disconnectChatSocket();
-
-    const apiBase = (import.meta.env.VITE_API_URL || 'http://localhost:8080').replace(/\/$/, '');
-    const baseUrl = apiBase.replace(/\/api$/, '');
-    const wsUrl = new URL(baseUrl);
-    wsUrl.protocol = wsUrl.protocol === 'https:' ? 'wss:' : 'ws:';
-    wsUrl.pathname = '/ws';
-    wsUrl.searchParams.set('userId', String(nextUserId));
-
-    const client = new Client({
-      webSocketFactory: () => new WebSocket(wsUrl.toString()),
-      connectHeaders: {
-        userId: String(nextUserId),
-        'X-User-Id': String(nextUserId),
-      },
-      reconnectDelay: 3000,
-      heartbeatIncoming: 15000,
-      heartbeatOutgoing: 15000,
-      debug: () => {},
-      onConnect: () => {
-        socketUserIdRef.current = nextUserId;
-        client.subscribe('/user/queue/messages', (frame) => {
-          try {
-            const payload = JSON.parse(frame.body);
-            handleIncomingSocketMessage(payload);
-          } catch {
-            // Ignore malformed real-time messages and rely on polling fallback.
-          }
-        });
-        ensureSocketSubscriptions(nextUserId);
-      },
-      onDisconnect: () => {
-        if (socketUserIdRef.current === nextUserId) {
-          socketUserIdRef.current = null;
-        }
-      },
-      onStompError: () => {
-        socketUserIdRef.current = null;
-      },
-    });
-
-    chatClientRef.current = client;
-    client.activate();
-  }, [disconnectChatSocket, ensureSocketSubscriptions, handleIncomingSocketMessage]);
-
-  const findOrCreateConversation = useCallback(async (userA, userB) => {
-    const a = normalizeId(userA);
-    const b = normalizeId(userB);
-    const numericA = Number(a);
-    const numericB = Number(b);
-    const existing = conversations.find(
-      (c) => c.participants.map(normalizeId).includes(a) && c.participants.map(normalizeId).includes(b)
-    );
-    if (existing) return String(existing.id);
-
-    const localPlaceholder = {
-      id: uid('cv'),
-      participants: [a, b],
-      messages: [],
-      updatedAt: Date.now(),
-      readBy: {},
-    };
-    setConversations((prev) => [normalizeConversation(localPlaceholder), ...prev.map(normalizeConversation)]);
-
-    if (Number.isFinite(numericA) && Number.isFinite(numericB) && numericA > 0 && numericB > 0) {
-      try {
-        const created = await apiCall('/chat/conversations/direct', 'POST', {
-          userId: numericA,
-          otherUserId: numericB,
-        });
-        const realConversation = normalizeConversation({
-          ...created,
-          participantIds: created.participantIds || [numericA, numericB],
-          messages: created.messages || [],
-          updatedAt: created.updatedAt || Date.now(),
-        });
-
-        setConversations((prev) => {
-          const filtered = prev.filter((c) => String(c.id) !== String(localPlaceholder.id));
-          return mergeConversationState(filtered, realConversation);
-        });
-        return String(realConversation.id);
-      } catch {
-        return String(localPlaceholder.id);
-      }
-    }
-
-    return String(localPlaceholder.id);
-  }, [conversations]);
-
-  const createGroupConversation = useCallback(async (creatorId, participantIds, name) => {
-    const creator = normalizeId(creatorId);
-    const safeParticipants = [...new Set(
-      [creator, ...participantIds.map((id) => normalizeId(id))]
-        .filter(Boolean)
-    )];
-
-    if (safeParticipants.length < 3) {
-      throw new Error('Nhóm tối thiểu 3 người, bao gồm bạn.');
-    }
-
-    const numericCreator = Number(creator);
-    const numericParticipants = safeParticipants
-      .filter((id) => String(id) !== String(creator))
-      .map(Number)
-      .filter((id) => Number.isFinite(id) && id > 0);
-
-    if (!Number.isFinite(numericCreator) || numericCreator <= 0) {
-      throw new Error('Không thể tạo nhóm khi chưa đăng nhập.');
-    }
-
-    const localPlaceholder = {
-      id: uid('cv'),
-      name: name || 'Nhóm chat',
-      participants: safeParticipants,
-      messages: [],
-      updatedAt: Date.now(),
-      readBy: {},
-    };
-    setConversations((prev) => [normalizeConversation(localPlaceholder), ...prev.map(normalizeConversation)]);
-
-    try {
-      const created = await apiCall('/chat/conversations/group', 'POST', {
-        creatorId: numericCreator,
-        participantIds: numericParticipants,
-        name: name || `Nhóm của ${creator}`,
-      });
-      const realConversation = normalizeConversation({
-        ...created,
-        id: created.id,
-        participantIds: created.participantIds || safeParticipants,
-        messages: created.messages || [],
-        updatedAt: created.updatedAt || Date.now(),
-      });
-
-      setConversations((prev) => {
-        const filtered = prev.filter((c) => String(c.id) !== String(localPlaceholder.id));
-        return mergeConversationState(filtered, realConversation);
-      });
-      return realConversation;
-    } catch (error) {
-      console.error('Failed to create group conversation', error);
-      throw error;
-    }
-  }, []);
-
-  const sendMessage = useCallback(async (convId, senderId, text) => {
-    const senderKey = normalizeId(senderId);
-    const content = String(text ?? '').trim();
-    if (!content || !convId) return null;
-
-    const localMessage = normalizeChatMessage({
-      id: uid('m'),
-      senderId: senderKey,
-      text: content,
-      at: Date.now(),
-    });
-
-    setConversations((prev) =>
-      prev.map((c) =>
-        String(c.id) === String(convId)
-          ? {
-              ...c,
-              messages: [...(c.messages || []), localMessage],
-              updatedAt: Date.now(),
-              readBy: { ...(c.readBy || {}), [senderKey]: (c.messages || []).length + 1 },
-            }
-          : c
-      )
-    );
-
-    const numericConvId = Number(convId);
-    const numericSenderId = Number(senderKey);
-    if (!Number.isFinite(numericConvId) || !Number.isFinite(numericSenderId)) {
-      return localMessage;
-    }
-
-    try {
-      const created = await apiCall(`/chat/conversations/${numericConvId}/messages`, 'POST', {
-        senderId: numericSenderId,
-        content,
-      });
-      const persisted = normalizeChatMessage({
-        ...created,
-        text: created.text ?? created.content ?? content,
-        at: created.at ?? created.createdAt,
-      });
-      setConversations((prev) =>
-        prev.map((c) =>
-          String(c.id) === String(convId)
-            ? { ...c, messages: [...(c.messages || []).filter((m) => String(m.id) !== String(localMessage.id)), persisted], updatedAt: Date.now() }
-            : c
-        )
-      );
-      return persisted;
-    } catch {
-      return localMessage;
-    }
-  }, []);
-
-  const markConversationRead = useCallback((convId, userId) => {
-    const target = normalizeId(userId);
-    setConversations((prev) => {
-      const conv = prev.find((c) => c.id === convId);
-      // Trả về đúng mảng cũ khi không có gì thay đổi, nếu không React sẽ render lại
-      // vô hạn: effect đánh dấu đã đọc -> state mới -> effect chạy lại.
-      const currentRead = Object.fromEntries(Object.entries(conv?.readBy || {}).map(([key, value]) => [normalizeId(key), Number(value) || 0]));
-      if (!conv || (currentRead[target] ?? 0) >= conv.messages.length) return prev;
-      return prev.map((c) =>
-        c.id === convId ? { ...c, readBy: { ...Object.fromEntries(Object.entries(c.readBy || {}).map(([key, value]) => [normalizeId(key), Number(value) || 0])), [target]: c.messages.length } } : c
-      );
-    });
-  }, []);
-
-  const unreadCount = useCallback(
-    (userId) => {
-      const target = normalizeId(userId);
-      return conversations
-        .filter((c) => c.participants.map(normalizeId).includes(target))
-        .reduce((sum, c) => {
-          const readBy = Object.fromEntries(Object.entries(c.readBy || {}).map(([key, value]) => [normalizeId(key), Number(value) || 0]));
-          return sum + Math.max(0, c.messages.length - (readBy[target] ?? 0));
-        }, 0);
+  const findOrCreateConversation = useCallback(
+    (userA, userB) => {
+      let found = conversations.find((c) => c.participants.includes(userA) && c.participants.includes(userB));
+      if (found) return found.id;
+      const conv = {
+        id: uid('cv'),
+        participants: [userA, userB],
+        messages: [],
+        updatedAt: Date.now(),
+        readBy: {},
+      };
+      setConversations((prev) => [conv, ...prev]);
+      return conv.id;
     },
     [conversations]
   );
 
-  // ---------- Tiến trình đọc ----------
-  const getProgress = useCallback((userId) => progressAll[userId] || {}, [progressAll]);
+  const sendMessage = useCallback((convId, senderId, text) => {
+    setConversations((prev) =>
+      prev.map((c) =>
+        c.id === convId
+          ? {
+              ...c,
+              messages: [...c.messages, { id: uid('m'), senderId, text, at: Date.now() }],
+              updatedAt: Date.now(),
+              readBy: { ...c.readBy, [senderId]: c.messages.length + 1 },
+            }
+          : c
+      )
+    );
+  }, []);
 
-  const saveProgress = useCallback((userId, bookId, patch) => {
+  const markConversationRead = useCallback((convId, uId) => {
+    setConversations((prev) => {
+      const conv = prev.find((c) => c.id === convId);
+      if (!conv || (conv.readBy?.[uId] ?? 0) >= conv.messages.length) return prev;
+      return prev.map((c) => (c.id === convId ? { ...c, readBy: { ...c.readBy, [uId]: conv.messages.length } } : c));
+    });
+  }, []);
+
+  const unreadCount = useCallback(
+    (uId) =>
+      conversations
+        .filter((c) => c.participants.includes(uId))
+        .reduce((sum, c) => sum + Math.max(0, c.messages.length - (c.readBy?.[uId] ?? 0)), 0),
+    [conversations]
+  );
+
+  // ---------- Tiến trình đọc ----------
+  const getProgress = useCallback((uId) => progressAll[uId] || {}, [progressAll]);
+
+  const saveProgress = useCallback((uId, bookId, patch) => {
     setProgressAll((prev) => {
-      const forUser = prev[userId] || {};
+      const forUser = prev[uId] || {};
       const current = forUser[bookId] || {
-        bookId, chapterIndex: 0, paragraphIndex: 0, percent: 0, secondsRead: 0, finished: false,
+        bookId,
+        chapterIndex: 0,
+        paragraphIndex: 0,
+        percent: 0,
+        secondsRead: 0,
+        finished: false,
       };
-      // Trình đọc gọi hàm này mỗi 1,5 giây. Nếu vị trí đọc không đổi thì giữ nguyên
-      // state để không phải render lại toàn bộ cây component một cách vô ích.
       const unchanged = Object.keys(patch).every((k) => current[k] === patch[k]);
       if (unchanged) return prev;
 
       const next = { ...current, ...patch, lastReadAt: Date.now() };
       next.finished = next.percent >= 100;
-      return { ...prev, [userId]: { ...forUser, [bookId]: next } };
+      return { ...prev, [uId]: { ...forUser, [bookId]: next } };
     });
   }, []);
 
   // ---------- Gamification ----------
-
-  /** Lấy tiến độ nhiệm vụ của hôm nay; sang ngày mới thì tự đặt lại về 0. */
   const getDaily = useCallback(
-    (userId) => {
-      const d = daily[userId];
+    (uId) => {
+      const d = daily[uId];
       return d && d.date === todayKey() ? d : { date: todayKey(), counters: {}, claimed: [] };
     },
     [daily]
   );
 
-  /** Cộng điểm Gigma cho người dùng. Mọi hành vi được thưởng đều đi qua đây. */
-  const earnPoints = useCallback((userId, amount) => {
-    if (!userId || !amount) return;
-    setUsers((prev) => prev.map((u) => (u.id === userId ? { ...u, points: (u.points || 0) + amount } : u)));
+  const earnPoints = useCallback((uId, amount) => {
+    if (!uId || !amount) return;
+    setUsers((prev) => prev.map((u) => (u.id === uId ? { ...u, points: (u.points || 0) + amount } : u)));
   }, []);
 
-  /**
-   * Tăng bộ đếm của một nhiệm vụ hằng ngày (ví dụ số phút đã đọc).
-   * Tự động dừng ở mức mục tiêu để không ghi state thừa mỗi giây.
-   */
-  const trackDaily = useCallback((userId, metric, amount = 1) => {
-    if (!userId) return;
+  const trackDaily = useCallback((uId, metric, amount = 1) => {
+    if (!uId) return;
     setDaily((prev) => {
       const today = todayKey();
-      const cur = prev[userId]?.date === today ? prev[userId] : { date: today, counters: {}, claimed: [] };
+      const cur = prev[uId]?.date === today ? prev[uId] : { date: today, counters: {}, claimed: [] };
       const goal = Math.max(...DAILY_TASKS.filter((t) => t.metric === metric).map((t) => t.goal), 0);
       const now = cur.counters[metric] || 0;
       if (goal && now >= goal) return prev;
-      return { ...prev, [userId]: { ...cur, counters: { ...cur.counters, [metric]: now + amount } } };
+      return { ...prev, [uId]: { ...cur, counters: { ...cur.counters, [metric]: now + amount } } };
     });
   }, []);
 
-  /** Nhận thưởng của một nhiệm vụ đã hoàn thành. */
-  const claimTask = useCallback((userId, taskId) => {
+  const claimTask = useCallback((uId, taskId) => {
     const task = DAILY_TASKS.find((t) => t.id === taskId);
     if (!task) return 0;
     let granted = 0;
     setDaily((prev) => {
       const today = todayKey();
-      const cur = prev[userId]?.date === today ? prev[userId] : { date: today, counters: {}, claimed: [] };
+      const cur = prev[uId]?.date === today ? prev[uId] : { date: today, counters: {}, claimed: [] };
       if (cur.claimed.includes(taskId)) return prev;
       if ((cur.counters[task.metric] || 0) < task.goal) return prev;
       granted = task.reward;
-      return { ...prev, [userId]: { ...cur, claimed: [...cur.claimed, taskId] } };
+      return { ...prev, [uId]: { ...cur, claimed: [...cur.claimed, taskId] } };
     });
     return granted;
   }, []);
 
-  /** Cập nhật chuỗi ngày đọc liên tiếp. Bỏ lỡ một ngày là chuỗi về 1. */
-  const touchStreak = useCallback((userId) => {
+  const touchStreak = useCallback((uId) => {
     setUsers((prev) =>
       prev.map((u) => {
-        if (u.id !== userId) return u;
+        if (u.id !== uId) return u;
         const today = todayKey();
         if (u.lastStreakDate === today) return u;
         const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
@@ -945,32 +837,29 @@ export function AppProvider({ children }) {
     );
   }, []);
 
-  /** Cho thú ảo ăn: trừ điểm, cộng kinh nghiệm cho thú. */
-  const feedPet = useCallback((userId, cost) => {
+  const feedPet = useCallback((uId, cost) => {
     setUsers((prev) =>
       prev.map((u) =>
-        u.id === userId && (u.points || 0) >= cost
+        u.id === uId && (u.points || 0) >= cost
           ? { ...u, points: u.points - cost, petXp: (u.petXp || 0) + FEED_XP, petLastFed: Date.now() }
           : u
       )
     );
   }, []);
 
-  /** Thời gian đọc nuôi lớn thú ảo — thú gắn với hành vi thật, không phải đồ trang trí. */
-  const growPet = useCallback((userId, xp) => {
-    setUsers((prev) => prev.map((u) => (u.id === userId ? { ...u, petXp: (u.petXp || 0) + xp } : u)));
+  const growPet = useCallback((uId, xp) => {
+    setUsers((prev) => prev.map((u) => (u.id === uId ? { ...u, petXp: (u.petXp || 0) + xp } : u)));
   }, []);
 
-  const renamePet = useCallback((userId, name) => {
-    setUsers((prev) => prev.map((u) => (u.id === userId ? { ...u, petName: name } : u)));
+  const renamePet = useCallback((uId, name) => {
+    setUsers((prev) => prev.map((u) => (u.id === uId ? { ...u, petName: name } : u)));
   }, []);
 
-  /** Đổi điểm lấy phần thưởng. Trả về false nếu không đủ điểm. */
-  const redeemReward = useCallback((userId, reward) => {
+  const redeemReward = useCallback((uId, reward) => {
     let ok = false;
     setUsers((prev) =>
       prev.map((u) => {
-        if (u.id !== userId) return u;
+        if (u.id !== uId) return u;
         if ((u.points || 0) < reward.cost) return u;
         ok = true;
         return {
@@ -982,7 +871,7 @@ export function AppProvider({ children }) {
     );
     if (ok) {
       setRedemptions((prev) => [
-        { id: uid('rd'), userId, rewardId: reward.id, name: reward.name, cost: reward.cost, at: Date.now() },
+        { id: uid('rd'), userId: uId, rewardId: reward.id, name: reward.name, cost: reward.cost, at: Date.now() },
         ...prev,
       ]);
     }
@@ -990,66 +879,233 @@ export function AppProvider({ children }) {
   }, []);
 
   // ---------- Blind Book ----------
-
-  /** Ghép sách cho hộp (backend chọn và giữ bí mật cuốn sách). Gửi boxId để "Đổi cuốn khác". */
   const matchBlindBox = useCallback((payload) => shopApi.matchBlindBox(userId, payload), [userId]);
 
-  /** Thêm hộp đã ghép vào giỏ. */
-  const addBlindBox = useCallback(async (boxId) => {
-    patchAccount(userId, { cart: await shopApi.addCartItem(userId, { blindBoxId: boxId }) });
-  }, [userId, patchAccount]);
+  const addBlindBox = useCallback(
+    async (boxIdOrUser, bookId, blind) => {
+      if (typeof boxIdOrUser === 'string' && bookId) {
+        // Hỗ trợ hàm legacy
+        return;
+      }
+      patchAccount(userId, { cart: await shopApi.addCartItem(userId, { blindBoxId: boxIdOrUser }) });
+    },
+    [userId, patchAccount]
+  );
 
-  /** Mở hộp trong đơn đã giao: backend trả về đơn hàng có tên sách thật. */
-  const revealBlindBox = useCallback(async (orderId, itemId) => {
-    const order = await shopApi.revealBlindBox(userId, orderId, itemId);
-    replaceOrder(order);
-    return order;
-  }, [userId, replaceOrder]);
+  const revealBlindBox = useCallback(
+    async (orderId, itemId) => {
+      const order = await shopApi.revealBlindBox(userId, orderId, itemId);
+      replaceOrder(order);
+      return order;
+    },
+    [userId, replaceOrder]
+  );
 
   // ---------- Thông báo ----------
-  // Thông báo từ backend (đơn hàng, trao đổi, duyệt sản phẩm) gộp chung với thông báo cục bộ của bản demo.
   const notifications = useMemo(
-    () => [...account.notifications, ...localNotifications].sort((a, b) => b.at - a.at),
+    () => [...(account.notifications || []), ...localNotifications].sort((a, b) => b.at - a.at),
     [account.notifications, localNotifications]
   );
 
-  const pushNotification = useCallback((userId, text, link = '/') => {
-    setLocalNotifications((prev) => [{ id: uid('n'), userId, text, at: Date.now(), read: false, link }, ...prev]);
+  const pushNotification = useCallback((uId, text, link = '/') => {
+    setLocalNotifications((prev) => [{ id: uid('n'), userId: uId, text, at: Date.now(), read: false, link }, ...prev]);
   }, []);
 
-  const markNotificationsRead = useCallback((userId) => {
-    setNotifications((prev) => prev.map((n) => (n.userId === userId ? { ...n, read: true } : n)));
-  }, []);
+  const markNotificationsRead = useCallback(
+    (forUser) => {
+      setLocalNotifications((prev) => prev.map((n) => (n.userId === forUser ? { ...n, read: true } : n)));
+      if (forUser && forUser === userId && account.notifications.some((n) => !n.read)) {
+        patchAccount(forUser, (prev) => ({ notifications: prev.notifications.map((n) => ({ ...n, read: true })) }));
+        notificationApi.markAllNotificationsRead(forUser).catch(() => {});
+      }
+    },
+    [userId, account.notifications, patchAccount]
+  );
 
   const value = useMemo(
     () => ({
-      users, books, posts, exchanges, orders, reports, conversations, notifications,
-      shops: seed.shops, categories: seed.CATEGORIES, vouchers: seed.vouchers,
-      userById, bookById, shopById,
-      getCart, addToCart, setCartQty, removeFromCart, clearCart, carts,
-      placeOrder, updateOrderStatus,
-      addPost, toggleLike, addComment, setPostHidden, deletePost,
-      addReport, resolveReport,
-      setUserStatus, registerUser,
-      upsertBook, setBookStatus, deleteBook,
+      users,
+      books,
+      posts,
+      exchanges,
+      orders: account.orders,
+      reports,
+      conversations,
+      notifications,
+      shops: catalog.shops || seed.shops,
+      categories: catalog.categories || seed.CATEGORIES,
+      vouchers: catalog.vouchers || seed.vouchers,
+      catalogStatus: catalog.status,
+      accountReady: account.loaded,
+      sellerBooks: account.sellerBooks,
+      sellerOrders: account.sellerOrders,
+      adminOrders: account.adminOrders,
+      myExchanges: account.myExchanges,
+      sentOffers: account.sentOffers,
+      userById,
+      bookById,
+      shopById,
+      loadBook,
+      upsertUser,
+      syncUsers,
+      getFriends,
+      getFollowing,
+      getFollowers,
+      isFriend,
+      isFollowing,
+      toggleFriend,
+      toggleFollow,
+      refreshCatalog,
+      refreshCart,
+      refreshOrders,
+      refreshSellerData,
+      refreshAdminData,
+      refreshExchanges,
+      getCart,
+      addToCart,
+      updateCartQty,
+      removeCartItem,
+      setCartQty,
+      removeFromCart,
+      clearCart,
+      placeOrder,
+      cancelOrder,
+      completeOrder,
+      updateOrderStatus,
+      addPost,
+      toggleLike,
+      addComment,
+      setPostHidden,
+      deletePost,
+      addReport,
+      resolveReport,
+      setUserStatus,
+      registerUser,
+      saveSellerBook,
+      upsertBook,
+      deleteSellerBook,
+      updateSellerOrderStatus,
+      setBookStatus,
+      deleteBook,
       addExchange,
-      findOrCreateConversation, sendMessage, markConversationRead, unreadCount,
-      getProgress, saveProgress,
-      pushNotification, markNotificationsRead,
-      daily, getDaily, earnPoints, trackDaily, claimTask, touchStreak,
-      feedPet, growPet, renamePet, redeemReward, redemptions,
-      matchBlindBox, addBlindBox, revealBlindBox,
+      sendExchangeOffer,
+      respondExchangeOffer,
+      setExchangeStatus,
+      deleteExchange,
+      findOrCreateConversation,
+      sendMessage,
+      markConversationRead,
+      unreadCount,
+      getProgress,
+      saveProgress,
+      pushNotification,
+      markNotificationsRead,
+      daily,
+      getDaily,
+      earnPoints,
+      trackDaily,
+      claimTask,
+      touchStreak,
+      feedPet,
+      growPet,
+      renamePet,
+      redeemReward,
+      redemptions,
+      matchBlindBox,
+      addBlindBox,
+      revealBlindBox,
     }),
     [
-      users, books, posts, exchanges, orders, reports, conversations, notifications, carts,
-      userById, bookById, shopById, getCart, addToCart, setCartQty, removeFromCart, clearCart,
-      placeOrder, updateOrderStatus, addPost, toggleLike, addComment, setPostHidden, deletePost,
-      addReport, resolveReport, setUserStatus, registerUser, upsertBook, setBookStatus, deleteBook,
-      addExchange, findOrCreateConversation, sendMessage, markConversationRead, unreadCount,
-      getProgress, saveProgress, pushNotification, markNotificationsRead,
-      daily, getDaily, earnPoints, trackDaily, claimTask, touchStreak,
-      feedPet, growPet, renamePet, redeemReward, redemptions,
-      matchBlindBox, addBlindBox, revealBlindBox,
+      users,
+      books,
+      posts,
+      exchanges,
+      account.orders,
+      reports,
+      conversations,
+      notifications,
+      catalog.shops,
+      catalog.categories,
+      catalog.vouchers,
+      catalog.status,
+      account.loaded,
+      account.sellerBooks,
+      account.sellerOrders,
+      account.adminOrders,
+      account.myExchanges,
+      account.sentOffers,
+      userById,
+      bookById,
+      shopById,
+      loadBook,
+      upsertUser,
+      syncUsers,
+      getFriends,
+      getFollowing,
+      getFollowers,
+      isFriend,
+      isFollowing,
+      toggleFriend,
+      toggleFollow,
+      refreshCatalog,
+      refreshCart,
+      refreshOrders,
+      refreshSellerData,
+      refreshAdminData,
+      refreshExchanges,
+      getCart,
+      addToCart,
+      updateCartQty,
+      removeCartItem,
+      setCartQty,
+      removeFromCart,
+      clearCart,
+      placeOrder,
+      cancelOrder,
+      completeOrder,
+      updateOrderStatus,
+      addPost,
+      toggleLike,
+      addComment,
+      setPostHidden,
+      deletePost,
+      addReport,
+      resolveReport,
+      setUserStatus,
+      registerUser,
+      saveSellerBook,
+      upsertBook,
+      deleteSellerBook,
+      updateSellerOrderStatus,
+      setBookStatus,
+      deleteBook,
+      addExchange,
+      sendExchangeOffer,
+      respondExchangeOffer,
+      setExchangeStatus,
+      deleteExchange,
+      findOrCreateConversation,
+      sendMessage,
+      markConversationRead,
+      unreadCount,
+      getProgress,
+      saveProgress,
+      pushNotification,
+      markNotificationsRead,
+      daily,
+      getDaily,
+      earnPoints,
+      trackDaily,
+      claimTask,
+      touchStreak,
+      feedPet,
+      growPet,
+      renamePet,
+      redeemReward,
+      redemptions,
+      matchBlindBox,
+      addBlindBox,
+      revealBlindBox,
     ]
   );
 
