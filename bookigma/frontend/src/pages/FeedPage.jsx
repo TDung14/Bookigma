@@ -12,7 +12,7 @@ import { ProgressBar } from '../components/common/ui';
 
 const LEFT_MENU = [
   { icon: Users, label: 'Nhóm đọc sách', color: '#3b82f6', to: '/' },
-  { icon: UserCheck, label: 'Bạn bè', color: '#10b981', to: '/chat' },
+  { icon: UserCheck, label: 'Bạn bè', color: '#10b981', to: '/friends' },
   { icon: Bookmark, label: 'Đã lưu', color: '#8b5cf6', to: '/library' },
   { icon: BookOpen, label: 'Tủ sách cá nhân', color: '#ef4444', to: '/library' },
   { icon: Zap, label: 'Nhiệm vụ & phần thưởng', color: '#f59e0b', to: '/rewards' },

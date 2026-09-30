@@ -4,8 +4,10 @@ import com.bookigma.bookigma.dto.AuthRequest;
 import com.bookigma.bookigma.dto.UserProfileDto;
 import com.bookigma.bookigma.service.UserService;
 import jakarta.validation.Valid;
+import org.springframework.context.support.DefaultMessageSourceResolvable;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.Map;
@@ -39,5 +41,15 @@ public class AuthController {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
                     .body(Map.of("message", ex.getMessage()));
         }
+    }
+
+    @ExceptionHandler(MethodArgumentNotValidException.class)
+    public ResponseEntity<?> handleValidationException(MethodArgumentNotValidException ex) {
+        String message = ex.getBindingResult().getFieldErrors().stream()
+                .findFirst()
+                .map(DefaultMessageSourceResolvable::getDefaultMessage)
+                .orElse("Dữ liệu không hợp lệ.");
+
+        return ResponseEntity.badRequest().body(Map.of("message", message));
     }
 }

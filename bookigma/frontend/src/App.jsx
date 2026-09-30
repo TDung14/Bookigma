@@ -25,6 +25,7 @@ import RecommendationPage from './pages/RecommendationPage';
 import RewardsPage from './pages/RewardsPage';
 import BlindBookPage from './pages/BlindBookPage';
 import LeaderboardPage from './pages/LeaderboardPage';
+import FriendsPage from './pages/FriendsPage';
 import ChatPage from './pages/ChatPage';
 import ProfilePage from './pages/ProfilePage';
 import LoginPage from './pages/auth/LoginPage';
@@ -77,6 +78,7 @@ function Shell() {
         <Route path="/leaderboard" element={<LeaderboardPage />} />
         <Route path="/recommend" element={<RecommendationPage />} />
         <Route path="/blind-book" element={<BlindBookPage />} />
+        <Route path="/friends" element={<RequireAuth><FriendsPage /></RequireAuth>} />
 
         <Route path="/cart" element={<RequireAuth><CartPage /></RequireAuth>} />
         <Route path="/checkout" element={<RequireAuth><CheckoutPage /></RequireAuth>} />

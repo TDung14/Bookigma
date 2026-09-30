@@ -1,3 +1,6 @@
+DROP DATABASE IF EXISTS `Bookigma`;
+
+
 -- 1. Tạo database và chọn database làm việc
 CREATE DATABASE IF NOT EXISTS Bookigma CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 USE Bookigma;
@@ -16,18 +19,34 @@ CREATE TABLE subscription_plans (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE TABLE users (
-    user_id BIGINT AUTO_INCREMENT PRIMARY KEY,
-    username VARCHAR(50) NOT NULL UNIQUE,
-    email VARCHAR(100) NOT NULL UNIQUE,
-    password_hash VARCHAR(255) NOT NULL,
-    full_name VARCHAR(100),
-    avatar_url VARCHAR(255),
-    bio TEXT,
-    role ENUM('USER', 'MODERATOR', 'ADMIN') DEFAULT 'USER',
-    is_active BOOLEAN DEFAULT TRUE,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
+CREATE TABLE `users` (
+    `user_id` BIGINT NOT NULL AUTO_INCREMENT,
+    `username` VARCHAR(50) NOT NULL,
+    `email` VARCHAR(100) NOT NULL,
+    `password_hash` VARCHAR(255) NOT NULL,
+    `full_name` VARCHAR(100) NULL,
+    `avatar_url` VARCHAR(255) NULL,
+    `bio` TEXT NULL,
+
+    `role` ENUM('USER', 'MODERATOR', 'ADMIN')
+        NOT NULL DEFAULT 'USER',
+
+    `is_active` BOOLEAN NOT NULL DEFAULT TRUE,
+
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    
+    PRIMARY KEY (`user_id`),
+
+    UNIQUE KEY `uk_users_username` (`username`),
+    UNIQUE KEY `uk_users_email` (`email`),
+
+    KEY `idx_users_role` (`role`),
+    KEY `idx_users_active` (`is_active`)
+
+) ENGINE=InnoDB
+  DEFAULT CHARSET=utf8mb4
+  COLLATE=utf8mb4_unicode_ci;
+
 
 CREATE TABLE user_subscriptions (
     sub_id BIGINT AUTO_INCREMENT PRIMARY KEY,
@@ -149,21 +168,54 @@ CREATE TABLE club_members (
 -- 5. BÀI ĐĂNG, TƯƠNG TÁC & STORY
 -- ========================================================
 
-CREATE TABLE posts (
-    post_id BIGINT AUTO_INCREMENT PRIMARY KEY,
-    user_id BIGINT NOT NULL,
-    page_id BIGINT DEFAULT NULL, -- Đăng dưới danh nghĩa Page nếu có
-    club_id BIGINT DEFAULT NULL, -- Đăng trong nhóm nếu có
-    book_id BIGINT DEFAULT NULL, -- Gắn thẻ sách liên quan
-    content TEXT NOT NULL,
-    media_url VARCHAR(255),
-    visibility ENUM('PUBLIC', 'FRIENDS', 'CLUB_ONLY') DEFAULT 'PUBLIC',
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE,
-    FOREIGN KEY (page_id) REFERENCES pages(page_id) ON DELETE CASCADE,
-FOREIGN KEY (club_id) REFERENCES book_clubs(club_id) ON DELETE CASCADE,
-    FOREIGN KEY (book_id) REFERENCES books(book_id) ON DELETE SET NULL
-);
+CREATE TABLE `posts` (
+    `post_id` BIGINT NOT NULL AUTO_INCREMENT,
+    `user_id` BIGINT NOT NULL,
+    `page_id` BIGINT NULL,
+    `club_id` BIGINT NULL,
+    `book_id` BIGINT NULL,
+    `content` TEXT NOT NULL,
+    `media_url` VARCHAR(255) NULL,
+    `visibility` ENUM('PUBLIC', 'FRIENDS', 'CLUB_ONLY') NOT NULL DEFAULT 'PUBLIC',
+    `created_at` DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+
+    PRIMARY KEY (`post_id`),
+
+    KEY `idx_posts_user_id` (`user_id`),
+    KEY `idx_posts_page_id` (`page_id`),
+    KEY `idx_posts_club_id` (`club_id`),
+    KEY `idx_posts_book_id` (`book_id`),
+    KEY `idx_posts_created_at` (`created_at`),
+    KEY `idx_posts_visibility` (`visibility`),
+
+    CONSTRAINT `fk_posts_user`
+        FOREIGN KEY (`user_id`)
+        REFERENCES `users` (`user_id`)
+        ON DELETE CASCADE
+        ON UPDATE CASCADE,
+
+    CONSTRAINT `fk_posts_page`
+        FOREIGN KEY (`page_id`)
+        REFERENCES `pages` (`page_id`)
+        ON DELETE CASCADE
+        ON UPDATE CASCADE,
+
+    CONSTRAINT `fk_posts_club`
+        FOREIGN KEY (`club_id`)
+        REFERENCES `book_clubs` (`club_id`)
+        ON DELETE CASCADE
+        ON UPDATE CASCADE,
+
+    CONSTRAINT `fk_posts_book`
+        FOREIGN KEY (`book_id`)
+        REFERENCES `books` (`book_id`)
+        ON DELETE SET NULL
+        ON UPDATE CASCADE
+
+) ENGINE=InnoDB
+  DEFAULT CHARSET=utf8mb4
+  COLLATE=utf8mb4_unicode_ci;
+
 
 CREATE TABLE post_reactions (
     reaction_id BIGINT AUTO_INCREMENT PRIMARY KEY,
@@ -206,6 +258,31 @@ CREATE TABLE story_views (
     FOREIGN KEY (story_id) REFERENCES stories(story_id) ON DELETE CASCADE,
     FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE
 );
+
+
+CREATE TABLE `notifications` (
+    `id` BIGINT NOT NULL AUTO_INCREMENT,
+    `user_id` BIGINT NOT NULL,
+    `message` VARCHAR(255) NOT NULL,
+    `is_read` BOOLEAN NOT NULL DEFAULT FALSE,
+    `created_at` DATETIME(6) NULL,
+
+    PRIMARY KEY (`id`),
+    KEY `idx_notifications_user_id` (`user_id`),
+    KEY `idx_notifications_created_at` (`created_at`),
+
+    CONSTRAINT `fk_notifications_user`
+        FOREIGN KEY (`user_id`)
+        REFERENCES `users` (`user_id`)
+        ON DELETE CASCADE
+        ON UPDATE CASCADE
+) ENGINE=InnoDB
+  DEFAULT CHARSET=utf8mb4
+  COLLATE=utf8mb4_unicode_ci;
+
+SET FOREIGN_KEY_CHECKS = 1;
+
+
 
 -- ========================================================
 -- 6. MUA BÁN & TRAO ĐỔI SÁCH
@@ -295,3 +372,5 @@ CREATE INDEX idx_posts_club ON posts(club_id);
 CREATE INDEX idx_posts_page ON posts(page_id);
 CREATE INDEX idx_stories_active ON stories(expires_at);
 CREATE INDEX idx_user_rankings ON user_points(monthly_points DESC, total_points DESC);
+
+select * from users;

@@ -10,6 +10,9 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.List;
+import java.util.stream.Collectors;
+
 @Service
 public class UserServiceImpl implements UserService {
 
@@ -28,10 +31,21 @@ public class UserServiceImpl implements UserService {
     @Override
     @Transactional
     public UserProfileDto register(AuthRequest request) {
-        String username = request.getUsername().trim();
+        if (request == null) {
+            throw new IllegalArgumentException("Dữ liệu đăng ký không hợp lệ!");
+        }
+
+        String username = request.getUsername() == null ? "" : request.getUsername().trim().toLowerCase();
+        if (username.isBlank()) {
+            throw new IllegalArgumentException("Tên đăng nhập không được để trống!");
+        }
 
         if (request.getEmail() == null || request.getEmail().isBlank()) {
             throw new IllegalArgumentException("Email không được để trống!");
+        }
+
+        if (request.getPassword() == null || request.getPassword().isBlank()) {
+            throw new IllegalArgumentException("Mật khẩu không được để trống!");
         }
 
         String email = request.getEmail().trim().toLowerCase();
@@ -58,14 +72,24 @@ public class UserServiceImpl implements UserService {
         return toDto(savedUser);
     }
 
-    // Đăng nhập
     @Override
     @Transactional
     public UserProfileDto login(AuthRequest request) {
-        String username = request.getUsername().trim();
+        if (request == null) {
+            throw new IllegalArgumentException("Dữ liệu đăng nhập không hợp lệ!");
+        }
+
+        String username = request.getUsername() == null ? "" : request.getUsername().trim().toLowerCase();
+        if (username.isBlank()) {
+            throw new IllegalArgumentException("Tên đăng nhập không được để trống!");
+        }
+
+        if (request.getPassword() == null || request.getPassword().isBlank()) {
+            throw new IllegalArgumentException("Mật khẩu không được để trống!");
+        }
 
         User user = userRepository.findByUsername(username)
-                .or(() -> userRepository.findByEmail(username.toLowerCase()))
+                .or(() -> userRepository.findByEmail(username))
                 .orElseThrow(() ->
                         new IllegalArgumentException(
                                 "Sai tên đăng nhập/email hoặc mật khẩu!"
@@ -90,6 +114,16 @@ public class UserServiceImpl implements UserService {
         }
 
         return toDto(user);
+    }
+
+    // Lấy danh sách người dùng đang hoạt động
+    @Override
+    @Transactional(readOnly = true)
+    public List<UserProfileDto> getAllUsers() {
+        return userRepository.findAll().stream()
+                .filter(user -> Boolean.TRUE.equals(user.getActive()))
+                .map(this::toDto)
+                .collect(Collectors.toList());
     }
 
     // Lấy thông tin hồ sơ

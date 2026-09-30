@@ -18,6 +18,10 @@ export function AppProvider({ children }) {
   const [orders, setOrders] = useState(() => load('orders', seed.orders));
   const [reports, setReports] = useState(() => load('reports', seed.reports));
   const [conversations, setConversations] = useState(() => load('conversations', seed.conversations));
+  const [social, setSocial] = useState(() => load('social', {
+    friends: { u1: ['u2', 'u3'], u2: ['u1'], u3: ['u1'], u5: ['u2'] },
+    followings: { u1: ['u3', 'u5'], u2: ['u3'], u3: ['u5'], u5: ['u1'] },
+  }));
   const [progressAll, setProgressAll] = useState(() => load('progress', seed.readingProgress));
   const [carts, setCarts] = useState(() => load('carts', {}));
   const [notifications, setNotifications] = useState(() => load('notifications', seed.notifications));
@@ -55,6 +59,7 @@ export function AppProvider({ children }) {
   useEffect(() => save('orders', orders), [orders]);
   useEffect(() => save('reports', reports), [reports]);
   useEffect(() => save('conversations', conversations), [conversations]);
+  useEffect(() => save('social', social), [social]);
   useEffect(() => save('progress', progressAll), [progressAll]);
   useEffect(() => save('carts', carts), [carts]);
   useEffect(() => save('notifications', notifications), [notifications]);
@@ -62,9 +67,112 @@ export function AppProvider({ children }) {
   useEffect(() => save('redemptions', redemptions), [redemptions]);
 
   // ---------- Tra cứu ----------
-  const userById = useCallback((id) => users.find((u) => u.id === id), [users]);
+  const userById = useCallback((id) => users.find((u) => String(u.id) === String(id)), [users]);
   const bookById = useCallback((id) => books.find((b) => b.id === id), [books]);
   const shopById = useCallback((id) => seed.shops.find((s) => s.id === id), []);
+  const upsertUser = useCallback((userData) => {
+    if (!userData || !userData.id) return null;
+    const nextUser = {
+      ...userData,
+      id: String(userData.id),
+      name: userData.name || userData.fullName || userData.username || 'Người dùng',
+      avatar: userData.avatar || userData.avatarUrl || 'https://i.pravatar.cc/150?img=12',
+      role: userData.role || 'user',
+      status: userData.status || 'active',
+      badge: userData.badge || 'Thành viên',
+      points: userData.points || 0,
+      booksRead: userData.booksRead || 0,
+      joinedAt: userData.joinedAt || new Date().toISOString().slice(0, 10),
+    };
+    setUsers((prev) => {
+      const exists = prev.some((u) => String(u.id) === String(nextUser.id));
+      if (exists) {
+        return prev.map((u) => (String(u.id) === String(nextUser.id) ? { ...u, ...nextUser } : u));
+      }
+      return [nextUser, ...prev];
+    });
+    return nextUser;
+  }, []);
+
+  const syncUsers = useCallback(async () => {
+    try {
+      const data = await apiCall('/users');
+      if (!Array.isArray(data)) return [];
+      const normalized = data
+        .filter((u) => u && Number.isFinite(Number(u.id)))
+        .map((u) => ({
+          ...u,
+          id: String(u.id),
+          name: u.fullName || u.username || 'Người dùng',
+          avatar: u.avatarUrl || `https://i.pravatar.cc/150?u=${encodeURIComponent(u.email || u.username || u.id)}`,
+          role: (u.role || 'user').toLowerCase(),
+          status: u.active === false ? 'suspended' : 'active',
+          badge: 'Thành viên',
+          points: 0,
+          booksRead: 0,
+          joinedAt: u.createdAt || new Date().toISOString(),
+        }));
+
+      setUsers((prev) => {
+        const existing = new Map(prev.map((u) => [String(u.id), u]));
+        normalized.forEach((u) => existing.set(String(u.id), { ...existing.get(String(u.id)), ...u }));
+        return Array.from(existing.values());
+      });
+      return normalized;
+    } catch {
+      return [];
+    }
+  }, []);
+  const getFriends = useCallback((userId) => social.friends?.[userId] || [], [social]);
+  const getFollowing = useCallback((userId) => social.followings?.[userId] || [], [social]);
+  const getFollowers = useCallback(
+    (userId) => Object.entries(social.followings || {}).filter(([, ids]) => ids.includes(userId)).map(([id]) => id),
+    [social]
+  );
+  const isFriend = useCallback((userId, otherId) => !!userId && !!otherId && userId !== otherId && getFriends(userId).includes(otherId), [getFriends]);
+  const isFollowing = useCallback((userId, otherId) => !!userId && !!otherId && userId !== otherId && getFollowing(userId).includes(otherId), [getFollowing]);
+
+  const toggleFriend = useCallback((userId, otherId) => {
+    if (!userId || !otherId || userId === otherId) return false;
+    let nextValue = false;
+    setSocial((prev) => {
+      const nextFriends = { ...(prev.friends || {}) };
+      const mine = new Set(nextFriends[userId] || []);
+      const theirs = new Set(nextFriends[otherId] || []);
+      if (mine.has(otherId)) {
+        mine.delete(otherId);
+        theirs.delete(userId);
+        nextValue = false;
+      } else {
+        mine.add(otherId);
+        theirs.add(userId);
+        nextValue = true;
+      }
+      nextFriends[userId] = Array.from(mine);
+      nextFriends[otherId] = Array.from(theirs);
+      return { ...prev, friends: nextFriends };
+    });
+    return nextValue;
+  }, []);
+
+  const toggleFollow = useCallback((userId, otherId) => {
+    if (!userId || !otherId || userId === otherId) return false;
+    let nextValue = false;
+    setSocial((prev) => {
+      const nextFollowing = { ...(prev.followings || {}) };
+      const mine = new Set(nextFollowing[userId] || []);
+      if (mine.has(otherId)) {
+        mine.delete(otherId);
+        nextValue = false;
+      } else {
+        mine.add(otherId);
+        nextValue = true;
+      }
+      nextFollowing[userId] = Array.from(mine);
+      return { ...prev, followings: nextFollowing };
+    });
+    return nextValue;
+  }, []);
 
   // ---------- Giỏ hàng ----------
   const getCart = useCallback((userId) => carts[userId] || [], [carts]);
@@ -444,11 +552,16 @@ export function AppProvider({ children }) {
     setNotifications((prev) => prev.map((n) => (n.userId === userId ? { ...n, read: true } : n)));
   }, []);
 
+  useEffect(() => {
+    syncUsers();
+  }, [syncUsers]);
+
   const value = useMemo(
     () => ({
       users, books, posts, exchanges, orders, reports, conversations, notifications,
       shops: seed.shops, categories: seed.CATEGORIES, vouchers: seed.vouchers,
-      userById, bookById, shopById,
+      userById, bookById, shopById, upsertUser, syncUsers,
+      getFriends, getFollowing, getFollowers, isFriend, isFollowing, toggleFriend, toggleFollow,
       getCart, addToCart, setCartQty, removeFromCart, clearCart, carts,
       placeOrder, updateOrderStatus,
       addPost, toggleLike, addComment, setPostHidden, deletePost,
@@ -464,8 +577,9 @@ export function AppProvider({ children }) {
       addBlindBox, revealBlindBox,
     }),
     [
-      users, books, posts, exchanges, orders, reports, conversations, notifications, carts,
-      userById, bookById, shopById, getCart, addToCart, setCartQty, removeFromCart, clearCart,
+      users, books, posts, exchanges, orders, reports, conversations, notifications, carts, social,
+      userById, bookById, shopById, upsertUser, syncUsers, getFriends, getFollowing, getFollowers, isFriend, isFollowing, toggleFriend, toggleFollow,
+      getCart, addToCart, setCartQty, removeFromCart, clearCart,
       placeOrder, updateOrderStatus, addPost, toggleLike, addComment, setPostHidden, deletePost,
       addReport, resolveReport, setUserStatus, registerUser, upsertBook, setBookStatus, deleteBook,
       addExchange, findOrCreateConversation, sendMessage, markConversationRead, unreadCount,

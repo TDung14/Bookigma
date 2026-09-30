@@ -127,6 +127,21 @@ export default function LoginPage() {
 
       setError('');
 
+      if (!regFullName.trim()) {
+        setError('Vui lòng nhập họ tên.');
+        return;
+      }
+
+      if (!regUsername.trim()) {
+        setError('Vui lòng nhập tên đăng nhập.');
+        return;
+      }
+
+      if (!regEmail.trim()) {
+        setError('Vui lòng nhập email.');
+        return;
+      }
+
       if (
         regPassword.length < 6
       ) {

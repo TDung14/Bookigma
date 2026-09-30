@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { AuthContext } from './contexts';
 import { load, save } from '../lib/storage';
 import { apiCall } from '../services/api';
+import { useApp } from '../hooks/useStore';
 
 const DEFAULT_AVATAR = 'https://i.pravatar.cc/150?img=12';
 
@@ -10,7 +11,7 @@ function normalizeUser(apiUser) {
 
   return {
     ...apiUser,
-    id: apiUser.id,
+    id: String(apiUser.id),
     name: apiUser.fullName || apiUser.username,
     avatar: apiUser.avatarUrl || DEFAULT_AVATAR,
     status: apiUser.active === false ? 'suspended' : 'active',
@@ -23,6 +24,7 @@ function normalizeUser(apiUser) {
 }
 
 export function AuthProvider({ children }) {
+  const { upsertUser, syncUsers } = useApp();
   const [user, setUser] = useState(() => normalizeUser(load('authUser', null)));
   const [loading, setLoading] = useState(false);
 
@@ -33,6 +35,10 @@ export function AuthProvider({ children }) {
       setLoading(true);
       const apiUser = await apiCall('/auth/login', 'POST', { username, password });
       const normalized = normalizeUser(apiUser);
+      if (normalized) {
+        upsertUser(normalized);
+        await syncUsers();
+      }
       setUser(normalized);
       return { ok: true, user: normalized };
     } catch (error) {
@@ -40,7 +46,7 @@ export function AuthProvider({ children }) {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [syncUsers, upsertUser]);
 
   const register = useCallback(async (data) => {
     try {
@@ -52,6 +58,10 @@ export function AuthProvider({ children }) {
         fullName: data.fullName,
       });
       const normalized = normalizeUser(apiUser);
+      if (normalized) {
+        upsertUser(normalized);
+        await syncUsers();
+      }
       setUser(normalized);
       return { ok: true, user: normalized };
     } catch (error) {
@@ -59,7 +69,7 @@ export function AuthProvider({ children }) {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [syncUsers, upsertUser]);
 
   const updateProfile = useCallback(async (data) => {
     if (!user?.id) return { ok: false, error: 'Bạn chưa đăng nhập.' };
@@ -85,7 +95,7 @@ export function AuthProvider({ children }) {
   const loginAs = useCallback((id) => {
     // Giữ API cũ để các màn hình demo không bị crash.
     setUser((current) => current && current.id === id ? current : current);
-  }, []);
+  }, [upsertUser]);
 
   const logout = useCallback(() => {
     setUser(null);
