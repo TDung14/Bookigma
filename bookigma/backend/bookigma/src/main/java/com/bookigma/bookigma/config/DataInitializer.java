@@ -50,6 +50,11 @@ public class DataInitializer {
         };
     }
 
+    /**
+     * Chỉ tạo tài khoản demo khi chưa có. Không đổi username/mật khẩu tài khoản
+     * đã tồn tại — nếu làm vậy, mỗi lần khởi động backend sẽ ghi đè mật khẩu
+     * người dùng vừa đăng ký (nếu trùng email/username demo).
+     */
     private void ensureDefaultUser(
             UserRepository userRepository,
             PasswordEncoder passwordEncoder,
@@ -58,68 +63,28 @@ public class DataInitializer {
             String fullName,
             User.Role role
     ) {
-        String normalizedUsername = username == null ? "" : username.trim();
+        String normalizedUsername = username == null ? "" : username.trim().toLowerCase(Locale.ROOT);
         String normalizedEmail = email == null ? "" : email.trim().toLowerCase(Locale.ROOT);
 
         if (normalizedUsername.isBlank() || normalizedEmail.isBlank()) {
             return;
         }
 
-        User user = userRepository.findByUsername(normalizedUsername)
-                .orElseGet(() -> userRepository.findByEmail(normalizedEmail)
-                        .orElse(null));
-
-        if (user == null) {
-            user = User.builder()
-                    .username(normalizedUsername)
-                    .email(normalizedEmail)
-                    .passwordHash(passwordEncoder.encode(DEFAULT_PASSWORD))
-                    .fullName(fullName)
-                    .role(role)
-                    .active(true)
-                    .build();
-
-            userRepository.save(user);
-            System.out.println("Created account: " + normalizedUsername + " | role: " + role);
+        if (userRepository.findByUsernameIgnoreCase(normalizedUsername).isPresent()
+                || userRepository.findByEmailIgnoreCase(normalizedEmail).isPresent()) {
             return;
         }
 
-        boolean changed = false;
+        User user = User.builder()
+                .username(normalizedUsername)
+                .email(normalizedEmail)
+                .passwordHash(passwordEncoder.encode(DEFAULT_PASSWORD))
+                .fullName(fullName)
+                .role(role)
+                .active(true)
+                .build();
 
-        if (!normalizedEmail.equalsIgnoreCase(user.getEmail())) {
-            if (!userRepository.existsByEmail(normalizedEmail) || normalizedEmail.equalsIgnoreCase(user.getEmail())) {
-                user.setEmail(normalizedEmail);
-                changed = true;
-            }
-        }
-
-        if (user.getUsername() == null || !user.getUsername().equals(normalizedUsername)) {
-            user.setUsername(normalizedUsername);
-            changed = true;
-        }
-
-        if (user.getFullName() == null || !user.getFullName().equals(fullName)) {
-            user.setFullName(fullName);
-            changed = true;
-        }
-
-        if (user.getRole() != role) {
-            user.setRole(role);
-            changed = true;
-        }
-
-        if (!Boolean.TRUE.equals(user.getActive())) {
-            user.setActive(true);
-            changed = true;
-        }
-
-        if (user.getPasswordHash() == null || !passwordEncoder.matches(DEFAULT_PASSWORD, user.getPasswordHash())) {
-            user.setPasswordHash(passwordEncoder.encode(DEFAULT_PASSWORD));
-            changed = true;
-        }
-
-        if (changed) {
-            userRepository.save(user);
-        }
+        userRepository.save(user);
+        System.out.println("Created account: " + normalizedUsername + " | role: " + role);
     }
 }

@@ -35,7 +35,7 @@ public class UserServiceImpl implements UserService {
             throw new IllegalArgumentException("Dữ liệu đăng ký không hợp lệ!");
         }
 
-        String username = request.getUsername() == null ? "" : request.getUsername().trim().toLowerCase();
+        String username = request.getUsername() == null ? "" : request.getUsername().trim().toLowerCase(java.util.Locale.ROOT);
         if (username.isBlank()) {
             throw new IllegalArgumentException("Tên đăng nhập không được để trống!");
         }
@@ -48,13 +48,13 @@ public class UserServiceImpl implements UserService {
             throw new IllegalArgumentException("Mật khẩu không được để trống!");
         }
 
-        String email = request.getEmail().trim().toLowerCase();
+        String email = request.getEmail().trim().toLowerCase(java.util.Locale.ROOT);
 
-        if (userRepository.existsByUsername(username)) {
+        if (userRepository.existsByUsernameIgnoreCase(username)) {
             throw new IllegalArgumentException("Tên đăng nhập đã tồn tại!");
         }
 
-        if (userRepository.existsByEmail(email)) {
+        if (userRepository.existsByEmailIgnoreCase(email)) {
             throw new IllegalArgumentException("Email này đã được đăng ký!");
         }
 
@@ -73,13 +73,13 @@ public class UserServiceImpl implements UserService {
     }
 
     @Override
-    @Transactional
+    @Transactional(readOnly = true)
     public UserProfileDto login(AuthRequest request) {
         if (request == null) {
             throw new IllegalArgumentException("Dữ liệu đăng nhập không hợp lệ!");
         }
 
-        String username = request.getUsername() == null ? "" : request.getUsername().trim().toLowerCase();
+        String username = request.getUsername() == null ? "" : request.getUsername().trim();
         if (username.isBlank()) {
             throw new IllegalArgumentException("Tên đăng nhập không được để trống!");
         }
@@ -88,8 +88,8 @@ public class UserServiceImpl implements UserService {
             throw new IllegalArgumentException("Mật khẩu không được để trống!");
         }
 
-        User user = userRepository.findByUsername(username)
-                .or(() -> userRepository.findByEmail(username))
+        User user = userRepository.findByUsernameIgnoreCase(username)
+                .or(() -> userRepository.findByEmailIgnoreCase(username))
                 .orElseThrow(() ->
                         new IllegalArgumentException(
                                 "Sai tên đăng nhập/email hoặc mật khẩu!"

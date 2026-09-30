@@ -4,7 +4,7 @@ import './App.css';
 
 import { ThemeProvider } from './context/ThemeProvider';
 import { AppProvider } from './context/AppProvider';
-import { AuthProvider, ROLES } from './context/AuthProvider';
+import { AuthProvider, ROLES, resolvePostAuthPath } from './context/AuthProvider';
 import { ToastProvider } from './context/ToastProvider';
 import { useAuth } from './hooks/useStore';
 
@@ -66,13 +66,19 @@ function Shell() {
   const { user } = useAuth();
   const isLogin = location.pathname === '/login';
 
+  // Đăng nhập/đăng ký xong: đợi user có trong context rồi mới rời /login.
+  // Tránh điều hướng sớm sang `/` khi user còn null (bị đá lại trang login).
+  if (isLogin) {
+    if (user) {
+      return <Navigate to={resolvePostAuthPath(user, location.state?.from)} replace />;
+    }
+    return <LoginPage />;
+  }
+
   // Khi mở web tại trang gốc và chưa đăng nhập, luôn bắt đầu ở /login.
-  // Sau khi login, USER mới được phép quay lại /.
   if (!user && location.pathname === '/') {
     return <Navigate to="/login" replace />;
   }
-
-  if (isLogin) return <LoginPage />;
 
   return (
     <div className="app-container">

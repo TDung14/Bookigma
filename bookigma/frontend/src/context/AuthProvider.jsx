@@ -1,9 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { AuthContext } from './contexts';
 import { load, save } from '../lib/storage';
-import * as seed from '../data/seed';
-import { apiCall, getApiErrorMessage } from '../services/api';
-import { useApp } from '../hooks/useStore';
+import { apiCall } from '../services/api';
 
 const DEFAULT_AVATAR = 'https://i.pravatar.cc/150?img=12';
 
@@ -27,6 +25,24 @@ function normalizeRole(role) {
   }
 
   return ROLES.USER;
+}
+
+export function homePathForRole(role) {
+  const normalized = normalizeRole(role);
+  if (normalized === ROLES.ADMIN) return '/admin';
+  if (normalized === ROLES.MODERATOR) return '/shop-admin';
+  return '/';
+}
+
+/** Sau login/register: ưu tiên trang theo role, chỉ quay lại URL cũ nếu đó không phải trang chủ của role khác. */
+export function resolvePostAuthPath(user, from) {
+  const roleTarget = homePathForRole(user?.role);
+  const requestedPath = from && from !== '/login' ? from : null;
+  const isRoleHome =
+    requestedPath === '/' ||
+    requestedPath === '/shop-admin' ||
+    requestedPath === '/admin';
+  return !requestedPath || isRoleHome ? roleTarget : requestedPath;
 }
 
 function normalizeUser(apiUser) {
@@ -116,8 +132,8 @@ export function AuthProvider({ children }) {
         '/auth/login',
         'POST',
         {
-          username,
-          password,
+          username: String(username || '').trim(),
+          password: String(password || ''),
         }
       );
 

@@ -1,11 +1,6 @@
 import { useState } from 'react';
 
 import {
-  useLocation,
-  useNavigate,
-} from 'react-router-dom';
-
-import {
   BookOpen,
   Eye,
   EyeOff,
@@ -18,8 +13,6 @@ import {
   useToast,
 } from '../../hooks/useStore';
 
-import { ROLES } from '../../context/AuthProvider';
-
 export default function LoginPage() {
 
   const {
@@ -29,15 +22,6 @@ export default function LoginPage() {
   } = useAuth();
 
   const toast = useToast();
-
-  const navigate =
-    useNavigate();
-
-  const location =
-    useLocation();
-
-  const from =
-    location.state?.from || null;
 
   const [mode, setMode] =
     useState('login');
@@ -127,30 +111,9 @@ export default function LoginPage() {
         }!`
       );
 
-      // Redirect theo ROLE lấy trực tiếp từ backend/database.
-      // USER      -> /
-      // MODERATOR -> /shop-admin
-      // ADMIN     -> /admin
-      const roleRedirect = {
-        [ROLES.USER]: '/',
-        [ROLES.MODERATOR]: '/shop-admin',
-        [ROLES.ADMIN]: '/admin',
-      };
-
-      // Nếu người dùng đang cố mở một route cần đăng nhập trước đó,
-      // có thể quay lại route đó. Riêng /, /shop-admin, /admin
-      // phải luôn được chọn theo role để đúng yêu cầu phân quyền.
-      const roleTarget = roleRedirect[result.user.role] || '/';
-      const requestedPath = from && from !== '/login' ? from : null;
-      const isRoleHome =
-        requestedPath === '/' ||
-        requestedPath === '/shop-admin' ||
-        requestedPath === '/admin';
-
-      navigate(
-        isRoleHome || !requestedPath ? roleTarget : requestedPath,
-        { replace: true }
-      );
+      // Không navigate ngay tại đây: setUser vừa gọi xong nên React chưa kịp
+      // re-render. Nếu chuyển sang `/` khi user vẫn còn null, Shell sẽ đá
+      // ngược về /login — trông như đăng nhập thất bại sau khi đăng xuất.
     };
 
   const handleRegisterSubmit =
@@ -222,11 +185,6 @@ export default function LoginPage() {
 
       toast(
         'Đăng ký tài khoản thành công!'
-      );
-
-      navigate(
-        '/',
-        { replace: true }
       );
     };
 
