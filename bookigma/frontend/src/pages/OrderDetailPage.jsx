@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { CheckCircle2, ChevronLeft, Circle, Gift, MapPin, MessageSquare, Receipt, Sparkles } from 'lucide-react';
 import { useApp, useAuth, useToast } from '../hooks/useStore';
@@ -8,16 +9,24 @@ export default function OrderDetailPage() {
   const navigate = useNavigate();
   const toast = useToast();
   const { user } = useAuth();
-  const { orders, updateOrderStatus, shopById, findOrCreateConversation, revealBlindBox, bookById } = useApp();
+  const {
+    orders, cancelOrder, completeOrder, revealBlindBox, refreshOrders, accountReady, shopById, findOrCreateConversation,
+  } = useApp();
+  const [busy, setBusy] = useState(false);
 
-  const order = orders.find((o) => o.id === id);
+  useEffect(() => {
+    refreshOrders();
+  }, [refreshOrders]);
+
+  // id trên URL là chuỗi, id đơn từ backend là số
+  const order = orders.find((o) => String(o.id) === id);
 
   if (!order) {
     return (
       <div className="main-layout">
         <div className="card empty">
-          <h3>Không tìm thấy đơn hàng</h3>
-          <Link to="/orders" className="btn btn-primary btn-sm">Về danh sách đơn</Link>
+          <h3>{accountReady ? 'Không tìm thấy đơn hàng' : 'Đang tải đơn hàng...'}</h3>
+          {accountReady && <Link to="/orders" className="btn btn-primary btn-sm">Về danh sách đơn</Link>}
         </div>
       </div>
     );
@@ -26,7 +35,19 @@ export default function OrderDetailPage() {
   const st = ORDER_STATUS[order.status];
   const cancelled = order.status === 'cancelled';
   const currentStep = ORDER_FLOW.indexOf(order.status);
-  const shop = shopById(order.items[0]?.shopId);
+  const shop = shopById(order.shopId);
+
+  const run = async (action, message, type) => {
+    setBusy(true);
+    try {
+      await action();
+      toast(message, type);
+    } catch (error) {
+      toast(error.message || 'Không thể cập nhật đơn hàng.', 'error');
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const chatShop = () => {
     if (!shop?.ownerId || shop.ownerId === user.id) return;
@@ -88,25 +109,25 @@ export default function OrderDetailPage() {
         <div className="stack">
           <div className="card">
             <h3 style={{ margin: '0 0 14px', fontSize: 16 }}>Sản phẩm</h3>
-            {order.items.map((it, idx) => {
+            {order.items.map((it) => {
               // Hộp Blind Book giữ bí mật cho tới khi giao xong và khách bấm mở hộp.
               if (it.blind && !it.revealed) {
                 const openable = ['delivered', 'completed'].includes(order.status);
                 return (
-                  <div key={idx} className="row" style={{ padding: '10px 0', borderBottom: '1px solid var(--border-color)', gap: 12, alignItems: 'flex-start' }}>
+                  <div key={it.id} className="row" style={{ padding: '10px 0', borderBottom: '1px solid var(--border-color)', gap: 12, alignItems: 'flex-start' }}>
                     <div className="book-cover row" style={{ width: 52, height: 70, justifyContent: 'center', fontSize: 28, background: 'var(--accent-soft)' }}>🎁</div>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div className="small strong">{it.blind.tierName}</div>
                       <div className="tiny muted" style={{ marginBottom: 8 }}>Tâm trạng: {it.blind.moodLabel} · {currency(it.price)} × {it.qty}</div>
                       <button
                         className="btn btn-primary btn-sm"
-                        disabled={!openable}
-                        onClick={() => {
-                          revealBlindBox(order.id, idx);
-                          toast('Mở hộp thành công! Cùng xem bạn nhận được cuốn gì nhé 🎉');
-                        }}
+                        disabled={!openable || busy || cancelled}
+                        onClick={() => run(
+                          () => revealBlindBox(order.id, it.id),
+                          'Mở hộp thành công! Cùng xem bạn nhận được cuốn gì nhé 🎉'
+                        )}
                       >
-                        <Gift size={15} /> {openable ? 'Mở hộp ngay' : 'Mở được khi hàng đã giao'}
+                        <Gift size={15} /> {cancelled ? 'Đơn đã hủy' : openable ? 'Mở hộp ngay' : 'Mở được khi hàng đã giao'}
                       </button>
                     </div>
                     <div className="small strong">{currency(it.price * it.qty)}</div>
@@ -114,9 +135,8 @@ export default function OrderDetailPage() {
                 );
               }
 
-              const revealedBook = it.blind ? bookById(it.bookId) : null;
               return (
-                <Link key={idx} to={`/book/${it.bookId}`} className="row" style={{ padding: '10px 0', borderBottom: '1px solid var(--border-color)', gap: 12 }}>
+                <Link key={it.id} to={`/book/${it.bookId}`} className="row" style={{ padding: '10px 0', borderBottom: '1px solid var(--border-color)', gap: 12 }}>
                   <img src={it.cover} alt="" className="book-cover" style={{ width: 52, height: 70 }} />
                   <div style={{ flex: 1, minWidth: 0 }}>
                     {it.blind ? (
@@ -125,8 +145,8 @@ export default function OrderDetailPage() {
                           <Sparkles size={13} color="var(--accent-green)" />
                           <span className="tiny strong" style={{ color: 'var(--accent-green)' }}>Đã mở hộp — {it.blind.tierName}</span>
                         </div>
-                        <div className="small strong clamp-2">{revealedBook?.title || it.title}</div>
-                        <div className="tiny muted">{revealedBook?.author}</div>
+                        <div className="small strong clamp-2">{it.title}</div>
+                        <div className="tiny muted">{it.author}</div>
                       </>
                     ) : (
                       <>
@@ -210,10 +230,10 @@ export default function OrderDetailPage() {
               <button
                 className="btn btn-ghost btn-block"
                 style={{ color: 'var(--danger)' }}
+                disabled={busy}
                 onClick={() => {
                   if (!window.confirm(`Hủy đơn hàng ${order.code}?`)) return;
-                  updateOrderStatus(order.id, 'cancelled', 'Khách hàng hủy đơn');
-                  toast('Đã hủy đơn hàng.', 'info');
+                  run(() => cancelOrder(order.id), 'Đã hủy đơn hàng.', 'info');
                 }}
               >
                 Hủy đơn hàng
@@ -222,10 +242,8 @@ export default function OrderDetailPage() {
             {order.status === 'delivered' && (
               <button
                 className="btn btn-primary btn-block"
-                onClick={() => {
-                  updateOrderStatus(order.id, 'completed', 'Khách xác nhận đã nhận hàng');
-                  toast('Cảm ơn bạn! Đơn hàng đã hoàn thành.');
-                }}
+                disabled={busy}
+                onClick={() => run(() => completeOrder(order.id), 'Cảm ơn bạn! Đơn hàng đã hoàn thành.')}
               >
                 Xác nhận đã nhận hàng
               </button>

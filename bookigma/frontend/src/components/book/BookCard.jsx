@@ -12,13 +12,17 @@ export default function BookCard({ book, footer }) {
   const shop = shopById(book.shopId);
   const discount = book.originalPrice ? Math.round((1 - book.price / book.originalPrice) * 100) : 0;
 
-  const handleAdd = (e) => {
+  const handleAdd = async (e) => {
     e.preventDefault();
     e.stopPropagation();
     if (!user) return navigate('/login');
     if (book.stock <= 0) return toast('Sản phẩm đã hết hàng.', 'error');
-    addToCart(user.id, book.id, 1);
-    toast(`Đã thêm "${book.title}" vào giỏ hàng.`);
+    try {
+      await addToCart(user.id, book.id, 1);
+      toast(`Đã thêm "${book.title}" vào giỏ hàng.`);
+    } catch (error) {
+      toast(error.message || 'Không thể thêm vào giỏ hàng.', 'error');
+    }
   };
 
   return (
@@ -46,7 +50,7 @@ export default function BookCard({ book, footer }) {
       </div>
 
       <div className="row tiny muted truncate" style={{ gap: 5, marginBottom: 10 }}>
-        <Store size={13} /> {shop?.name || 'Bookigma'}
+        <Store size={13} /> {shop?.name || book.shopName || 'Bookigma'}
       </div>
 
       <div style={{ marginTop: 'auto' }}>

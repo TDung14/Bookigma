@@ -1,11 +1,11 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   BarChart, Bar, CartesianGrid, Cell, Legend, Line, LineChart, Pie, PieChart,
   ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from 'recharts';
 import {
-  AlertTriangle, DollarSign, Edit3, Package, Plus, ShoppingBag, Store, Trash2, TrendingUp,
+  AlertTriangle, DollarSign, Edit3, Gift, Package, Plus, ShoppingBag, Store, Trash2, TrendingUp,
 } from 'lucide-react';
 import { useApp, useAuth, useToast } from '../../hooks/useStore';
 import { compactNumber, currency, dateTime, ORDER_STATUS } from '../../lib/format';
@@ -41,26 +41,26 @@ const EMPTY_FORM = {
 export default function ShopDashboard() {
   const { user } = useAuth();
   const {
-    books, orders, shops, categories, upsertBook, deleteBook, updateOrderStatus, pushNotification,
+    shops, categories, sellerBooks, sellerOrders, refreshSellerData, accountReady,
+    saveSellerBook, deleteSellerBook, updateSellerOrderStatus,
   } = useApp();
   const toast = useToast();
 
   const [tab, setTab] = useState('overview');
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState(EMPTY_FORM);
+  const [saving, setSaving] = useState(false);
+  const [busyOrder, setBusyOrder] = useState(null);
 
-  const shop = shops.find((s) => s.id === user.shopId);
-  const myBooks = useMemo(() => books.filter((b) => b.shopId === user.shopId), [books, user.shopId]);
+  // Lấy đơn mới nhất mỗi lần mở kênh người bán (khách có thể vừa đặt / vừa hủy).
+  useEffect(() => {
+    refreshSellerData();
+  }, [refreshSellerData]);
 
-  // Đơn hàng chỉ giữ lại phần sản phẩm thuộc shop này.
-  const myOrders = useMemo(
-    () =>
-      orders
-        .map((o) => ({ ...o, items: o.items.filter((i) => i.shopId === user.shopId) }))
-        .filter((o) => o.items.length > 0)
-        .sort((a, b) => b.createdAt - a.createdAt),
-    [orders, user.shopId]
-  );
+  const shop = shops.find((s) => s.ownerId === user.id);
+  const myBooks = sellerBooks;
+  // Mỗi đơn trên backend chỉ thuộc về một shop nên không cần lọc lại từng dòng hàng.
+  const myOrders = useMemo(() => [...sellerOrders].sort((a, b) => b.createdAt - a.createdAt), [sellerOrders]);
 
   const paidOrders = useMemo(() => myOrders.filter((o) => o.status !== 'cancelled'), [myOrders]);
   const revenue = paidOrders.reduce((s, o) => s + o.items.reduce((x, i) => x + i.price * i.qty, 0), 0);
@@ -101,35 +101,71 @@ export default function ShopDashboard() {
     setEditing(book.id);
   };
 
-  const saveProduct = () => {
+  const saveProduct = async () => {
     if (!form.title.trim() || !form.author.trim()) return toast('Hãy nhập tên sách và tác giả.', 'error');
     const price = Number(form.price);
     if (!price || price <= 0) return toast('Giá bán phải là số lớn hơn 0.', 'error');
 
-    upsertBook({
-      id: editing === 'new' ? undefined : editing,
-      title: form.title.trim(),
-      author: form.author.trim(),
-      price,
-      originalPrice: Number(form.originalPrice) || price,
-      stock: Number(form.stock) || 0,
-      category: form.category,
-      cover: form.cover.trim() || 'https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?w=400&q=80',
-      description: form.description.trim(),
-      pages: Number(form.pages) || 200,
-      tags: form.tags.split(',').map((t) => t.trim()).filter(Boolean),
-      shopId: user.shopId,
-      status: editing === 'new' ? 'pending' : undefined,
-    });
-    toast(editing === 'new' ? 'Đã tạo sản phẩm, đang chờ quản trị viên duyệt.' : 'Đã cập nhật sản phẩm.');
-    setEditing(null);
+    setSaving(true);
+    try {
+      await saveSellerBook(editing === 'new' ? null : editing, {
+        title: form.title.trim(),
+        author: form.author.trim(),
+        category: form.category,
+        price,
+        originalPrice: Number(form.originalPrice) || price,
+        stock: Number(form.stock) || 0,
+        pages: Number(form.pages) || null,
+        coverUrl: form.cover.trim() || null,
+        description: form.description.trim(),
+        tags: form.tags.split(',').map((t) => t.trim()).filter(Boolean),
+      });
+      toast(editing === 'new' ? 'Đã tạo sản phẩm, đang chờ quản trị viên duyệt.' : 'Đã cập nhật sản phẩm.');
+      setEditing(null);
+    } catch (error) {
+      toast(error.message || 'Không thể lưu sản phẩm.', 'error');
+    } finally {
+      setSaving(false);
+    }
   };
 
-  const advanceOrder = (order, next, note) => {
-    updateOrderStatus(order.id, next, note);
-    pushNotification(order.userId, `Đơn hàng ${order.code}: ${ORDER_STATUS[next].label.toLowerCase()}.`, `/orders/${order.id}`);
-    toast(`Đơn ${order.code} → ${ORDER_STATUS[next].label}`);
+  const removeProduct = async (book) => {
+    if (!window.confirm(`Xóa sản phẩm "${book.title}"?`)) return;
+    try {
+      // Sách đã có đơn hàng thì backend chỉ ẩn đi và trả về lời giải thích
+      const result = await deleteSellerBook(book.id);
+      toast(result.message, 'info');
+    } catch (error) {
+      toast(error.message || 'Không thể xóa sản phẩm.', 'error');
+    }
   };
+
+  const advanceOrder = async (order, next, note) => {
+    setBusyOrder(order.id);
+    try {
+      // Backend ghi lịch sử đơn và gửi thông báo cho người mua
+      await updateSellerOrderStatus(order.id, next, note);
+      toast(`Đơn ${order.code} → ${ORDER_STATUS[next].label}`);
+    } catch (error) {
+      toast(error.message || 'Không thể cập nhật đơn hàng.', 'error');
+    } finally {
+      setBusyOrder(null);
+    }
+  };
+
+  if (!shop) {
+    return (
+      <div className="main-layout">
+        <div className="card">
+          <EmptyState
+            icon={Store}
+            title={accountReady ? 'Tài khoản chưa được gắn với shop nào' : 'Đang tải kênh người bán...'}
+            hint={accountReady ? 'Liên hệ quản trị viên để mở shop cho tài khoản này.' : undefined}
+          />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="main-layout wide">
@@ -269,7 +305,7 @@ export default function ShopDashboard() {
                         <button
                           className="btn-icon"
                           style={{ color: 'var(--danger)' }}
-                          onClick={() => { if (window.confirm(`Xóa sản phẩm "${b.title}"?`)) { deleteBook(b.id); toast('Đã xóa sản phẩm.', 'info'); } }}
+                          onClick={() => removeProduct(b)}
                           aria-label="Xóa"
                         >
                           <Trash2 size={16} />
@@ -304,10 +340,15 @@ export default function ShopDashboard() {
                 <div className="row" style={{ padding: '12px 0', gap: 20, flexWrap: 'wrap', alignItems: 'flex-start' }}>
                   <div style={{ flex: '1 1 300px' }}>
                     {o.items.map((i) => (
-                      <div key={i.bookId} className="row" style={{ marginBottom: 8 }}>
+                      <div key={i.id} className="row" style={{ marginBottom: 8 }}>
                         <img src={i.cover} alt="" className="book-cover" style={{ width: 38, height: 52 }} />
                         <div style={{ flex: 1, minWidth: 0 }}>
-                          <div className="small truncate">{i.title}</div>
+                          {i.blind && (
+                            <div className="row tiny strong" style={{ gap: 5, color: 'var(--accent-green)' }}>
+                              <Gift size={12} /> {i.blind.tierName} · {i.blind.moodLabel} — gói kín, không để lộ tên sách
+                            </div>
+                          )}
+                          <div className="small truncate">{i.blind ? `Sách cần giao: ${i.title}` : i.title}</div>
                           <div className="tiny muted">{currency(i.price)} × {i.qty}</div>
                         </div>
                       </div>
@@ -325,15 +366,15 @@ export default function ShopDashboard() {
                   <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
                     {o.status === 'pending' && (
                       <>
-                        <button className="btn btn-primary btn-sm" onClick={() => advanceOrder(o, 'confirmed', 'Shop xác nhận đơn hàng')}>Xác nhận đơn</button>
-                        <button className="btn btn-ghost btn-sm" style={{ color: 'var(--danger)' }} onClick={() => advanceOrder(o, 'cancelled', 'Shop từ chối: hết hàng')}>Từ chối</button>
+                        <button className="btn btn-primary btn-sm" disabled={busyOrder === o.id} onClick={() => advanceOrder(o, 'confirmed')}>Xác nhận đơn</button>
+                        <button className="btn btn-ghost btn-sm" style={{ color: 'var(--danger)' }} disabled={busyOrder === o.id} onClick={() => advanceOrder(o, 'cancelled', 'Shop từ chối: hết hàng')}>Từ chối</button>
                       </>
                     )}
                     {o.status === 'confirmed' && (
-                      <button className="btn btn-primary btn-sm" onClick={() => advanceOrder(o, 'shipping', 'Shop đã bàn giao cho đơn vị vận chuyển')}>Bàn giao vận chuyển</button>
+                      <button className="btn btn-primary btn-sm" disabled={busyOrder === o.id} onClick={() => advanceOrder(o, 'shipping')}>Bàn giao vận chuyển</button>
                     )}
                     {o.status === 'shipping' && (
-                      <button className="btn btn-primary btn-sm" onClick={() => advanceOrder(o, 'delivered', 'Đơn vị vận chuyển báo giao thành công')}>Đánh dấu đã giao</button>
+                      <button className="btn btn-primary btn-sm" disabled={busyOrder === o.id} onClick={() => advanceOrder(o, 'delivered')}>Đánh dấu đã giao</button>
                     )}
                   </div>
                 </div>
@@ -383,7 +424,7 @@ export default function ShopDashboard() {
         footer={
           <>
             <button className="btn btn-ghost" onClick={() => setEditing(null)}>Hủy</button>
-            <button className="btn btn-primary" onClick={saveProduct}>Lưu sản phẩm</button>
+            <button className="btn btn-primary" onClick={saveProduct} disabled={saving}>{saving ? 'Đang lưu...' : 'Lưu sản phẩm'}</button>
           </>
         }
       >

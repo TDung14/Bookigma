@@ -4,28 +4,76 @@ import * as seed from '../data/seed';
 import { load, save, uid } from '../lib/storage';
 import { DAILY_TASKS, FEED_XP, POINT_RULES, todayKey } from '../lib/gamification';
 import { apiCall } from '../services/api';
+import * as shopApi from '../services/shopApi';
+import * as exchangeApi from '../services/exchangeApi';
+import * as notificationApi from '../services/notificationApi';
+import { useAuth } from '../hooks/useStore';
 
 /**
- * Kho dữ liệu trung tâm của bản demo.
- * Mọi thay đổi đều được ghi xuống localStorage nên tải lại trang vẫn giữ nguyên trạng thái —
- * điều này quan trọng khi đi demo trước hội đồng.
+ * Dữ liệu riêng của người đang đăng nhập, lấy từ backend. Được "đánh khoá" theo userId:
+ * khi đăng xuất / đổi tài khoản, dữ liệu cũ tự bị bỏ qua cho tới khi tải xong dữ liệu mới.
+ */
+const EMPTY_ACCOUNT = {
+  userId: undefined,
+  loaded: false,
+  cart: [],
+  orders: [],
+  sellerBooks: [],
+  sellerOrders: [],
+  adminBooks: [],
+  adminOrders: [],
+  exchanges: [],
+  myExchanges: [],
+  sentOffers: [],
+  notifications: [],
+};
+
+/** Gộp các danh sách theo id; phần tử đứng sau ghi đè phần tử trước nhưng giữ nguyên vị trí. */
+function mergeById(...lists) {
+  const map = new Map();
+  lists.flat().forEach((item) => map.set(item.id, item));
+  return [...map.values()];
+}
+
+const replaceById = (list, item) =>
+  list.some((x) => x.id === item.id) ? list.map((x) => (x.id === item.id ? item : x)) : [item, ...list];
+
+/** Tải dữ liệu cửa hàng (sách, shop, thể loại, voucher); trả về null nếu không gọi được backend. */
+async function fetchCatalog() {
+  try {
+    const [books, shops, categories, vouchers] = await Promise.all([
+      shopApi.fetchBooks(), shopApi.fetchShops(), shopApi.fetchCategories(), shopApi.fetchVouchers(),
+    ]);
+    return { status: 'ready', books, shops, categories, vouchers };
+  } catch {
+    return null;
+  }
+}
+
+/** Lỗi mạng khi đã có dữ liệu thì giữ dữ liệu cũ; chưa có gì thì báo lỗi để trang hiện nút thử lại. */
+const applyCatalog = (next) => (prev) => next || { ...prev, status: prev.books.length ? 'ready' : 'error' };
+
+/**
+ * Kho dữ liệu trung tâm.
+ * - Shop, giỏ hàng, đơn hàng, Blind Book, trao đổi sách, thông báo: đọc/ghi qua API backend.
+ * - Các phần chưa có backend (chat, tiến trình đọc, gamification, báo cáo...) vẫn lưu localStorage
+ *   như bản demo, nên tải lại trang vẫn giữ nguyên trạng thái.
  */
 export function AppProvider({ children }) {
+  const { user } = useAuth();
+  const userId = user?.id ?? null;
+  const role = user?.role ?? null;
+
   const [users, setUsers] = useState(() => load('users', seed.users));
-  const [books, setBooks] = useState(() => load('books', seed.books));
   const [posts, setPosts] = useState(() => load('posts', seed.posts));
-  const [exchanges, setExchanges] = useState(() => load('exchanges', seed.exchanges));
-  const [orders, setOrders] = useState(() => load('orders', seed.orders));
   const [reports, setReports] = useState(() => load('reports', seed.reports));
   const [conversations, setConversations] = useState(() => load('conversations', seed.conversations));
   const [progressAll, setProgressAll] = useState(() => load('progress', seed.readingProgress));
-  const [carts, setCarts] = useState(() => load('carts', {}));
-  const [notifications, setNotifications] = useState(() => load('notifications', seed.notifications));
+  const [localNotifications, setLocalNotifications] = useState(() => load('notifications', seed.notifications));
   const [daily, setDaily] = useState(() => load('daily', {}));
   const [redemptions, setRedemptions] = useState(() => load('redemptions', seed.redemptions));
 
   useEffect(() => save('users', users), [users]);
-  useEffect(() => save('books', books), [books]);
   useEffect(() => save('posts', posts), [posts]);
 
   // Feed là dữ liệu thật từ MySQL. Nếu backend chưa chạy, giữ seed/local data để UI vẫn mở được.
@@ -51,83 +99,254 @@ export function AppProvider({ children }) {
       .catch(() => {});
     return () => { cancelled = true; };
   }, []);
-  useEffect(() => save('exchanges', exchanges), [exchanges]);
-  useEffect(() => save('orders', orders), [orders]);
   useEffect(() => save('reports', reports), [reports]);
   useEffect(() => save('conversations', conversations), [conversations]);
   useEffect(() => save('progress', progressAll), [progressAll]);
-  useEffect(() => save('carts', carts), [carts]);
-  useEffect(() => save('notifications', notifications), [notifications]);
+  useEffect(() => save('notifications', localNotifications), [localNotifications]);
   useEffect(() => save('daily', daily), [daily]);
   useEffect(() => save('redemptions', redemptions), [redemptions]);
 
+  // ---------- Cửa hàng (backend) ----------
+  const [catalog, setCatalog] = useState({ status: 'loading', books: [], shops: [], categories: [], vouchers: [] });
+  const [chaptersByBook, setChaptersByBook] = useState({});
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchCatalog().then((next) => {
+      if (!cancelled) setCatalog(applyCatalog(next));
+    });
+    return () => { cancelled = true; };
+  }, []);
+
+  const refreshCatalog = useCallback(async () => {
+    setCatalog(applyCatalog(await fetchCatalog()));
+  }, []);
+
+  // ---------- Dữ liệu của người đang đăng nhập (backend) ----------
+  const [accountState, setAccountState] = useState(EMPTY_ACCOUNT);
+  const account = accountState.userId === userId ? accountState : EMPTY_ACCOUNT;
+
+  /** Cập nhật một phần dữ liệu của người dùng forUser; bỏ qua nếu người dùng đã đổi. */
+  const patchAccount = useCallback((forUser, patch) => {
+    setAccountState((prev) => (
+      prev.userId === forUser
+        ? { ...prev, ...(typeof patch === 'function' ? patch(prev) : patch) }
+        : prev
+    ));
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    const settle = (result) => (result.status === 'fulfilled' ? result.value : []);
+    (async () => {
+      const results = await Promise.allSettled([
+        exchangeApi.fetchListings(userId),
+        userId ? shopApi.fetchCart(userId) : [],
+        userId ? shopApi.fetchMyOrders(userId) : [],
+        userId ? exchangeApi.fetchMyListings(userId) : [],
+        userId ? exchangeApi.fetchSentOffers(userId) : [],
+        userId ? notificationApi.fetchNotifications(userId) : [],
+        role === 'shop' ? shopApi.fetchSellerBooks(userId) : [],
+        role === 'shop' ? shopApi.fetchSellerOrders(userId) : [],
+        role === 'admin' ? shopApi.fetchAdminBooks(userId) : [],
+        role === 'admin' ? shopApi.fetchAdminOrders(userId) : [],
+      ]);
+      if (cancelled) return;
+      const [
+        exchanges, cart, orders, myExchanges, sentOffers, notifications,
+        sellerBooks, sellerOrders, adminBooks, adminOrders,
+      ] = results.map(settle);
+      setAccountState({
+        userId, loaded: true, exchanges, cart, orders, myExchanges, sentOffers, notifications,
+        sellerBooks, sellerOrders, adminBooks, adminOrders,
+      });
+    })();
+    return () => { cancelled = true; };
+  }, [userId, role]);
+
+  // Các hàm refresh dưới đây được trang gọi khi mở, để thấy thay đổi do người khác tạo ra
+  // (shop xác nhận đơn, có người gửi đề nghị trao đổi...). Lỗi mạng thì giữ dữ liệu cũ.
+  const refreshCart = useCallback(async () => {
+    if (!userId) return;
+    try { patchAccount(userId, { cart: await shopApi.fetchCart(userId) }); } catch { /* giữ dữ liệu cũ */ }
+  }, [userId, patchAccount]);
+
+  const refreshOrders = useCallback(async () => {
+    if (!userId) return;
+    try { patchAccount(userId, { orders: await shopApi.fetchMyOrders(userId) }); } catch { /* giữ dữ liệu cũ */ }
+  }, [userId, patchAccount]);
+
+  const refreshSellerData = useCallback(async () => {
+    if (role !== 'shop') return;
+    try {
+      const [sellerBooks, sellerOrders] = await Promise.all([
+        shopApi.fetchSellerBooks(userId), shopApi.fetchSellerOrders(userId),
+      ]);
+      patchAccount(userId, { sellerBooks, sellerOrders });
+    } catch { /* giữ dữ liệu cũ */ }
+  }, [userId, role, patchAccount]);
+
+  const refreshAdminData = useCallback(async () => {
+    if (role !== 'admin') return;
+    try {
+      const [adminBooks, adminOrders] = await Promise.all([
+        shopApi.fetchAdminBooks(userId), shopApi.fetchAdminOrders(userId),
+      ]);
+      patchAccount(userId, { adminBooks, adminOrders });
+    } catch { /* giữ dữ liệu cũ */ }
+  }, [userId, role, patchAccount]);
+
+  const refreshExchanges = useCallback(async () => {
+    try {
+      const [exchanges, myExchanges, sentOffers] = await Promise.all([
+        exchangeApi.fetchListings(userId),
+        userId ? exchangeApi.fetchMyListings(userId) : [],
+        userId ? exchangeApi.fetchSentOffers(userId) : [],
+      ]);
+      patchAccount(userId, { exchanges, myExchanges, sentOffers });
+    } catch { /* giữ dữ liệu cũ */ }
+  }, [userId, patchAccount]);
+
+  const refreshNotifications = useCallback(async () => {
+    if (!userId) return;
+    try { patchAccount(userId, { notifications: await notificationApi.fetchNotifications(userId) }); } catch { /* bỏ qua */ }
+  }, [userId, patchAccount]);
+
+  // Chưa có WebSocket: hỏi thông báo mới mỗi 30 giây khi đang đăng nhập.
+  useEffect(() => {
+    if (!userId) return undefined;
+    const timer = setInterval(refreshNotifications, 30000);
+    return () => clearInterval(timer);
+  }, [userId, refreshNotifications]);
+
   // ---------- Tra cứu ----------
-  const userById = useCallback((id) => users.find((u) => u.id === id), [users]);
-  const bookById = useCallback((id) => books.find((b) => b.id === id), [books]);
-  const shopById = useCallback((id) => seed.shops.find((s) => s.id === id), []);
+  const books = useMemo(
+    () => mergeById(catalog.books, account.sellerBooks, account.adminBooks)
+      .map((book) => (chaptersByBook[book.id] ? { ...book, chapters: chaptersByBook[book.id] } : book)),
+    [catalog.books, account.sellerBooks, account.adminBooks, chaptersByBook]
+  );
+  const exchanges = useMemo(
+    () => mergeById(account.exchanges, account.myExchanges),
+    [account.exchanges, account.myExchanges]
+  );
+
+  /** Người dùng backend (chủ shop, người đăng tin...) để chat và các trang cũ hiển thị được tên, avatar. */
+  const knownUsers = useMemo(() => {
+    const map = new Map();
+    const put = (entry) => {
+      if (entry?.id === null || entry?.id === undefined || map.has(entry.id)) return;
+      map.set(entry.id, { role: 'user', status: 'active', badge: 'Thành viên', points: 0, booksRead: 0, ...entry });
+    };
+    if (user) put({ id: user.id, name: user.name, avatar: user.avatar, role: user.role, email: user.email });
+    catalog.shops.forEach((shop) => put({ id: shop.ownerId, name: shop.name, avatar: shop.avatar, role: 'shop', badge: 'Đối tác' }));
+    exchanges.forEach((listing) => put(listing.owner));
+    account.myExchanges.forEach((listing) => listing.offers.forEach((offer) => put(offer.sender)));
+    account.sentOffers.forEach((offer) => put(offer.owner));
+    return map;
+  }, [user, catalog.shops, exchanges, account.myExchanges, account.sentOffers]);
+
+  const userById = useCallback((id) => users.find((u) => u.id === id) || knownUsers.get(id), [users, knownUsers]);
+  // id từ URL là chuỗi còn id từ backend là số, nên so sánh dạng chuỗi.
+  const bookById = useCallback((id) => books.find((b) => String(b.id) === String(id)), [books]);
+  const shopById = useCallback((id) => catalog.shops.find((s) => String(s.id) === String(id)), [catalog.shops]);
+
+  /** Tải chi tiết một cuốn (kèm nội dung chương để đọc thử). */
+  const loadBook = useCallback(async (id) => {
+    const book = await shopApi.fetchBook(id, userId);
+    setChaptersByBook((prev) => ({ ...prev, [book.id]: book.chapters || [] }));
+    return book;
+  }, [userId]);
 
   // ---------- Giỏ hàng ----------
-  const getCart = useCallback((userId) => carts[userId] || [], [carts]);
+  const getCart = useCallback((forUser) => (forUser === userId ? account.cart : []), [userId, account.cart]);
 
-  const addToCart = useCallback((userId, bookId, qty = 1) => {
-    setCarts((prev) => {
-      const cart = prev[userId] || [];
-      const found = cart.find((c) => c.bookId === bookId);
-      const next = found
-        ? cart.map((c) => (c.bookId === bookId ? { ...c, qty: c.qty + qty } : c))
-        : [...cart, { bookId, qty }];
-      return { ...prev, [userId]: next };
-    });
-  }, []);
+  const addToCart = useCallback(async (forUser, bookId, qty = 1) => {
+    const cart = await shopApi.addCartItem(forUser, { bookId: Number(bookId), quantity: qty });
+    patchAccount(forUser, { cart });
+    return cart;
+  }, [patchAccount]);
 
-  const setCartQty = useCallback((userId, bookId, qty) => {
-    setCarts((prev) => {
-      const cart = (prev[userId] || [])
-        .map((c) => (c.bookId === bookId ? { ...c, qty: Math.max(1, qty) } : c));
-      return { ...prev, [userId]: cart };
-    });
-  }, []);
+  const updateCartQty = useCallback(async (itemId, qty) => {
+    patchAccount(userId, { cart: await shopApi.updateCartItem(userId, itemId, qty) });
+  }, [userId, patchAccount]);
 
-  const removeFromCart = useCallback((userId, bookId) => {
-    setCarts((prev) => ({ ...prev, [userId]: (prev[userId] || []).filter((c) => c.bookId !== bookId) }));
-  }, []);
+  const removeCartItem = useCallback(async (itemId) => {
+    patchAccount(userId, { cart: await shopApi.removeCartItem(userId, itemId) });
+  }, [userId, patchAccount]);
 
-  const clearCart = useCallback((userId) => {
-    setCarts((prev) => ({ ...prev, [userId]: [] }));
-  }, []);
+  // ---------- Đơn hàng (người mua) ----------
+  const replaceOrder = useCallback((order) => {
+    patchAccount(userId, (prev) => ({ orders: replaceById(prev.orders, order) }));
+  }, [userId, patchAccount]);
 
-  // ---------- Đơn hàng ----------
-  const placeOrder = useCallback((order) => {
-    const code = 'BKG' + Math.floor(100000 + Math.random() * 899999);
-    const full = {
-      ...order,
-      id: uid('o'),
-      code,
-      createdAt: Date.now(),
-      status: 'pending',
-      timeline: [{ status: 'pending', at: Date.now(), note: 'Đơn hàng được tạo' }],
-    };
-    setOrders((prev) => [full, ...prev]);
-    // Trừ tồn kho và tăng lượt bán để bảng điều khiển shop phản ánh đúng.
-    setBooks((prev) =>
-      prev.map((b) => {
-        const item = order.items.find((i) => i.bookId === b.id);
-        if (!item) return b;
-        return { ...b, stock: Math.max(0, b.stock - item.qty), sold: b.sold + item.qty };
-      })
-    );
-    return full;
-  }, []);
+  /** Thanh toán cả giỏ. Trả về danh sách đơn đã tạo (một đơn cho mỗi shop / mỗi hộp Blind Book). */
+  const placeOrder = useCallback(async (checkout) => {
+    const created = await shopApi.checkout(userId, checkout);
+    patchAccount(userId, (prev) => ({ orders: [...created, ...prev.orders], cart: [] }));
+    refreshCatalog(); // tồn kho và lượt bán đã đổi
+    refreshNotifications();
+    return created;
+  }, [userId, patchAccount, refreshCatalog, refreshNotifications]);
 
-  const updateOrderStatus = useCallback((orderId, status, note) => {
-    setOrders((prev) =>
-      prev.map((o) =>
-        o.id === orderId
-          ? { ...o, status, timeline: [...o.timeline, { status, at: Date.now(), note }] }
-          : o
-      )
-    );
-  }, []);
+  const cancelOrder = useCallback(async (orderId, reason) => {
+    const order = await shopApi.cancelOrder(userId, orderId, reason);
+    replaceOrder(order);
+    refreshCatalog(); // hàng được hoàn lại kho
+    return order;
+  }, [userId, replaceOrder, refreshCatalog]);
+
+  const completeOrder = useCallback(async (orderId) => {
+    const order = await shopApi.completeOrder(userId, orderId);
+    replaceOrder(order);
+    return order;
+  }, [userId, replaceOrder]);
+
+  // ---------- Kênh người bán ----------
+  /** Tạo mới (bookId rỗng) hoặc cập nhật sản phẩm của shop. Sản phẩm mới chờ admin duyệt. */
+  const saveSellerBook = useCallback(async (bookId, form) => {
+    const book = bookId
+      ? await shopApi.updateSellerBook(userId, bookId, form)
+      : await shopApi.createSellerBook(userId, form);
+    patchAccount(userId, (prev) => ({ sellerBooks: replaceById(prev.sellerBooks, book) }));
+    refreshCatalog();
+    return book;
+  }, [userId, patchAccount, refreshCatalog]);
+
+  const deleteSellerBook = useCallback(async (bookId) => {
+    const result = await shopApi.deleteSellerBook(userId, bookId);
+    patchAccount(userId, (prev) => ({
+      sellerBooks: result.deleted
+        ? prev.sellerBooks.filter((b) => b.id !== bookId)
+        : prev.sellerBooks.map((b) => (b.id === bookId ? { ...b, status: 'hidden' } : b)),
+    }));
+    refreshCatalog();
+    return result;
+  }, [userId, patchAccount, refreshCatalog]);
+
+  const updateSellerOrderStatus = useCallback(async (orderId, status, note) => {
+    const order = await shopApi.updateSellerOrderStatus(userId, orderId, status, note);
+    patchAccount(userId, (prev) => ({ sellerOrders: replaceById(prev.sellerOrders, order) }));
+    return order;
+  }, [userId, patchAccount]);
+
+  // ---------- Quản trị sản phẩm ----------
+  const setBookStatus = useCallback(async (bookId, status) => {
+    const book = await shopApi.updateBookStatus(userId, bookId, status);
+    patchAccount(userId, (prev) => ({ adminBooks: replaceById(prev.adminBooks, book) }));
+    refreshCatalog();
+    return book;
+  }, [userId, patchAccount, refreshCatalog]);
+
+  const deleteBook = useCallback(async (bookId) => {
+    const result = await shopApi.deleteBookAsAdmin(userId, bookId);
+    patchAccount(userId, (prev) => ({
+      adminBooks: result.deleted
+        ? prev.adminBooks.filter((b) => b.id !== bookId)
+        : prev.adminBooks.map((b) => (b.id === bookId ? { ...b, status: 'hidden' } : b)),
+    }));
+    refreshCatalog();
+    return result;
+  }, [userId, patchAccount, refreshCatalog]);
 
   // ---------- Bài đăng ----------
   const addPost = useCallback(async (post) => {
@@ -135,7 +354,6 @@ export function AppProvider({ children }) {
       userId: post.authorId,
       content: post.content,
       imageUrl: post.image || null,
-      // books trong seed dùng id dạng b1/b2, không tương thích BIGINT của DB nên chỉ gửi id số.
       bookId: /^\d+$/.test(String(post.bookId || '')) ? Number(post.bookId) : null,
       visibility: 'PUBLIC',
     });
@@ -214,33 +432,38 @@ export function AppProvider({ children }) {
     return user;
   }, []);
 
-  // ---------- Sản phẩm (shop) ----------
-  const upsertBook = useCallback((book) => {
-    setBooks((prev) => {
-      const exists = prev.some((b) => b.id === book.id);
-      if (exists) return prev.map((b) => (b.id === book.id ? { ...b, ...book } : b));
-      return [
-        {
-          rating: 0, ratingCount: 0, sold: 0, status: 'pending', chapters: [], tags: [],
-          ...book, id: book.id || uid('b'),
-        },
-        ...prev,
-      ];
-    });
-  }, []);
-
-  const setBookStatus = useCallback((bookId, status) => {
-    setBooks((prev) => prev.map((b) => (b.id === bookId ? { ...b, status } : b)));
-  }, []);
-
-  const deleteBook = useCallback((bookId) => {
-    setBooks((prev) => prev.filter((b) => b.id !== bookId));
-  }, []);
-
   // ---------- Trao đổi sách ----------
-  const addExchange = useCallback((item) => {
-    setExchanges((prev) => [{ ...item, id: uid('e'), status: 'open' }, ...prev]);
-  }, []);
+  // Sau mỗi thao tác tải lại cả ba danh sách (tin đang mở, tin của tôi, đề nghị đã gửi)
+  // để số đề nghị và trạng thái luôn khớp giữa các tab.
+  const addExchange = useCallback(async (form) => {
+    const listing = await exchangeApi.createListing(userId, form);
+    await refreshExchanges();
+    return listing;
+  }, [userId, refreshExchanges]);
+
+  const sendExchangeOffer = useCallback(async (listingId, form) => {
+    const offer = await exchangeApi.sendOffer(userId, listingId, form);
+    await refreshExchanges();
+    return offer;
+  }, [userId, refreshExchanges]);
+
+  /** action: 'accept' | 'reject' (chủ tin) hoặc 'cancel' (người gửi rút lại). */
+  const respondExchangeOffer = useCallback(async (offerId, action) => {
+    const offer = await exchangeApi.respondToOffer(userId, offerId, action);
+    await refreshExchanges();
+    return offer;
+  }, [userId, refreshExchanges]);
+
+  const setExchangeStatus = useCallback(async (listingId, status) => {
+    const listing = await exchangeApi.updateListingStatus(userId, listingId, status);
+    await refreshExchanges();
+    return listing;
+  }, [userId, refreshExchanges]);
+
+  const deleteExchange = useCallback(async (listingId) => {
+    await exchangeApi.deleteListing(userId, listingId);
+    await refreshExchanges();
+  }, [userId, refreshExchanges]);
 
   // ---------- Chat ----------
   const findOrCreateConversation = useCallback((userA, userB) => {
@@ -419,60 +642,79 @@ export function AppProvider({ children }) {
 
   // ---------- Blind Book ----------
 
-  /** Thêm một hộp Blind Book vào giỏ. Sách bên trong được giấu cho tới khi mở hộp. */
-  const addBlindBox = useCallback((userId, bookId, blind) => {
-    setCarts((prev) => ({ ...prev, [userId]: [...(prev[userId] || []), { bookId, qty: 1, blind }] }));
-  }, []);
+  /** Ghép sách cho hộp (backend chọn và giữ bí mật cuốn sách). Gửi boxId để "Đổi cuốn khác". */
+  const matchBlindBox = useCallback((payload) => shopApi.matchBlindBox(userId, payload), [userId]);
 
-  /** Mở hộp: lộ tên sách thật trong đơn hàng đã giao. */
-  const revealBlindBox = useCallback((orderId, itemIndex) => {
-    setOrders((prev) =>
-      prev.map((o) =>
-        o.id === orderId
-          ? { ...o, items: o.items.map((it, i) => (i === itemIndex ? { ...it, revealed: true } : it)) }
-          : o
-      )
-    );
-  }, []);
+  /** Thêm hộp đã ghép vào giỏ. */
+  const addBlindBox = useCallback(async (boxId) => {
+    patchAccount(userId, { cart: await shopApi.addCartItem(userId, { blindBoxId: boxId }) });
+  }, [userId, patchAccount]);
+
+  /** Mở hộp trong đơn đã giao: backend trả về đơn hàng có tên sách thật. */
+  const revealBlindBox = useCallback(async (orderId, itemId) => {
+    const order = await shopApi.revealBlindBox(userId, orderId, itemId);
+    replaceOrder(order);
+    return order;
+  }, [userId, replaceOrder]);
 
   // ---------- Thông báo ----------
+  // Thông báo từ backend (đơn hàng, trao đổi, duyệt sản phẩm) gộp chung với thông báo cục bộ của bản demo.
+  const notifications = useMemo(
+    () => [...account.notifications, ...localNotifications].sort((a, b) => b.at - a.at),
+    [account.notifications, localNotifications]
+  );
+
   const pushNotification = useCallback((userId, text, link = '/') => {
-    setNotifications((prev) => [{ id: uid('n'), userId, text, at: Date.now(), read: false, link }, ...prev]);
+    setLocalNotifications((prev) => [{ id: uid('n'), userId, text, at: Date.now(), read: false, link }, ...prev]);
   }, []);
 
-  const markNotificationsRead = useCallback((userId) => {
-    setNotifications((prev) => prev.map((n) => (n.userId === userId ? { ...n, read: true } : n)));
-  }, []);
+  const markNotificationsRead = useCallback((forUser) => {
+    setLocalNotifications((prev) => prev.map((n) => (n.userId === forUser ? { ...n, read: true } : n)));
+    if (forUser && forUser === userId && account.notifications.some((n) => !n.read)) {
+      patchAccount(forUser, (prev) => ({ notifications: prev.notifications.map((n) => ({ ...n, read: true })) }));
+      notificationApi.markAllNotificationsRead(forUser).catch(() => {});
+    }
+  }, [userId, account.notifications, patchAccount]);
 
   const value = useMemo(
     () => ({
-      users, books, posts, exchanges, orders, reports, conversations, notifications,
-      shops: seed.shops, categories: seed.CATEGORIES, vouchers: seed.vouchers,
-      userById, bookById, shopById,
-      getCart, addToCart, setCartQty, removeFromCart, clearCart, carts,
-      placeOrder, updateOrderStatus,
+      users, books, posts, exchanges, orders: account.orders, reports, conversations, notifications,
+      shops: catalog.shops, categories: catalog.categories, vouchers: catalog.vouchers,
+      catalogStatus: catalog.status, accountReady: account.loaded,
+      sellerBooks: account.sellerBooks, sellerOrders: account.sellerOrders, adminOrders: account.adminOrders,
+      myExchanges: account.myExchanges, sentOffers: account.sentOffers,
+      userById, bookById, shopById, loadBook,
+      refreshCatalog, refreshCart, refreshOrders, refreshSellerData, refreshAdminData, refreshExchanges,
+      getCart, addToCart, updateCartQty, removeCartItem,
+      placeOrder, cancelOrder, completeOrder,
       addPost, toggleLike, addComment, setPostHidden, deletePost,
       addReport, resolveReport,
       setUserStatus, registerUser,
-      upsertBook, setBookStatus, deleteBook,
-      addExchange,
+      saveSellerBook, deleteSellerBook, updateSellerOrderStatus, setBookStatus, deleteBook,
+      addExchange, sendExchangeOffer, respondExchangeOffer, setExchangeStatus, deleteExchange,
       findOrCreateConversation, sendMessage, markConversationRead, unreadCount,
       getProgress, saveProgress,
       pushNotification, markNotificationsRead,
       daily, getDaily, earnPoints, trackDaily, claimTask, touchStreak,
       feedPet, growPet, renamePet, redeemReward, redemptions,
-      addBlindBox, revealBlindBox,
+      matchBlindBox, addBlindBox, revealBlindBox,
     }),
     [
-      users, books, posts, exchanges, orders, reports, conversations, notifications, carts,
-      userById, bookById, shopById, getCart, addToCart, setCartQty, removeFromCart, clearCart,
-      placeOrder, updateOrderStatus, addPost, toggleLike, addComment, setPostHidden, deletePost,
-      addReport, resolveReport, setUserStatus, registerUser, upsertBook, setBookStatus, deleteBook,
-      addExchange, findOrCreateConversation, sendMessage, markConversationRead, unreadCount,
+      users, books, posts, exchanges, account.orders, reports, conversations, notifications,
+      catalog.shops, catalog.categories, catalog.vouchers, catalog.status, account.loaded,
+      account.sellerBooks, account.sellerOrders, account.adminOrders, account.myExchanges, account.sentOffers,
+      userById, bookById, shopById, loadBook,
+      refreshCatalog, refreshCart, refreshOrders, refreshSellerData, refreshAdminData, refreshExchanges,
+      getCart, addToCart, updateCartQty, removeCartItem, placeOrder, cancelOrder, completeOrder,
+      addPost, toggleLike, addComment, setPostHidden, deletePost,
+      addReport, resolveReport, setUserStatus, registerUser,
+      saveSellerBook, deleteSellerBook, updateSellerOrderStatus, setBookStatus, deleteBook,
+      addExchange, sendExchangeOffer, respondExchangeOffer, setExchangeStatus, deleteExchange,
+      findOrCreateConversation, sendMessage, markConversationRead, unreadCount,
       getProgress, saveProgress, pushNotification, markNotificationsRead,
       daily, getDaily, earnPoints, trackDaily, claimTask, touchStreak,
       feedPet, growPet, renamePet, redeemReward, redemptions,
-      addBlindBox, revealBlindBox,
+      matchBlindBox, addBlindBox, revealBlindBox,
     ]
   );
 

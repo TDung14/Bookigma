@@ -15,17 +15,31 @@ export default function BookDetailPage() {
   const navigate = useNavigate();
   const toast = useToast();
   const { user } = useAuth();
-  const { bookById, shopById, books, addToCart, getProgress, findOrCreateConversation, userById, trackDaily } = useApp();
+  const {
+    bookById, shopById, books, addToCart, getProgress, findOrCreateConversation, userById, trackDaily, catalogStatus,
+  } = useApp();
 
   const [qty, setQty] = useState(1);
   const [reporting, setReporting] = useState(false);
+  const [adding, setAdding] = useState(false);
 
   const book = bookById(id);
+  const viewerId = user?.id;
+  const foundBookId = book?.id;
 
   // Mở trang chi tiết một cuốn tính là một lượt "khám phá sách mới" cho nhiệm vụ hằng ngày.
+  // Phụ thuộc vào id (không phải object) để lần tải lại danh mục không bị tính thêm lượt.
   useEffect(() => {
-    if (user && book) trackDaily(user.id, 'explore', 1);
-  }, [user, book, trackDaily]);
+    if (viewerId && foundBookId) trackDaily(viewerId, 'explore', 1);
+  }, [viewerId, foundBookId, trackDaily]);
+
+  if (!book && catalogStatus === 'loading') {
+    return (
+      <div className="main-layout">
+        <div className="card empty"><h3>Đang tải thông tin sách...</h3></div>
+      </div>
+    );
+  }
 
   if (!book) {
     return (
@@ -50,19 +64,33 @@ export default function BookDetailPage() {
     return false;
   };
 
-  const handleAddToCart = () => {
-    if (requireLogin()) return;
-    if (book.stock <= 0) return toast('Sản phẩm đã hết hàng.', 'error');
-    addToCart(user.id, book.id, qty);
-    toast(`Đã thêm ${qty} cuốn "${book.title}" vào giỏ.`);
+  const putInCart = async () => {
+    if (requireLogin()) return false;
+    if (book.stock <= 0) {
+      toast('Sản phẩm đã hết hàng.', 'error');
+      return false;
+    }
+    setAdding(true);
+    try {
+      await addToCart(user.id, book.id, qty);
+      return true;
+    } catch (error) {
+      toast(error.message || 'Không thể thêm vào giỏ hàng.', 'error');
+      return false;
+    } finally {
+      setAdding(false);
+    }
   };
 
-  const handleBuyNow = () => {
-    if (requireLogin()) return;
-    if (book.stock <= 0) return toast('Sản phẩm đã hết hàng.', 'error');
-    addToCart(user.id, book.id, qty);
-    navigate('/checkout');
+  const handleAddToCart = async () => {
+    if (await putInCart()) toast(`Đã thêm ${qty} cuốn "${book.title}" vào giỏ.`);
   };
+
+  const handleBuyNow = async () => {
+    if (await putInCart()) navigate('/checkout');
+  };
+
+  const canPreview = book.chapterCount > 0 || book.chapters?.length > 0;
 
   const chatWithShop = () => {
     if (requireLogin()) return;
@@ -155,13 +183,13 @@ export default function BookDetailPage() {
             </div>
 
             <div className="row" style={{ gap: 10, flexWrap: 'wrap' }}>
-              <button className="btn btn-ghost btn-lg" onClick={handleAddToCart} disabled={book.stock <= 0}>
+              <button className="btn btn-ghost btn-lg" onClick={handleAddToCart} disabled={book.stock <= 0 || adding}>
                 <ShoppingCart size={17} /> Thêm vào giỏ
               </button>
-              <button className="btn btn-primary btn-lg" onClick={handleBuyNow} disabled={book.stock <= 0}>
+              <button className="btn btn-primary btn-lg" onClick={handleBuyNow} disabled={book.stock <= 0 || adding}>
                 Mua ngay
               </button>
-              {book.chapters?.length > 0 && (
+              {canPreview && (
                 <Link to={`/read/${book.id}`} className="btn btn-soft btn-lg">
                   <BookOpen size={17} /> Đọc thử
                 </Link>

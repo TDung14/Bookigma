@@ -31,3 +31,10 @@ build/
 
 ### VS Code ###
 .vscode/
+
+
+pom.xml
+
+### Spring Boot ###
+src/main/resources/application.properties
+src/main/resources/application.yml

@@ -1,10 +1,18 @@
 const API_URL = `${import.meta.env.VITE_API_URL || 'http://localhost:8080'}/api`;
 
-export async function apiCall(endpoint, method = 'GET', body = null) {
+/**
+ * Gọi API backend. Truyền `userId` cho các API cần biết ai đang đăng nhập (giỏ hàng, đơn hàng...):
+ * dự án chưa có JWT nên id được gửi qua header X-User-Id (backend đọc ở CurrentUserIdArgumentResolver).
+ */
+export async function apiCall(endpoint, method = 'GET', body = null, { userId } = {}) {
   const config = {
     method,
     headers: { 'Content-Type': 'application/json' },
   };
+
+  if (userId !== null && userId !== undefined) {
+    config.headers['X-User-Id'] = String(userId);
+  }
 
   if (body !== null && body !== undefined) {
     config.body = JSON.stringify(body);

@@ -22,6 +22,9 @@ public class Notification {
     @Column(nullable = false)
     private String message;
 
+    // Đường dẫn trong app khi bấm vào thông báo, ví dụ /orders/12
+    private String link;
+
     @Builder.Default
     private boolean isRead = false;
 
