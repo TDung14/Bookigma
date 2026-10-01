@@ -73,7 +73,8 @@ export function AppProvider({ children }) {
   const userId = user?.id ?? null;
   const role = user?.role ?? null;
 
-  const [users, setUsers] = useState(() => load('users', seed.users));
+  // Danh sách users luôn lấy từ backend/database; không khôi phục dữ liệu user ảo từ localStorage.
+  const [users, setUsers] = useState([]);
   const [posts, setPosts] = useState([]);
   const [reports, setReports] = useState(() => load('reports', seed.reports));
   const [conversations, setConversations] = useState([]);
@@ -82,15 +83,16 @@ export function AppProvider({ children }) {
   const [localNotifications, setLocalNotifications] = useState(() => load('notifications', seed.notifications));
   const [daily, setDaily] = useState(() => load('daily', {}));
   const [redemptions, setRedemptions] = useState(() => load('redemptions', seed.redemptions));
-  const [social, setSocial] = useState(() =>
-    load('social', {
-      friends: {},
-      followings: { u1: ['u3', 'u5'], u2: ['u3'], u3: ['u5'], u5: ['u1'] },
-    })
-  );
+  // Không khôi phục social/followings demo từ localStorage.
+  // Xóa riêng 2 key dữ liệu ảo cũ nếu chúng còn tồn tại; các localStorage khác giữ nguyên.
+  const [social, setSocial] = useState({ friends: {}, followings: {} });
 
-  useEffect(() => save('users', users), [users]);
-  useEffect(() => save('social', social), [social]);
+  useEffect(() => {
+    try {
+      localStorage.removeItem('users');
+      localStorage.removeItem('social');
+    } catch {}
+  }, []);
 
   // Feed lấy dữ liệu thật từ MySQL; không dùng seed/localStorage cho bài viết.
   const normalizePost = useCallback((p) => ({

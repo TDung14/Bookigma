@@ -77,7 +77,7 @@ export default function FriendsPage() {
     const sent = hasSentFriendRequest(userId, person.id);
 
     if (friend) {
-      const confirmed = window.confirm(`Bạn có chắc chắn muốn hủy kết bạn với "${name}" không?`);
+      const confirmed = window.confirm(`Bạn có chắc chắn muốn hủy kết bạn với ${name} không?`);
       if (!confirmed) return;
     } else if (sent) {
       const confirmed = window.confirm(`Bạn có chắc chắn muốn hủy lời mời kết bạn với "${name}" không?`);
@@ -207,7 +207,7 @@ export default function FriendsPage() {
                     </button>
                     <button className="btn btn-sm btn-ghost" onClick={() => messageUser(person.id)}><MessageSquare size={14} /> Nhắn tin</button>
                   </div>
-                  <div className="row tiny muted" style={{ gap: 10, marginTop: 12 }}><span><Users size={13} /> {(getFollowing(person.id) || []).length} đang theo dõi</span></div>
+                  <div className="row tiny muted" style={{ gap: 10, marginTop: 12 }}><span><Users size={13} /> {(getFollowers(person.id) || []).length} đang theo dõi</span></div>
                 </div>
               );
             })}
