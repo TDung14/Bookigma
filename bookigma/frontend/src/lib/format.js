@@ -76,4 +76,5 @@ export const REPORT_TYPE = {
   user: 'Người dùng',
   comment: 'Bình luận',
   exchange: 'Tin trao đổi',
+  club: 'Câu lạc bộ',
 };

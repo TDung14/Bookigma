@@ -13,23 +13,28 @@ const REASONS = [
   'Lý do khác',
 ];
 
-/**
- * Hộp thoại báo cáo vi phạm dùng chung cho bài đăng, sản phẩm, người dùng, bình luận
- * và tin trao đổi. Báo cáo được đẩy thẳng vào hàng chờ của Admin.
- */
 export default function ReportModal({ open, onClose, type, targetId, targetLabel }) {
   const { addReport } = useApp();
   const { user } = useAuth();
   const toast = useToast();
   const [reason, setReason] = useState(REASONS[0]);
   const [detail, setDetail] = useState('');
+  const [sending, setSending] = useState(false);
 
-  const submit = () => {
-    addReport({ type, targetId, targetLabel, reporterId: user.id, reason, detail: detail.trim() });
-    toast('Đã gửi báo cáo. Quản trị viên sẽ xem xét trong 24 giờ.');
-    setDetail('');
-    setReason(REASONS[0]);
-    onClose();
+  const submit = async () => {
+    if (!user?.id || !targetId || !type) return;
+    setSending(true);
+    try {
+      await addReport({ type, targetId, targetLabel, reporterId: user.id, reason, detail: detail.trim() });
+      toast('Đã gửi báo cáo. Quản trị viên sẽ xem xét.');
+      setDetail('');
+      setReason(REASONS[0]);
+      onClose();
+    } catch (error) {
+      toast(error.message || 'Không thể gửi báo cáo.', 'error');
+    } finally {
+      setSending(false);
+    }
   };
 
   return (
@@ -39,15 +44,14 @@ export default function ReportModal({ open, onClose, type, targetId, targetLabel
       title="Báo cáo vi phạm"
       footer={
         <>
-          <button className="btn btn-ghost" onClick={onClose}>Hủy</button>
-          <button className="btn btn-danger" onClick={submit}>Gửi báo cáo</button>
+          <button className="btn btn-ghost" onClick={onClose} disabled={sending}>Hủy</button>
+          <button className="btn btn-danger" onClick={submit} disabled={sending}>{sending ? 'Đang gửi...' : 'Gửi báo cáo'}</button>
         </>
       }
     >
       <p className="small muted" style={{ marginTop: 0 }}>
         Bạn đang báo cáo: <b style={{ color: 'var(--text-main)' }}>{targetLabel}</b>
       </p>
-
       <div className="field">
         <label className="label">Lý do báo cáo</label>
         <div className="stack" style={{ gap: 8 }}>
@@ -59,16 +63,9 @@ export default function ReportModal({ open, onClose, type, targetId, targetLabel
           ))}
         </div>
       </div>
-
       <Field label="Mô tả chi tiết (không bắt buộc)" style={{ marginBottom: 0 }}>
         {(id) => (
-          <textarea
-            id={id}
-            className="textarea"
-            placeholder="Cung cấp thêm thông tin giúp quản trị viên xử lý nhanh hơn..."
-            value={detail}
-            onChange={(e) => setDetail(e.target.value)}
-          />
+          <textarea id={id} className="textarea" placeholder="Cung cấp thêm thông tin giúp quản trị viên xử lý nhanh hơn..." value={detail} onChange={(e) => setDetail(e.target.value)} />
         )}
       </Field>
     </Modal>

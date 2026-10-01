@@ -7,6 +7,8 @@ import { apiCall } from '../services/api';
 import * as shopApi from '../services/shopApi';
 import * as exchangeApi from '../services/exchangeApi';
 import * as notificationApi from '../services/notificationApi';
+import * as adminApi from '../services/adminApi';
+import * as reportApi from '../services/reportApi';
 import * as chatApi from '../lib/chatApi';
 import * as friendApi from '../services/friendApi';
 import { useAuth } from '../hooks/useStore';
@@ -76,7 +78,7 @@ export function AppProvider({ children }) {
   // Danh sách users luôn lấy từ backend/database; không khôi phục dữ liệu user ảo từ localStorage.
   const [users, setUsers] = useState([]);
   const [posts, setPosts] = useState([]);
-  const [reports, setReports] = useState(() => load('reports', seed.reports));
+  const [reports, setReports] = useState([]);
   const [conversations, setConversations] = useState([]);
   const [friendState, setFriendState] = useState({ friendIds: [], sentPendingIds: [], receivedPendingIds: [] });
   const [progressAll, setProgressAll] = useState(() => load('progress', seed.readingProgress));
@@ -131,7 +133,6 @@ export function AppProvider({ children }) {
     return () => { cancelled = true; clearInterval(timer); };
   }, [userId, refreshPosts]);
 
-  useEffect(() => save('reports', reports), [reports]);
   useEffect(() => save('progress', progressAll), [progressAll]);
   useEffect(() => save('notifications', localNotifications), [localNotifications]);
   useEffect(() => save('daily', daily), [daily]);
@@ -241,15 +242,50 @@ export function AppProvider({ children }) {
   }, [userId, role, patchAccount]);
 
   const refreshAdminData = useCallback(async () => {
-    if (role !== 'admin') return;
-    try {
-      const [adminBooks, adminOrders] = await Promise.all([
-        shopApi.fetchAdminBooks(userId),
-        shopApi.fetchAdminOrders(userId),
-      ]);
-      patchAccount(userId, { adminBooks, adminOrders });
-    } catch {}
-  }, [userId, role, patchAccount]);
+    if (role !== 'admin' || !userId) return;
+    const results = await Promise.allSettled([
+      shopApi.fetchAdminBooks(userId),
+      shopApi.fetchAdminOrders(userId),
+      adminApi.fetchPosts(userId),
+      reportApi.fetchAdminReports(userId),
+      adminApi.fetchUsers(userId),
+    ]);
+    const value = (i) => results[i].status === 'fulfilled' ? results[i].value : [];
+    const adminPosts = value(2);
+    const adminReports = value(3);
+    const adminUsers = value(4);
+    if (Array.isArray(adminUsers)) {
+      setUsers(adminUsers.filter((u) => u && u.id != null).map((u) => ({
+        ...u,
+        id: String(u.id),
+        name: u.fullName || u.username || 'Người dùng',
+        avatar: u.avatarUrl || `https://i.pravatar.cc/150?u=${encodeURIComponent(u.email || u.username || u.id)}`,
+        role: String(u.role || 'USER').toLowerCase(),
+        status: u.active === false ? 'suspended' : 'active',
+        points: 0,
+        booksRead: 0,
+        joinedAt: u.createdAt,
+      })));
+    }
+    if (Array.isArray(adminPosts)) setPosts(adminPosts.map(normalizePost));
+    if (Array.isArray(adminReports)) setReports(adminReports.map((r) => ({
+      id: r.id,
+      reporterId: r.reporterId,
+      reporterName: r.reporterName,
+      type: String(r.targetType || '').toLowerCase(),
+      targetId: r.targetId,
+      targetLabel: r.targetLabel,
+      targetContent: r.targetContent,
+      reason: r.reason,
+      detail: r.detail || '',
+      status: String(r.status || 'PENDING').toLowerCase() === 'dismissed' ? 'rejected' : String(r.status || 'PENDING').toLowerCase(),
+      handledBy: r.resolvedBy,
+      handledByName: r.resolvedByName,
+      handledNote: r.detail || '',
+      createdAt: r.createdAt ? new Date(r.createdAt).getTime() : Date.now(),
+    })));
+    patchAccount(userId, { adminBooks: value(0), adminOrders: value(1) });
+  }, [userId, role, patchAccount, normalizePost]);
 
   const refreshExchanges = useCallback(async () => {
     try {
@@ -342,7 +378,9 @@ export function AppProvider({ children }) {
 
   const syncUsers = useCallback(async () => {
     try {
-      const data = await apiCall('/users');
+      const data = role === 'admin' && userId
+        ? await adminApi.fetchUsers(userId)
+        : await apiCall('/users');
       if (!Array.isArray(data)) return [];
       const normalized = data
         .filter((u) => u && Number.isFinite(Number(u.id)))
@@ -368,7 +406,7 @@ export function AppProvider({ children }) {
     } catch {
       return [];
     }
-  }, []);
+  }, [role, userId]);
 
   useEffect(() => {
     syncUsers();
@@ -699,27 +737,108 @@ export function AppProvider({ children }) {
     setPosts((prev) => prev.map((p) => (p.id === postId ? { ...p, hidden } : p)));
   }, []);
 
-  const deletePost = useCallback((postId) => {
+  const deletePost = useCallback(async (postId) => {
+    if (!userId) throw new Error('Bạn cần đăng nhập.');
+    const result = await adminApi.deletePost(userId, postId);
     setPosts((prev) => prev.filter((p) => p.id !== postId));
-  }, []);
+    return result;
+  }, [userId]);
 
-  // ---------- Báo cáo vi phạm ----------
-  const addReport = useCallback((report) => {
-    const full = { ...report, id: uid('r'), status: 'pending', createdAt: Date.now(), handledBy: null, handledNote: '' };
-    setReports((prev) => [full, ...prev]);
-    return full;
-  }, []);
+  // ---------- Báo cáo vi phạm (backend/MySQL) ----------
+  const addReport = useCallback(async (report) => {
+    if (!userId) throw new Error('Bạn cần đăng nhập.');
+    const saved = await reportApi.createReport(userId, {
+      targetType: String(report.type || '').toUpperCase(),
+      targetId: report.targetId,
+      reason: report.reason,
+      detail: report.detail || null,
+    });
+    const normalized = {
+      id: saved.id,
+      reporterId: saved.reporterId,
+      reporterName: saved.reporterName,
+      type: String(saved.targetType || '').toLowerCase(),
+      targetId: saved.targetId,
+      targetLabel: saved.targetLabel,
+      targetContent: saved.targetContent,
+      reason: saved.reason,
+      detail: saved.detail || '',
+      status: String(saved.status || 'PENDING').toLowerCase(),
+      handledBy: saved.resolvedBy,
+      handledByName: saved.resolvedByName,
+      handledNote: '',
+      createdAt: saved.createdAt ? new Date(saved.createdAt).getTime() : Date.now(),
+    };
+    setReports((prev) => [normalized, ...prev]);
+    return normalized;
+  }, [userId]);
 
-  const resolveReport = useCallback((reportId, status, handledBy, handledNote) => {
-    setReports((prev) =>
-      prev.map((r) => (r.id === reportId ? { ...r, status, handledBy, handledNote, handledAt: Date.now() } : r))
-    );
-  }, []);
+  const resolveReport = useCallback(async (reportId, status, handledBy, handledNote, action = 'NONE') => {
+    if (!userId) throw new Error('Bạn cần đăng nhập.');
+    const saved = await reportApi.resolveAdminReport(userId, reportId, {
+      status: status === 'resolved' ? 'RESOLVED' : 'DISMISSED',
+      action,
+      note: handledNote || null,
+    });
+    const normalized = {
+      id: saved.id,
+      reporterId: saved.reporterId,
+      reporterName: saved.reporterName,
+      type: String(saved.targetType || '').toLowerCase(),
+      targetId: saved.targetId,
+      targetLabel: saved.targetLabel,
+      targetContent: saved.targetContent,
+      reason: saved.reason,
+      detail: saved.detail || '',
+      status: String(saved.status || 'PENDING').toLowerCase() === 'dismissed' ? 'rejected' : String(saved.status || 'PENDING').toLowerCase(),
+      handledBy: saved.resolvedBy,
+      handledByName: saved.resolvedByName,
+      handledNote: handledNote || '',
+      createdAt: saved.createdAt ? new Date(saved.createdAt).getTime() : Date.now(),
+    };
+    setReports((prev) => prev.map((r) => String(r.id) === String(reportId) ? normalized : r));
+    if (action !== 'NONE') await refreshPosts();
+    return normalized;
+  }, [userId, refreshPosts]);
 
   // ---------- Người dùng (admin) ----------
-  const setUserStatus = useCallback((uId, status) => {
-    setUsers((prev) => prev.map((u) => (u.id === uId ? { ...u, status } : u)));
-  }, []);
+  const setUserStatus = useCallback(async (uId, status) => {
+    if (!userId) throw new Error('Bạn cần đăng nhập.');
+    const active = status !== 'suspended';
+    const saved = await adminApi.updateUserStatus(userId, uId, active);
+    upsertUser({
+      id: saved.id,
+      username: saved.username,
+      email: saved.email,
+      fullName: saved.fullName,
+      avatarUrl: saved.avatarUrl,
+      role: String(saved.role || 'USER').toLowerCase(),
+      active: saved.active,
+    });
+    return saved;
+  }, [userId, upsertUser]);
+
+  const updateUserRole = useCallback(async (uId, role) => {
+    if (!userId) throw new Error('Bạn cần đăng nhập.');
+    const saved = await adminApi.updateUserRole(userId, uId, role);
+    upsertUser({
+      id: saved.id,
+      username: saved.username,
+      email: saved.email,
+      fullName: saved.fullName,
+      avatarUrl: saved.avatarUrl,
+      role: String(saved.role || 'USER').toLowerCase(),
+      active: saved.active,
+    });
+    return saved;
+  }, [userId, upsertUser]);
+
+  const deleteUser = useCallback(async (uId) => {
+    if (!userId) throw new Error('Bạn cần đăng nhập.');
+    const result = await adminApi.deleteUser(userId, uId);
+    setUsers((prev) => prev.filter((u) => String(u.id) !== String(uId)));
+    return result;
+  }, [userId]);
 
   const registerUser = useCallback((data) => {
     const newUser = {
@@ -1078,6 +1197,7 @@ export function AppProvider({ children }) {
       refreshOrders,
       refreshSellerData,
       refreshAdminData,
+      refreshPosts,
       refreshExchanges,
       getCart,
       addToCart,
@@ -1098,6 +1218,8 @@ export function AppProvider({ children }) {
       addReport,
       resolveReport,
       setUserStatus,
+      updateUserRole,
+      deleteUser,
       registerUser,
       saveSellerBook,
       upsertBook,
@@ -1177,6 +1299,7 @@ export function AppProvider({ children }) {
       refreshOrders,
       refreshSellerData,
       refreshAdminData,
+      refreshPosts,
       refreshExchanges,
       getCart,
       addToCart,
@@ -1197,6 +1320,8 @@ export function AppProvider({ children }) {
       addReport,
       resolveReport,
       setUserStatus,
+      updateUserRole,
+      deleteUser,
       registerUser,
       saveSellerBook,
       upsertBook,
