@@ -4,6 +4,9 @@ DROP DATABASE IF EXISTS `Bookigma`;
 CREATE DATABASE IF NOT EXISTS Bookigma CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 USE Bookigma;
 
+-- Du lieu mau co dau tieng Viet: doc file theo utf8mb4 du chay bang Workbench hay mysql CLI.
+SET NAMES utf8mb4;
+
 -- ========================================================
 -- 2. TAI KHOAN & GOI THANH VIEN
 -- ========================================================
@@ -27,7 +30,7 @@ CREATE TABLE `users` (
     `avatar_url` VARCHAR(255) NULL,
     `bio` TEXT NULL,
 
-    `role` ENUM('USER', 'MODERATOR', 'ADMIN')
+    `role` VARCHAR(20)
         NOT NULL DEFAULT 'USER',
 
     `is_active` BOOLEAN NOT NULL DEFAULT TRUE,
@@ -639,31 +642,31 @@ SET FOREIGN_KEY_CHECKS = 1;
 -- GOI DICH VU
 -- --------------------------------------------------------
 INSERT INTO subscription_plans (plan_id, name, price, duration_days, description, max_reading_limit) VALUES
-(1, 'Goi Mien Phi (Standard Free)',          0.00,    3650, 'Doc cac dau sach kinh dien cong dong, tham gia thao luan nhom.', 3),
-(2, 'Goi Mot Sach Thang (Bookworm Monthly)', 59000.00,  30, 'Doc toan bo kho sach VIP khong gioi han, khong co quang cao trong 30 ngay.', NULL),
-(3, 'Goi Mot Sach Quy (Bookworm Quarterly)', 159000.00, 90, 'Tiet kiem 10%, mo khoa toan bo sach VIP va huy hieu doc quyen.', NULL),
-(4, 'Goi Hoc Gia Nam (Scholar Yearly)',      599000.00, 365,'Doc sach VIP khong gioi han ca nam, giam gia 10% khi mua sach giay.', NULL);
+(1, 'Gói Miễn Phí (Standard Free)',          0.00,    3650, 'Đọc các đầu sách kinh điển cộng đồng, tham gia thảo luận nhóm.', 3),
+(2, 'Gói Mọt Sách Tháng (Bookworm Monthly)', 59000.00,  30, 'Đọc toàn bộ kho sách VIP không giới hạn, không có quảng cáo trong 30 ngày.', NULL),
+(3, 'Gói Mọt Sách Quý (Bookworm Quarterly)', 159000.00, 90, 'Tiết kiệm 10%, mở khóa toàn bộ sách VIP và huy hiệu độc quyền.', NULL),
+(4, 'Gói Học Giả Năm (Scholar Yearly)',      599000.00, 365,'Đọc sách VIP không giới hạn cả năm, giảm giá 10% khi mua sách giấy.', NULL);
 
 -- --------------------------------------------------------
 -- TAI KHOAN NGUOI DUNG
 -- --------------------------------------------------------
 INSERT INTO `users` (`user_id`, `username`, `email`, `password_hash`, `full_name`, `avatar_url`, `bio`, `role`, `is_active`, `created_at`) VALUES
-(1, 'ducanh',   'user@bookigma.vn',   '$2a$10$KsgnH9AMOcdtNizkcggv2.4NCnNKXmFUofpIRi0jLfpXa.KQNtcSW', 'Tran Duc Anh',     'https://i.pravatar.cc/150?img=12', 'Sinh vien nam 3, thich sach ky nang va truyen cam hung.', 'USER',  TRUE, UTC_TIMESTAMP(6) - INTERVAL 258 DAY),
-(2, 'hoangnam', 'nam@bookigma.vn',    '$2a$10$HmOcA4ZYbXnuc0/f1BGm4eEzENpIPNDb4n.BYiqVg8LwXkWvnQ0Pa', 'Nguyen Hoang Nam', 'https://i.pravatar.cc/150?img=33', 'Me van hoc Viet Nam.', 'USER',  TRUE, UTC_TIMESTAMP(6) - INTERVAL 239 DAY),
-(3, 'lethao',   'thao@bookigma.vn',   '$2a$10$qyCjZY4tVzXy2LV7MuSoEOAO0SeRMcxWomhgvvPy84mpCVaX.PP32', 'Le Thao',          'https://i.pravatar.cc/150?img=47', 'Review sach moi tuan.', 'USER',  TRUE, UTC_TIMESTAMP(6) - INTERVAL 221 DAY),
-(4, 'lananh',   'lananh@bookigma.vn', '$2a$10$EJAXBcJyHMrUt6YDmEBr6u78C1.Adp4x35RnYoz66LM0rRWtm7mKi', 'Vu Lan Anh',       'https://i.pravatar.cc/150?img=45', 'Thich sach thieu nhi.', 'USER',  TRUE, UTC_TIMESTAMP(6) - INTERVAL 195 DAY),
-(5, 'fahasa',   'shop@bookigma.vn',   '$2a$10$xLSIdddmYOofK6IBrVnh/OqDcNmjMhsZ/NKbdsgXhH8zzu2d5qwaO', 'Fahasa Official',  'https://i.pravatar.cc/150?img=68', 'Nha sach chinh hang.', 'SHOP',  TRUE, UTC_TIMESTAMP(6) - INTERVAL 332 DAY),
-(6, 'nxbtre',   'nxbtre@bookigma.vn', '$2a$10$6AUN.I1gZmYaE9KFoN2xFuRie0L71HxoVjI4r5GviHmaeAB.ZCtGq', 'NXB Tre',          'https://i.pravatar.cc/150?img=3',  'Nha xuat ban Tre.', 'SHOP',  TRUE, UTC_TIMESTAMP(6) - INTERVAL 293 DAY),
-(7, 'admin',    'admin@bookigma.vn',  '$2a$10$O/UVsIoGUgAT7eORD/IJlOILDv0qaTnSq2lDQ/h7IDcPZBMLocWDG', 'Quan tri vien',    'https://i.pravatar.cc/150?img=59', NULL, 'ADMIN', TRUE, UTC_TIMESTAMP(6) - INTERVAL 363 DAY);
+(1, 'ducanh',   'user@bookigma.vn',   '$2a$10$KsgnH9AMOcdtNizkcggv2.4NCnNKXmFUofpIRi0jLfpXa.KQNtcSW', 'Trần Đức Anh',     'https://i.pravatar.cc/150?img=12', 'Sinh viên năm 3, thích sách kỹ năng và truyền cảm hứng.', 'USER',  TRUE, UTC_TIMESTAMP(6) - INTERVAL 258 DAY),
+(2, 'hoangnam', 'nam@bookigma.vn',    '$2a$10$HmOcA4ZYbXnuc0/f1BGm4eEzENpIPNDb4n.BYiqVg8LwXkWvnQ0Pa', 'Nguyễn Hoàng Nam', 'https://i.pravatar.cc/150?img=33', 'Mê văn học Việt Nam.', 'USER',  TRUE, UTC_TIMESTAMP(6) - INTERVAL 239 DAY),
+(3, 'lethao',   'thao@bookigma.vn',   '$2a$10$qyCjZY4tVzXy2LV7MuSoEOAO0SeRMcxWomhgvvPy84mpCVaX.PP32', 'Lê Thảo',          'https://i.pravatar.cc/150?img=47', 'Review sách mỗi tuần.', 'USER',  TRUE, UTC_TIMESTAMP(6) - INTERVAL 221 DAY),
+(4, 'lananh',   'lananh@bookigma.vn', '$2a$10$EJAXBcJyHMrUt6YDmEBr6u78C1.Adp4x35RnYoz66LM0rRWtm7mKi', 'Vũ Lan Anh',       'https://i.pravatar.cc/150?img=45', 'Thích sách thiếu nhi.', 'USER',  TRUE, UTC_TIMESTAMP(6) - INTERVAL 195 DAY),
+(5, 'fahasa',   'shop@bookigma.vn',   '$2a$10$xLSIdddmYOofK6IBrVnh/OqDcNmjMhsZ/NKbdsgXhH8zzu2d5qwaO', 'Fahasa Official',  'https://i.pravatar.cc/150?img=68', 'Nhà sách chính hãng.', 'SHOP',  TRUE, UTC_TIMESTAMP(6) - INTERVAL 332 DAY),
+(6, 'nxbtre',   'nxbtre@bookigma.vn', '$2a$10$6AUN.I1gZmYaE9KFoN2xFuRie0L71HxoVjI4r5GviHmaeAB.ZCtGq', 'NXB Trẻ',          'https://i.pravatar.cc/150?img=3',  'Nhà xuất bản Trẻ.', 'SHOP',  TRUE, UTC_TIMESTAMP(6) - INTERVAL 293 DAY),
+(7, 'admin',    'admin@bookigma.vn',  '$2a$10$O/UVsIoGUgAT7eORD/IJlOILDv0qaTnSq2lDQ/h7IDcPZBMLocWDG', 'Quản trị viên',    'https://i.pravatar.cc/150?img=59', NULL, 'ADMIN', TRUE, UTC_TIMESTAMP(6) - INTERVAL 363 DAY);
 
 INSERT INTO user_points (user_id, total_points, monthly_points, current_tier) VALUES
-(1, 820,  240, 'Hoc Gia Bac'),
-(2, 450,  120, 'Ho Ve Sach'),
-(3, 310,   90, 'Tap Su'),
-(4, 180,   50, 'Tap Su'),
-(5, 0,     0,  'Quan Tri'),
-(6, 0,     0,  'Quan Tri'),
-(7, 0,     0,  'Quan Tri');
+(1, 820,  240, 'Học Giả Bạc'),
+(2, 450,  120, 'Hộ Vệ Sách'),
+(3, 310,   90, 'Tập Sự'),
+(4, 180,   50, 'Tập Sự'),
+(5, 0,     0,  'Quản Trị'),
+(6, 0,     0,  'Quản Trị'),
+(7, 0,     0,  'Quản Trị');
 
 INSERT INTO user_subscriptions (user_id, plan_id, start_date, end_date, status) VALUES
 (1, 4, UTC_TIMESTAMP() - INTERVAL 30  DAY, UTC_TIMESTAMP() + INTERVAL 335  DAY, 'ACTIVE'),
@@ -675,105 +678,106 @@ INSERT INTO user_subscriptions (user_id, plan_id, start_date, end_date, status) 
 -- SHOP
 -- --------------------------------------------------------
 INSERT INTO `shops` (`shop_id`, `owner_id`, `name`, `description`, `avatar_url`, `rating`, `follower_count`, `is_verified`, `created_at`) VALUES
-(1, 5, 'Fahasa Official', 'Nha sach Fahasa - sach chinh hang, giao hang toan quoc.',  'https://i.pravatar.cc/150?img=68', 4.8, 12400, TRUE, UTC_TIMESTAMP(6) - INTERVAL 332 DAY),
-(2, 6, 'NXB Tre',         'Nha xuat ban Tre - kho sach van hoc va thieu nhi.',        'https://i.pravatar.cc/150?img=3',  4.9,  8600, TRUE, UTC_TIMESTAMP(6) - INTERVAL 293 DAY);
+(1, 5, 'Fahasa Official', 'Nhà sách Fahasa — sách chính hãng, giao hàng toàn quốc.',  'https://i.pravatar.cc/150?img=68', 4.8, 12400, TRUE, UTC_TIMESTAMP(6) - INTERVAL 332 DAY),
+(2, 6, 'NXB Trẻ',         'Nhà xuất bản Trẻ — kho sách văn học và thiếu nhi.',        'https://i.pravatar.cc/150?img=3',  4.9,  8600, TRUE, UTC_TIMESTAMP(6) - INTERVAL 293 DAY);
 
 -- --------------------------------------------------------
 -- THE LOAI & TAC GIA
 -- --------------------------------------------------------
 INSERT INTO categories (category_id, name, slug) VALUES
-(1, 'Truyen cam hung',     'truyen-cam-hung'),
-(2, 'Tam ly - Ky nang',    'tam-ly-ky-nang'),
-(3, 'Van hoc Viet Nam',    'van-hoc-viet-nam'),
-(4, 'Van hoc nuoc ngoai',  'van-hoc-nuoc-ngoai'),
-(5, 'Khoa hoc - Cong nghe','khoa-hoc-cong-nghe'),
-(6, 'Kinh te',             'kinh-te'),
-(7, 'Thieu nhi',           'thieu-nhi');
+(1, 'Truyền cảm hứng',     'truyen-cam-hung'),
+(2, 'Tâm lý - Kỹ năng',    'tam-ly-ky-nang'),
+(3, 'Văn học Việt Nam',    'van-hoc-viet-nam'),
+(4, 'Văn học nước ngoài',  'van-hoc-nuoc-ngoai'),
+(5, 'Khoa học - Công nghệ','khoa-hoc-cong-nghe'),
+(6, 'Kinh tế',             'kinh-te'),
+(7, 'Thiếu nhi',           'thieu-nhi');
 
 INSERT INTO authors (author_id, name) VALUES
 (1,  'Paulo Coelho'),
 (2,  'Daniel Kahneman'),
 (3,  'Dale Carnegie'),
-(4,  'Nguyen Nhat Anh'),
+(4,  'Nguyễn Nhật Ánh'),
 (5,  'Yuval Noah Harari'),
 (6,  'James Clear'),
-(7,  'Nguyen Phong'),
-(8,  'Rosie Nguyen'),
+(7,  'Nguyên Phong'),
+(8,  'Rosie Nguyễn'),
 (9,  'Fyodor Dostoevsky'),
 (10, 'Kai-Fu Lee'),
-(11, 'To Hoai'),
-(12, 'Jose Mauro de Vasconcelos');
+(11, 'Tô Hoài'),
+(12, 'José Mauro de Vasconcelos');
 
 -- --------------------------------------------------------
 -- KHO SACH
 -- tags: cach nhau bang dau phay, khop voi StringListConverter cua backend
--- BlindBoxMood.MOTIVATION -> categories: Truyen cam hung, Tam ly - Ky nang
---                         -> tags: uoc mo, hanh trinh, thoi quen, phat trien ban than, tuoi tre
--- BlindBoxMood.CRY        -> categories: Van hoc Viet Nam, Van hoc nuoc ngoai
---                         -> tags: buon, cam dong, tuoi tho, tinh yeu, gia dinh
--- BlindBoxMood.SKILL      -> categories: Tam ly - Ky nang, Kinh te
---                         -> tags: ky nang mem, giao tiep, nang suat, ra quyet dinh, thoi quen
--- BlindBoxMood.ESCAPE     -> categories: Van hoc nuoc ngoai, Thieu nhi, Van hoc Viet Nam
---                         -> tags: phieu luu, kinh dien, hanh trinh, tam linh
--- BlindBoxMood.CURIOUS    -> categories: Khoa hoc - Cong nghe
---                         -> tags: khoa hoc, lich su, cong nghe, xa hoi, tien hoa
+-- Ten the loai va tag phai CO DAU va viet y het BlindBoxMood (so khop chinh xac tung ky tu).
+-- BlindBoxMood.MOTIVATION -> categories: Truyền cảm hứng, Tâm lý - Kỹ năng
+--                         -> tags: ước mơ, hành trình, thói quen, phát triển bản thân, tuổi trẻ
+-- BlindBoxMood.CRY        -> categories: Văn học Việt Nam, Văn học nước ngoài
+--                         -> tags: buồn, cảm động, tuổi thơ, tình yêu, gia đình
+-- BlindBoxMood.SKILL      -> categories: Tâm lý - Kỹ năng, Kinh tế
+--                         -> tags: kỹ năng mềm, giao tiếp, năng suất, ra quyết định, thói quen
+-- BlindBoxMood.ESCAPE     -> categories: Văn học nước ngoài, Thiếu nhi, Văn học Việt Nam
+--                         -> tags: phiêu lưu, kinh điển, hành trình, tâm linh
+-- BlindBoxMood.CURIOUS    -> categories: Khoa học - Công nghệ
+--                         -> tags: khoa học, lịch sử, công nghệ, xã hội, tiến hóa
 -- --------------------------------------------------------
 INSERT INTO `books` (`book_id`, `shop_id`, `title`, `author_id`, `category_id`, `description`, `cover_image_url`, `page_count`, `tags`, `is_digital`, `is_for_sale`, `sale_price`, `original_price`, `stock_quantity`, `sold_count`, `rating_avg`, `rating_count`, `status`, `created_at`) VALUES
-(1,  1, 'Nha Gia Kim',                     1,  1, 'Cau chuyen ve cau be chan cuu Santiago di tim kho bau va kham pha ra van menh cua chinh minh.',                   'https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?w=400&q=80',  228, 'triet ly,hanh trinh,uoc mo,tam linh',           TRUE, TRUE,  79000,  99000, 148, 5120, 4.9, 2418, 'ACTIVE',  UTC_TIMESTAMP(6) - INTERVAL 120 DAY),
-(2,  2, 'Tu Duy Nhanh Va Cham',            2,  2, 'Giai Nobel Kinh te Daniel Kahneman giai thich hai he thong chi phoi cach chung ta suy nghi.',                    'https://images.unsplash.com/photo-1589829085413-56de8ae18c73?w=400&q=80', 542, 'tam ly hoc,ra quyet dinh,hanh vi,khoa hoc',    TRUE, TRUE, 145000, 189000,  62, 2340, 4.8, 1180, 'ACTIVE',  UTC_TIMESTAMP(6) - INTERVAL 115 DAY),
-(3,  1, 'Dac Nhan Tam',                    3,  2, 'Cuon sach kinh dien ve nghe thuat giao tiep va ung xu, giup xay dung moi quan he ben vung.',                     'https://images.unsplash.com/photo-1512820790803-83ca734da794?w=400&q=80',  320, 'giao tiep,ky nang mem,quan he',                 TRUE, TRUE,  89000, 110000, 320, 8800, 4.7, 3902, 'ACTIVE',  UTC_TIMESTAMP(6) - INTERVAL 110 DAY),
-(4,  2, 'Mat Biec',                        4,  3, 'Cau chuyen tinh don phuong day dut cua Ngan danh cho Ha Lan, trai dai tu lang Do Do toi thanh pho.',             'https://images.unsplash.com/photo-1495446815901-a7297e633e8d?w=400&q=80',  268, 'tinh yeu,tuoi tho,lang que,buon',               TRUE, TRUE,  95000, 120000,  95, 6400, 4.9, 2760, 'ACTIVE',  UTC_TIMESTAMP(6) - INTERVAL 105 DAY),
-(5,  1, 'Sapiens: Luoc Su Loai Nguoi',     5,  5, 'Hanh trinh 70.000 nam cua loai Homo sapiens, tu nhung bay nguoi san bat hai luom den chu nhan cua hanh tinh.',  'https://images.unsplash.com/photo-1532012197267-da84d127e765?w=400&q=80',  554, 'lich su,tien hoa,xa hoi,khoa hoc',              TRUE, TRUE, 199000, 259000,  48, 3100, 4.8, 1540, 'ACTIVE',  UTC_TIMESTAMP(6) - INTERVAL 100 DAY),
-(6,  1, 'Atomic Habits - Thay Doi Ti Hon', 6,  2, 'Phuong phap da duoc chung minh de xay dung thoi quen tot bang nhung thay doi 1% moi ngay.',                    'https://images.unsplash.com/photo-1544947950-fa07a98d237f?w=400&q=80',   320, 'thoi quen,nang suat,phat trien ban than',       TRUE, TRUE, 139000, 169000, 210, 4500, 4.9, 2210, 'ACTIVE',  UTC_TIMESTAMP(6) - INTERVAL  95 DAY),
-(7,  2, 'Muon Kiep Nhan Sinh',             7,  1, 'Nhung cau chuyen ve luan hoi, nhan qua va y nghia sau xa cua kiep nguoi qua loi ke cua Thomas.',               'https://images.unsplash.com/photo-1481627834876-b7833e8f5570?w=400&q=80',  398, 'tam linh,triet ly,nhan qua,hanh trinh',         TRUE, TRUE, 129000, 158000,  76, 3900, 4.7, 1890, 'ACTIVE',  UTC_TIMESTAMP(6) - INTERVAL  90 DAY),
-(8,  2, 'Tuoi Tre Dang Gia Bao Nhieu',     8,  1, 'Cuon sach goi dau giuong cua nguoi tre Viet ve hoc, lam va di.',                                               'https://images.unsplash.com/photo-1524578271613-d550eacf6090?w=400&q=80',  285, 'tuoi tre,phat trien ban than,du lich',          TRUE, TRUE,  75000,  90000, 130, 2800, 4.5, 1420, 'ACTIVE',  UTC_TIMESTAMP(6) - INTERVAL  85 DAY),
-(9,  1, 'Toi Ac Va Hinh Phat',             9,  4, 'Kiet tac tam ly ve toi loi, su dan vat va con duong cuu chuoc cua Raskolnikov.',                                'https://images.unsplash.com/photo-1519682337058-a94d519337bc?w=400&q=80',  671, 'kinh dien,tam ly,triet ly,Nga',                 TRUE, TRUE, 165000, 199000,  34, 1200, 4.6,  880, 'ACTIVE',  UTC_TIMESTAMP(6) - INTERVAL  80 DAY),
-(10, 1, 'AI Va Tuong Lai Loai Nguoi',     10,  5, 'Cuoc dua AI giua My va Trung Quoc va nhung gi no co nghia voi cong viec, xa hoi va y nghia cuoc song.',        'https://images.unsplash.com/photo-1507842217343-583bb7270b66?w=400&q=80',  412, 'cong nghe,AI,tuong lai,kinh te',                TRUE, TRUE, 189000, 229000,  55,  980, 4.6,  640, 'PENDING', UTC_TIMESTAMP(6) - INTERVAL   2 DAY),
-(11, 2, 'De Men Phieu Luu Ky',            11,  7, 'Cuoc phieu luu kinh dien cua chu De Men, tac pham thieu nhi duoc yeu thich nhat Viet Nam.',                    'https://images.unsplash.com/photo-1541963463532-d68292c34b19?w=400&q=80',  168, 'thieu nhi,phieu luu,kinh dien,Viet Nam',        TRUE, TRUE,  58000,  72000, 240, 5600, 4.8, 1980, 'ACTIVE',  UTC_TIMESTAMP(6) - INTERVAL  70 DAY),
-(12, 2, 'Cay Cam Ngot Cua Toi',           12,  4, 'Cau chuyen cam dong ve cau be Zeze va cay cam ngot - nguoi ban tuong tuong cua em.',                           'https://images.unsplash.com/photo-1476275466078-4007374efbbe?w=400&q=80',  244, 'tuoi tho,cam dong,gia dinh,buon',               TRUE, TRUE, 108000, 128000,  88, 7200, 4.9, 3100, 'ACTIVE',  UTC_TIMESTAMP(6) - INTERVAL  65 DAY);
+(1,  1, 'Nhà Giả Kim',                     1,  1, 'Câu chuyện về cậu bé chăn cừu Santiago đi tìm kho báu và khám phá ra vận mệnh của chính mình.',                   'https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?w=400&q=80',  228, 'triết lý,hành trình,ước mơ,tâm linh',           TRUE, TRUE,  79000,  99000, 148, 5120, 4.9, 2418, 'ACTIVE',  UTC_TIMESTAMP(6) - INTERVAL 120 DAY),
+(2,  2, 'Tư Duy Nhanh Và Chậm',            2,  2, 'Giải Nobel Kinh tế Daniel Kahneman giải thích hai hệ thống chi phối cách chúng ta suy nghĩ.',                    'https://images.unsplash.com/photo-1589829085413-56de8ae18c73?w=400&q=80', 542, 'tâm lý học,ra quyết định,hành vi,khoa học',    TRUE, TRUE, 145000, 189000,  62, 2340, 4.8, 1180, 'ACTIVE',  UTC_TIMESTAMP(6) - INTERVAL 115 DAY),
+(3,  1, 'Đắc Nhân Tâm',                    3,  2, 'Cuốn sách kinh điển về nghệ thuật giao tiếp và ứng xử, giúp xây dựng mối quan hệ bền vững.',                     'https://images.unsplash.com/photo-1512820790803-83ca734da794?w=400&q=80',  320, 'giao tiếp,kỹ năng mềm,quan hệ',                 TRUE, TRUE,  89000, 110000, 320, 8800, 4.7, 3902, 'ACTIVE',  UTC_TIMESTAMP(6) - INTERVAL 110 DAY),
+(4,  2, 'Mắt Biếc',                        4,  3, 'Câu chuyện tình đơn phương day dứt của Ngạn dành cho Hà Lan, trải dài từ làng Đo Đo tới thành phố.',             'https://images.unsplash.com/photo-1495446815901-a7297e633e8d?w=400&q=80',  268, 'tình yêu,tuổi thơ,làng quê,buồn',               TRUE, TRUE,  95000, 120000,  95, 6400, 4.9, 2760, 'ACTIVE',  UTC_TIMESTAMP(6) - INTERVAL 105 DAY),
+(5,  1, 'Sapiens: Lược Sử Loài Người',     5,  5, 'Hành trình 70.000 năm của loài Homo sapiens, từ những bầy người săn bắt hái lượm đến chủ nhân của hành tinh.',  'https://images.unsplash.com/photo-1532012197267-da84d127e765?w=400&q=80',  554, 'lịch sử,tiến hóa,xã hội,khoa học',              TRUE, TRUE, 199000, 259000,  48, 3100, 4.8, 1540, 'ACTIVE',  UTC_TIMESTAMP(6) - INTERVAL 100 DAY),
+(6,  1, 'Atomic Habits - Thay Đổi Tí Hon', 6,  2, 'Phương pháp đã được chứng minh để xây dựng thói quen tốt bằng những thay đổi 1% mỗi ngày.',                    'https://images.unsplash.com/photo-1544947950-fa07a98d237f?w=400&q=80',   320, 'thói quen,năng suất,phát triển bản thân',       TRUE, TRUE, 139000, 169000, 210, 4500, 4.9, 2210, 'ACTIVE',  UTC_TIMESTAMP(6) - INTERVAL  95 DAY),
+(7,  2, 'Muôn Kiếp Nhân Sinh',             7,  1, 'Những câu chuyện về luân hồi, nhân quả và ý nghĩa sâu xa của kiếp người qua lời kể của Thomas.',               'https://images.unsplash.com/photo-1481627834876-b7833e8f5570?w=400&q=80',  398, 'tâm linh,triết lý,nhân quả,hành trình',         TRUE, TRUE, 129000, 158000,  76, 3900, 4.7, 1890, 'ACTIVE',  UTC_TIMESTAMP(6) - INTERVAL  90 DAY),
+(8,  2, 'Tuổi Trẻ Đáng Giá Bao Nhiêu',     8,  1, 'Cuốn sách gối đầu giường của người trẻ Việt về học, làm và đi.',                                               'https://images.unsplash.com/photo-1524578271613-d550eacf6090?w=400&q=80',  285, 'tuổi trẻ,phát triển bản thân,du lịch',          TRUE, TRUE,  75000,  90000, 130, 2800, 4.5, 1420, 'ACTIVE',  UTC_TIMESTAMP(6) - INTERVAL  85 DAY),
+(9,  1, 'Tội Ác Và Hình Phạt',             9,  4, 'Kiệt tác tâm lý về tội lỗi, sự dằn vặt và con đường cứu chuộc của Raskolnikov.',                                'https://images.unsplash.com/photo-1519682337058-a94d519337bc?w=400&q=80',  671, 'kinh điển,tâm lý,triết lý,Nga',                 TRUE, TRUE, 165000, 199000,  34, 1200, 4.6,  880, 'ACTIVE',  UTC_TIMESTAMP(6) - INTERVAL  80 DAY),
+(10, 1, 'AI Và Tương Lai Loài Người',     10,  5, 'Cuộc đua AI giữa Mỹ và Trung Quốc và những gì nó có nghĩa với công việc, xã hội và ý nghĩa cuộc sống.',        'https://images.unsplash.com/photo-1507842217343-583bb7270b66?w=400&q=80',  412, 'công nghệ,AI,tương lai,kinh tế',                TRUE, TRUE, 189000, 229000,  55,  980, 4.6,  640, 'PENDING', UTC_TIMESTAMP(6) - INTERVAL   2 DAY),
+(11, 2, 'Dế Mèn Phiêu Lưu Ký',            11,  7, 'Cuộc phiêu lưu kinh điển của chú Dế Mèn, tác phẩm thiếu nhi được yêu thích nhất Việt Nam.',                    'https://images.unsplash.com/photo-1541963463532-d68292c34b19?w=400&q=80',  168, 'thiếu nhi,phiêu lưu,kinh điển,Việt Nam',        TRUE, TRUE,  58000,  72000, 240, 5600, 4.8, 1980, 'ACTIVE',  UTC_TIMESTAMP(6) - INTERVAL  70 DAY),
+(12, 2, 'Cây Cam Ngọt Của Tôi',           12,  4, 'Câu chuyện cảm động về cậu bé Zezé và cây cam ngọt — người bạn tưởng tượng của em.',                           'https://images.unsplash.com/photo-1476275466078-4007374efbbe?w=400&q=80',  244, 'tuổi thơ,cảm động,gia đình,buồn',               TRUE, TRUE, 108000, 128000,  88, 7200, 4.9, 3100, 'ACTIVE',  UTC_TIMESTAMP(6) - INTERVAL  65 DAY);
 
 -- --------------------------------------------------------
 -- NOI DUNG DOC THU (BOOK CHAPTERS)
 -- --------------------------------------------------------
 INSERT INTO book_chapters (book_id, chapter_index, title, content_text) VALUES
-(1, 1, 'Chuong 1: Tieng goi tu vu tru',
- 'Cau ten la Santiago. Troi da chap toi khi cau cung dan cuu den mot nha tho co sup do, mai da sap tu lau va mot cay chan lon da moc len ngay noi xua la phong thanh.\n\nCau quyet dinh ngu lai day qua dem. Khi cau thuc giac thi troi hay con toi. Nhin len, cau thay cac vi sao lap lanh qua mai nha thung. Cau vua mo dung giac mo tuan truoc va lai tinh day truoc khi giac mo cham dut.'),
-(1, 2, 'Chuong 2: Ong vua gia xu Salem',
- 'Ong gia mac ao choang ngoi xuong canh cau. Ong noi rang ong la Melchizedek, vua xu Salem.\n\n"Van menh la dieu ma con hang mong muon thuc hien," ong noi. "Ai cung biet duoc van menh cua minh khi con tre."\n\n"Khi con that su mong muon dieu gi, ca vu tru se chung suc giup con dat duoc dieu ay," ong vua noi, roi bien mat vao anh nang ban trua.'),
-(1, 3, 'Chuong 3: Sa mac va bai hoc cua gio',
- 'Doan lu hanh di vao sa mac. Cat trai dai den tan chan troi, va moi ngay Santiago lai hoc duoc mot dieu moi tu su im lang menh mong ay.\n\nNguoi luyen kim dan noi: "Sa mac se day con tat ca, nhung no doi hoi con phai lang nghe. Con phai hoc ngon ngu ma moi vat tren doi deu noi chung."'),
-(2, 1, 'Chuong 1: Hai he thong',
- 'He thong 1 hoat dong tu dong va nhanh chong, hau nhu khong can no luc va khong co cam giac ve su kiem soat co chu y.\n\nHe thong 2 phan bo su chu y cho cac hoat dong tinh than doi hoi no luc. Khi chung ta nghi ve ban than minh, ta dong nhat voi He thong 2 - nhung phan lon quyet dinh trong ngay lai do He thong 1 am tham dua ra.'),
-(2, 2, 'Chuong 2: Su chu y va no luc',
- 'He thong 2 co kha nang han che. Khi ban dang ban ron voi mot viec doi hoi no luc, ban gan nhu mu truoc nhung gi dang xay ra xung quanh.\n\nThi nghiem "con khi vo hinh" cho thay khi tap trung dem so lan chuyen bong, mot nua so nguoi xem hoan toan khong nhin thay nguoi mac do khi di ngang qua man hinh.'),
-(3, 1, 'Chuong 1: Muon lay mat dung pha to ong',
- 'Ngay 7 thang 5 nam 1931, thanh pho New York chung kien cuoc vay bat toi pham gay can nhat trong lich su. "Hai Khau Sung" Crowley bi bao vay tren can ho o dai lo West End.\n\nBai hoc: chi trich la vo ich, boi no khien nguoi ta phai phong thu va thuong lam ho co suc bien minh cho minh.'),
-(4, 1, 'Chuong 1: Lang Do Do',
- 'Toi sinh ra o lang Do Do. Lang toi nho, nho den muc chi can dung o dau lang goi to mot tieng la cuoi lang da nghe.\n\nHa Lan co doi mat rat dep. Mat to, tron va den lay. Nhung cai dep cua doi mat ay khong nam o hinh dang ma nam o cai nhin - mot cai nhin khien nguoi ta thay minh vua duoc che cho vua bi bo roi.'),
-(5, 1, 'Chuong 1: Mot loai vat chang co gi dac biet',
- 'Khoang 13,5 ty nam truoc, vat chat, nang luong, thoi gian va khong gian ra doi trong su kien goi la Vu No Lon.\n\nHomo sapiens xuat hien o Dong Phi khoang 200.000 nam truoc. Trong phan lon lich su, chung ta la mot loai vat tam thuong, dung giua chuoi thuc an.'),
-(6, 1, 'Chuong 1: Suc manh dang kinh ngac cua thoi quen nguyen tu',
- 'Neu ban tot hon 1% moi ngay trong mot nam, cuoi cung ban se tot hon 37 lan. Nguoc lai, neu te di 1% moi ngay, ban gan nhu tro ve con so 0.\n\nThoi quen la lai kep cua su tu cai thien. Chung co ve nho be va vo nghia o thoi diem hien tai, nhung qua nhieu thang nam chung tao ra khac biet khong lo.'),
-(7, 1, 'Chuong 1: Cuoc gap go dinh menh',
- 'Thomas la mot nha tai chinh thanh dat o New York. Nhung dang sau su thanh cong ay la nhung giac mo lap di lap lai ve mot kiep song khac, o mot vung dat khac.\n\nOng ke: "Toi thay minh dung giua den Karnak, mac ao tu si, va biet ro tung vien da o do - du doi nay toi chua tung dat chan den Ai Cap."'),
-(8, 1, 'Chuong 1: Hoc',
- 'Toi tin rang thu tai san lon nhat cua tuoi tre khong phai la thoi gian, ma la kha nang hoc hoi nhanh hon bat ky giai doan nao khac cua doi nguoi.\n\nMoi cuon sach ban doc la mot cuoc doi thoai voi nguoi thong minh nhat trong linh vuc do, voi gia re hon mot bua an.'),
-(9, 1, 'Chuong 1: Can gac xep',
- 'Vao mot buoi chieu nong nuc dau thang Bay, mot chang trai tre buoc ra khoi can gac xep thue lai o ngo S., cham rai va nhu con luong lu, di ve phia cau K.\n\nChang da mac no ba chu nha va so gap ba ta. Khong phai vi chang nhut nhat - ma vi tu lau chang da roi vao trang thai cang thang va cau ban giong nhu chung nghi benh.'),
-(10, 1, 'Chuong 1: Khoanh khac Sputnik cua Trung Quoc',
- 'Thang 5 nam 2017, AlphaGo danh bai Kha Khiet - ky thu co vay so mot the gioi. Voi phuong Tay do la mot tin cong nghe. Voi Trung Quoc, do la khoanh khac Sputnik.'),
-(11, 1, 'Chuong 1: Toi song doc lap tu thuo be',
- 'Toi song doc lap tu thuo be. Ay la tuc le lau doi trong ho nha de chung toi. Va lai, me thuong bao chung toi rang: "Phai nhu the de cac con biet kiem an mot minh cho quen di."'),
-(12, 1, 'Chuong 1: Nguoi kham pha ra moi thu',
- 'Chung toi nam tay nhau di doc pho. Totoca chang voi gi. Anh day toi biet cuoc song la the nao. Va dieu do khien toi rat hai long, vi anh toi la nguoi kham pha ra moi thu.');
+(1, 1, 'Chương 1: Tiếng gọi từ vũ trụ',
+ 'Cậu tên là Santiago. Trời đã chập tối khi cậu cùng đàn cừu đến một nhà thờ cổ sụp đổ, mái đã sập từ lâu và một cây chăn lớn đã mọc lên ngay nơi xưa là phòng thánh.\n\nCậu quyết định ngủ lại đấy qua đêm. Khi cậu thức giấc thì trời hãy còn tối. Nhìn lên, cậu thấy các vì sao lấp lánh qua mái nhà thủng. Cậu vừa mơ đúng giấc mơ tuần trước và lại tỉnh dậy trước khi giấc mơ chấm dứt.'),
+(1, 2, 'Chương 2: Ông vua già xứ Salem',
+ 'Ông già mặc áo choàng ngồi xuống cạnh cậu. Ông nói rằng ông là Melchizedek, vua xứ Salem.\n\n"Vận mệnh là điều mà con hằng mong muốn thực hiện," ông nói. "Ai cũng biết được vận mệnh của mình khi còn trẻ."\n\n"Khi con thật sự mong muốn điều gì, cả vũ trụ sẽ chung sức giúp con đạt được điều ấy," ông vua nói, rồi biến mất vào ánh nắng ban trưa.'),
+(1, 3, 'Chương 3: Sa mạc và bài học của gió',
+ 'Đoàn lữ hành đi vào sa mạc. Cát trải dài đến tận chân trời, và mỗi ngày Santiago lại học được một điều mới từ sự im lặng mênh mông ấy.\n\nNgười luyện kim đan nói: "Sa mạc sẽ dạy con tất cả, nhưng nó đòi hỏi con phải lắng nghe. Con phải học ngôn ngữ mà mọi vật trên đời đều nói chung."'),
+(2, 1, 'Chương 1: Hai hệ thống',
+ 'Hệ thống 1 hoạt động tự động và nhanh chóng, hầu như không cần nỗ lực và không có cảm giác về sự kiểm soát có chủ ý.\n\nHệ thống 2 phân bổ sự chú ý cho các hoạt động tinh thần đòi hỏi nỗ lực. Khi chúng ta nghĩ về bản thân mình, ta đồng nhất với Hệ thống 2 — nhưng phần lớn quyết định trong ngày lại do Hệ thống 1 âm thầm đưa ra.'),
+(2, 2, 'Chương 2: Sự chú ý và nỗ lực',
+ 'Hệ thống 2 có khả năng hạn chế. Khi bạn đang bận rộn với một việc đòi hỏi nỗ lực, bạn gần như mù trước những gì đang xảy ra xung quanh.\n\nThí nghiệm "con khỉ vô hình" cho thấy khi tập trung đếm số lần chuyền bóng, một nửa số người xem hoàn toàn không nhìn thấy người mặc đồ khỉ đi ngang qua màn hình.'),
+(3, 1, 'Chương 1: Muốn lấy mật đừng phá tổ ong',
+ 'Ngày 7 tháng 5 năm 1931, thành phố New York chứng kiến cuộc vây bắt tội phạm gay cấn nhất trong lịch sử. "Hai Khẩu Súng" Crowley bị bao vây trên căn hộ ở đại lộ West End.\n\nBài học: chỉ trích là vô ích, bởi nó khiến người ta phải phòng thủ và thường làm họ cố sức biện minh cho mình.'),
+(4, 1, 'Chương 1: Làng Đo Đo',
+ 'Tôi sinh ra ở làng Đo Đo. Làng tôi nhỏ, nhỏ đến mức chỉ cần đứng ở đầu làng gọi to một tiếng là cuối làng đã nghe.\n\nHà Lan có đôi mắt rất đẹp. Mắt to, tròn và đen láy. Nhưng cái đẹp của đôi mắt ấy không nằm ở hình dáng mà nằm ở cái nhìn — một cái nhìn khiến người ta thấy mình vừa được che chở vừa bị bỏ rơi.'),
+(5, 1, 'Chương 1: Một loài vật chẳng có gì đặc biệt',
+ 'Khoảng 13,5 tỷ năm trước, vật chất, năng lượng, thời gian và không gian ra đời trong sự kiện gọi là Vụ Nổ Lớn.\n\nHomo sapiens xuất hiện ở Đông Phi khoảng 200.000 năm trước. Trong phần lớn lịch sử, chúng ta là một loài vật tầm thường, đứng giữa chuỗi thức ăn.'),
+(6, 1, 'Chương 1: Sức mạnh đáng kinh ngạc của thói quen nguyên tử',
+ 'Nếu bạn tốt hơn 1% mỗi ngày trong một năm, cuối cùng bạn sẽ tốt hơn 37 lần. Ngược lại, nếu tệ đi 1% mỗi ngày, bạn gần như trở về con số 0.\n\nThói quen là lãi kép của sự tự cải thiện. Chúng có vẻ nhỏ bé và vô nghĩa ở thời điểm hiện tại, nhưng qua nhiều tháng năm chúng tạo ra khác biệt khổng lồ.'),
+(7, 1, 'Chương 1: Cuộc gặp gỡ định mệnh',
+ 'Thomas là một nhà tài chính thành đạt ở New York. Nhưng đằng sau sự thành công ấy là những giấc mơ lặp đi lặp lại về một kiếp sống khác, ở một vùng đất khác.\n\nÔng kể: "Tôi thấy mình đứng giữa đền Karnak, mặc áo tu sĩ, và biết rõ từng viên đá ở đó — dù đời này tôi chưa từng đặt chân đến Ai Cập."'),
+(8, 1, 'Chương 1: Học',
+ 'Tôi tin rằng thứ tài sản lớn nhất của tuổi trẻ không phải là thời gian, mà là khả năng học hỏi nhanh hơn bất kỳ giai đoạn nào khác của đời người.\n\nMỗi cuốn sách bạn đọc là một cuộc đối thoại với người thông minh nhất trong lĩnh vực đó, với giá rẻ hơn một bữa ăn.'),
+(9, 1, 'Chương 1: Căn gác xép',
+ 'Vào một buổi chiều nóng nực đầu tháng Bảy, một chàng trai trẻ bước ra khỏi căn gác xép thuê lại ở ngõ S., chậm rãi và như còn lưỡng lự, đi về phía cầu K.\n\nChàng đã mắc nợ bà chủ nhà và sợ gặp bà ta. Không phải vì chàng nhút nhát — mà vì từ lâu chàng đã rơi vào trạng thái căng thẳng và cáu bẳn giống như chứng nghi bệnh.'),
+(10, 1, 'Chương 1: Khoảnh khắc Sputnik của Trung Quốc',
+ 'Tháng 5 năm 2017, AlphaGo đánh bại Kha Khiết — kỳ thủ cờ vây số một thế giới. Với phương Tây đó là một tin công nghệ. Với Trung Quốc, đó là khoảnh khắc Sputnik.'),
+(11, 1, 'Chương 1: Tôi sống độc lập từ thuở bé',
+ 'Tôi sống độc lập từ thuở bé. Ấy là tục lệ lâu đời trong họ nhà dế chúng tôi. Vả lại, mẹ thường bảo chúng tôi rằng: "Phải như thế để các con biết kiếm ăn một mình cho quen đi."'),
+(12, 1, 'Chương 1: Người khám phá ra mọi thứ',
+ 'Chúng tôi nắm tay nhau đi dọc phố. Totoca chẳng vội gì. Anh dạy tôi biết cuộc sống là thế nào. Và điều đó khiến tôi rất hài lòng, vì anh tôi là người khám phá ra mọi thứ.');
 
 -- --------------------------------------------------------
 -- MA GIAM GIA (VOUCHERS)
 -- --------------------------------------------------------
 INSERT INTO `vouchers` (`code`, `label`, `discount_type`, `discount_value`, `max_discount`, `min_order_amount`, `is_active`) VALUES
-('BOOKIGMA10', 'Giam 10% toi da 30.000d',          'PERCENT', 10.00,    30000.00, 100000.00, TRUE),
-('FREESHIP',   'Mien phi van chuyen',               'SHIPPING', 0.00,      NULL,  150000.00, TRUE),
-('GIAM50K',    'Giam 50.000d cho don tu 300.000d',  'AMOUNT',  50000.00,  NULL,   300000.00, TRUE);
+('BOOKIGMA10', 'Giảm 10% tối đa 30.000đ',          'PERCENT', 10.00,    30000.00, 100000.00, TRUE),
+('FREESHIP',   'Miễn phí vận chuyển',               'SHIPPING', 0.00,      NULL,  150000.00, TRUE),
+('GIAM50K',    'Giảm 50.000đ cho đơn từ 300.000đ',  'AMOUNT',  50000.00,  NULL,   300000.00, TRUE);
 
 -- --------------------------------------------------------
 -- BLIND BOX MAU
@@ -786,61 +790,61 @@ INSERT INTO `blind_boxes` (`box_id`, `user_id`, `book_id`, `tier`, `mood`, `pric
 -- DON HANG MAU
 -- --------------------------------------------------------
 INSERT INTO `orders` (`order_id`, `order_code`, `user_id`, `shop_id`, `recipient_name`, `recipient_phone`, `shipping_address`, `note`, `payment_method`, `voucher_code`, `subtotal`, `shipping_fee`, `discount_amount`, `total_amount`, `status`, `created_at`, `updated_at`) VALUES
-(1, 'BKG240915', 1, 1, 'Tran Duc Anh',    '0901234567', '12 Nguyen Trai, Thanh Xuan, Ha Noi',     NULL,                    'COD',  NULL,         89000.00, 25000.00,     0.00, 114000.00, 'COMPLETED', UTC_TIMESTAMP(6) - INTERVAL 288 HOUR, UTC_TIMESTAMP(6) - INTERVAL 192 HOUR),
-(2, 'BKG240920', 1, 1, 'Tran Duc Anh',    '0901234567', '12 Nguyen Trai, Thanh Xuan, Ha Noi',     NULL,                    'BANK', 'BOOKIGMA10',297000.00, 25000.00, 29700.00, 292300.00, 'SHIPPING',  UTC_TIMESTAMP(6) - INTERVAL  96 HOUR, UTC_TIMESTAMP(6) - INTERVAL  48 HOUR),
-(3, 'BKG240922', 3, 2, 'Le Thao',         '0912345678', '45 Le Loi, Quan 1, TP.HCM',              NULL,                    'MOMO', NULL,        108000.00, 25000.00,     0.00, 133000.00, 'PENDING',   UTC_TIMESTAMP(6) - INTERVAL  48 HOUR, NULL),
-(4, 'BKG240918', 4, 2, 'Vu Lan Anh',      '0987654321', '88 Tran Phu, Hai Chau, Da Nang',         'Goi qua giup minh nhe', 'COD',  'FREESHIP',  174000.00,     0.00,     0.00, 174000.00, 'CONFIRMED', UTC_TIMESTAMP(6) - INTERVAL 144 HOUR, UTC_TIMESTAMP(6) - INTERVAL 132 HOUR),
-(5, 'BKG240910', 2, 1, 'Nguyen Hoang Nam','0933222111', '7 Cau Giay, Ha Noi',                     NULL,                    'COD',  NULL,        199000.00, 25000.00,     0.00, 224000.00, 'CANCELLED', UTC_TIMESTAMP(6) - INTERVAL 360 HOUR, UTC_TIMESTAMP(6) - INTERVAL 336 HOUR),
-(6, 'BKG240921', 1, 2, 'Tran Duc Anh',    '0901234567', '12 Nguyen Trai, Thanh Xuan, Ha Noi',     NULL,                    'MOMO', NULL,        150000.00, 25000.00,     0.00, 175000.00, 'DELIVERED', UTC_TIMESTAMP(6) - INTERVAL  72 HOUR, UTC_TIMESTAMP(6) - INTERVAL  12 HOUR);
+(1, 'BKG240915', 1, 1, 'Trần Đức Anh',    '0901234567', '12 Nguyễn Trãi, Thanh Xuân, Hà Nội',     NULL,                    'COD',  NULL,         89000.00, 25000.00,     0.00, 114000.00, 'COMPLETED', UTC_TIMESTAMP(6) - INTERVAL 288 HOUR, UTC_TIMESTAMP(6) - INTERVAL 192 HOUR),
+(2, 'BKG240920', 1, 1, 'Trần Đức Anh',    '0901234567', '12 Nguyễn Trãi, Thanh Xuân, Hà Nội',     NULL,                    'BANK', 'BOOKIGMA10',297000.00, 25000.00, 29700.00, 292300.00, 'SHIPPING',  UTC_TIMESTAMP(6) - INTERVAL  96 HOUR, UTC_TIMESTAMP(6) - INTERVAL  48 HOUR),
+(3, 'BKG240922', 3, 2, 'Lê Thảo',         '0912345678', '45 Lê Lợi, Quận 1, TP.HCM',              NULL,                    'MOMO', NULL,        108000.00, 25000.00,     0.00, 133000.00, 'PENDING',   UTC_TIMESTAMP(6) - INTERVAL  48 HOUR, NULL),
+(4, 'BKG240918', 4, 2, 'Vũ Lan Anh',      '0987654321', '88 Trần Phú, Hải Châu, Đà Nẵng',         'Gói quà giúp mình nhé', 'COD',  'FREESHIP',  174000.00,     0.00,     0.00, 174000.00, 'CONFIRMED', UTC_TIMESTAMP(6) - INTERVAL 144 HOUR, UTC_TIMESTAMP(6) - INTERVAL 132 HOUR),
+(5, 'BKG240910', 2, 1, 'Nguyễn Hoàng Nam','0933222111', '7 Cầu Giấy, Hà Nội',                     NULL,                    'COD',  NULL,        199000.00, 25000.00,     0.00, 224000.00, 'CANCELLED', UTC_TIMESTAMP(6) - INTERVAL 360 HOUR, UTC_TIMESTAMP(6) - INTERVAL 336 HOUR),
+(6, 'BKG240921', 1, 2, 'Trần Đức Anh',    '0901234567', '12 Nguyễn Trãi, Thanh Xuân, Hà Nội',     NULL,                    'MOMO', NULL,        150000.00, 25000.00,     0.00, 175000.00, 'DELIVERED', UTC_TIMESTAMP(6) - INTERVAL  72 HOUR, UTC_TIMESTAMP(6) - INTERVAL  12 HOUR);
 
 INSERT INTO `order_items` (`order_id`, `book_id`, `blind_box_id`, `book_title`, `cover_image_url`, `quantity`, `unit_price`) VALUES
-(1, 3,  NULL, 'Dac Nhan Tam',                  'https://images.unsplash.com/photo-1512820790803-83ca734da794?w=400&q=80', 1,  89000.00),
-(2, 6,  NULL, 'Atomic Habits - Thay Doi Ti Hon','https://images.unsplash.com/photo-1544947950-fa07a98d237f?w=400&q=80', 1, 139000.00),
-(2, 1,  NULL, 'Nha Gia Kim',                   'https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?w=400&q=80',  2,  79000.00),
-(3, 12, NULL, 'Cay Cam Ngot Cua Toi',           'https://images.unsplash.com/photo-1476275466078-4007374efbbe?w=400&q=80', 1, 108000.00),
-(4, 11, NULL, 'De Men Phieu Luu Ky',            'https://images.unsplash.com/photo-1541963463532-d68292c34b19?w=400&q=80', 3,  58000.00),
-(5, 5,  NULL, 'Sapiens: Luoc Su Loai Nguoi',    'https://images.unsplash.com/photo-1532012197267-da84d127e765?w=400&q=80', 1, 199000.00),
-(6, 7,  1,    'Muon Kiep Nhan Sinh',             'https://images.unsplash.com/photo-1481627834876-b7833e8f5570?w=400&q=80', 1, 150000.00);
+(1, 3,  NULL, 'Đắc Nhân Tâm',                  'https://images.unsplash.com/photo-1512820790803-83ca734da794?w=400&q=80', 1,  89000.00),
+(2, 6,  NULL, 'Atomic Habits - Thay Đổi Tí Hon','https://images.unsplash.com/photo-1544947950-fa07a98d237f?w=400&q=80', 1, 139000.00),
+(2, 1,  NULL, 'Nhà Giả Kim',                   'https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?w=400&q=80',  2,  79000.00),
+(3, 12, NULL, 'Cây Cam Ngọt Của Tôi',           'https://images.unsplash.com/photo-1476275466078-4007374efbbe?w=400&q=80', 1, 108000.00),
+(4, 11, NULL, 'Dế Mèn Phiêu Lưu Ký',            'https://images.unsplash.com/photo-1541963463532-d68292c34b19?w=400&q=80', 3,  58000.00),
+(5, 5,  NULL, 'Sapiens: Lược Sử Loài Người',    'https://images.unsplash.com/photo-1532012197267-da84d127e765?w=400&q=80', 1, 199000.00),
+(6, 7,  1,    'Muôn Kiếp Nhân Sinh',             'https://images.unsplash.com/photo-1481627834876-b7833e8f5570?w=400&q=80', 1, 150000.00);
 
 INSERT INTO `order_status_history` (`order_id`, `status`, `note`, `created_at`) VALUES
-(1, 'PENDING',   'Don hang duoc tao',                                         UTC_TIMESTAMP(6) - INTERVAL 288 HOUR),
-(1, 'CONFIRMED', 'Shop xac nhan don hang',                                    UTC_TIMESTAMP(6) - INTERVAL 283 HOUR),
-(1, 'SHIPPING',  'Dang giao boi GHTK',                                        UTC_TIMESTAMP(6) - INTERVAL 264 HOUR),
-(1, 'DELIVERED', 'Giao hang thanh cong',                                      UTC_TIMESTAMP(6) - INTERVAL 216 HOUR),
-(1, 'COMPLETED', 'Khach xac nhan da nhan hang',                               UTC_TIMESTAMP(6) - INTERVAL 192 HOUR),
-(2, 'PENDING',   'Don hang duoc tao',                                         UTC_TIMESTAMP(6) - INTERVAL  96 HOUR),
-(2, 'CONFIRMED', 'Shop xac nhan don hang',                                    UTC_TIMESTAMP(6) - INTERVAL  86 HOUR),
-(2, 'SHIPPING',  'Dang giao boi GHN',                                         UTC_TIMESTAMP(6) - INTERVAL  48 HOUR),
-(3, 'PENDING',   'Don hang duoc tao',                                         UTC_TIMESTAMP(6) - INTERVAL  48 HOUR),
-(4, 'PENDING',   'Don hang duoc tao',                                         UTC_TIMESTAMP(6) - INTERVAL 144 HOUR),
-(4, 'CONFIRMED', 'Shop xac nhan don hang',                                    UTC_TIMESTAMP(6) - INTERVAL 132 HOUR),
-(5, 'PENDING',   'Don hang duoc tao',                                         UTC_TIMESTAMP(6) - INTERVAL 360 HOUR),
-(5, 'CANCELLED', 'Khach huy: dat nham so luong',                              UTC_TIMESTAMP(6) - INTERVAL 336 HOUR),
-(6, 'PENDING',   'Don hang duoc tao',                                         UTC_TIMESTAMP(6) - INTERVAL  72 HOUR),
-(6, 'CONFIRMED', 'Shop xac nhan don hang',                                    UTC_TIMESTAMP(6) - INTERVAL  67 HOUR),
-(6, 'SHIPPING',  'Dang giao boi GHN',                                         UTC_TIMESTAMP(6) - INTERVAL  48 HOUR),
-(6, 'DELIVERED', 'Giao hang thanh cong - bam Mo hop de xem sach ben trong',   UTC_TIMESTAMP(6) - INTERVAL  12 HOUR);
+(1, 'PENDING',   'Đơn hàng được tạo',                                         UTC_TIMESTAMP(6) - INTERVAL 288 HOUR),
+(1, 'CONFIRMED', 'Shop xác nhận đơn hàng',                                    UTC_TIMESTAMP(6) - INTERVAL 283 HOUR),
+(1, 'SHIPPING',  'Đang giao bởi GHTK',                                        UTC_TIMESTAMP(6) - INTERVAL 264 HOUR),
+(1, 'DELIVERED', 'Giao hàng thành công',                                      UTC_TIMESTAMP(6) - INTERVAL 216 HOUR),
+(1, 'COMPLETED', 'Khách xác nhận đã nhận hàng',                               UTC_TIMESTAMP(6) - INTERVAL 192 HOUR),
+(2, 'PENDING',   'Đơn hàng được tạo',                                         UTC_TIMESTAMP(6) - INTERVAL  96 HOUR),
+(2, 'CONFIRMED', 'Shop xác nhận đơn hàng',                                    UTC_TIMESTAMP(6) - INTERVAL  86 HOUR),
+(2, 'SHIPPING',  'Đang giao bởi GHN',                                         UTC_TIMESTAMP(6) - INTERVAL  48 HOUR),
+(3, 'PENDING',   'Đơn hàng được tạo',                                         UTC_TIMESTAMP(6) - INTERVAL  48 HOUR),
+(4, 'PENDING',   'Đơn hàng được tạo',                                         UTC_TIMESTAMP(6) - INTERVAL 144 HOUR),
+(4, 'CONFIRMED', 'Shop xác nhận đơn hàng',                                    UTC_TIMESTAMP(6) - INTERVAL 132 HOUR),
+(5, 'PENDING',   'Đơn hàng được tạo',                                         UTC_TIMESTAMP(6) - INTERVAL 360 HOUR),
+(5, 'CANCELLED', 'Khách hủy: đặt nhầm số lượng',                              UTC_TIMESTAMP(6) - INTERVAL 336 HOUR),
+(6, 'PENDING',   'Đơn hàng được tạo',                                         UTC_TIMESTAMP(6) - INTERVAL  72 HOUR),
+(6, 'CONFIRMED', 'Shop xác nhận đơn hàng',                                    UTC_TIMESTAMP(6) - INTERVAL  67 HOUR),
+(6, 'SHIPPING',  'Đang giao bởi GHN',                                         UTC_TIMESTAMP(6) - INTERVAL  48 HOUR),
+(6, 'DELIVERED', 'Giao hàng thành công — bấm Mở hộp để xem sách bên trong',   UTC_TIMESTAMP(6) - INTERVAL  12 HOUR);
 
 -- --------------------------------------------------------
 -- SAN TRAO DOI SACH (EXCHANGE)
 -- --------------------------------------------------------
 INSERT INTO `exchange_listings` (`listing_id`, `owner_id`, `book_title`, `wanted`, `book_condition`, `location`, `cover_url`, `note`, `status`, `created_at`) VALUES
-(1, 2, 'Mat Biec',                   'De Men Phieu Luu Ky',          'Moi 95%', 'Ha Noi',  'https://images.unsplash.com/photo-1495446815901-a7297e633e8d?w=400&q=80', 'Sach doc 1 lan, khong gap trang, boc bia kinh.', 'OPEN', UTC_TIMESTAMP(6) - INTERVAL 120 HOUR),
-(2, 4, 'Tuoi Tre Dang Gia Bao Nhieu','Sach ky nang mem bat ky',      'Moi 90%', 'TP.HCM',  'https://images.unsplash.com/photo-1524578271613-d550eacf6090?w=400&q=80', 'Co vai dong highlight bang but nho.',           'OPEN', UTC_TIMESTAMP(6) - INTERVAL  96 HOUR),
-(3, 3, 'Sapiens: Luoc Su Loai Nguoi','Tu Duy Nhanh Va Cham',         'Moi 99%', 'Da Nang', 'https://images.unsplash.com/photo-1532012197267-da84d127e765?w=400&q=80', 'Ban bia mem, con nguyen seal tem NXB.',         'OPEN', UTC_TIMESTAMP(6) - INTERVAL  60 HOUR),
-(4, 1, 'Nha Gia Kim',                'Toi Ac Va Hinh Phat',          'Moi 90%', 'Ha Noi',  'https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?w=400&q=80',   'Doc xong mot lan, sach con thom mui giay.',     'OPEN', UTC_TIMESTAMP(6) - INTERVAL  30 HOUR);
+(1, 2, 'Mắt Biếc',                   'Dế Mèn Phiêu Lưu Ký',          'Mới 95%', 'Hà Nội',  'https://images.unsplash.com/photo-1495446815901-a7297e633e8d?w=400&q=80', 'Sách đọc 1 lần, không gấp trang, bọc bìa kính.', 'OPEN', UTC_TIMESTAMP(6) - INTERVAL 120 HOUR),
+(2, 4, 'Tuổi Trẻ Đáng Giá Bao Nhiêu','Sách kỹ năng mềm bất kỳ',      'Mới 90%', 'TP.HCM',  'https://images.unsplash.com/photo-1524578271613-d550eacf6090?w=400&q=80', 'Có vài dòng highlight bằng bút nhớ.',           'OPEN', UTC_TIMESTAMP(6) - INTERVAL  96 HOUR),
+(3, 3, 'Sapiens: Lược Sử Loài Người','Tư Duy Nhanh Và Chậm',         'Mới 99%', 'Đà Nẵng', 'https://images.unsplash.com/photo-1532012197267-da84d127e765?w=400&q=80', 'Bản bìa mềm, còn nguyên seal tem NXB.',         'OPEN', UTC_TIMESTAMP(6) - INTERVAL  60 HOUR),
+(4, 1, 'Nhà Giả Kim',                'Tội Ác Và Hình Phạt',          'Mới 90%', 'Hà Nội',  'https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?w=400&q=80',   'Đọc xong một lần, sách còn thơm mùi giấy.',     'OPEN', UTC_TIMESTAMP(6) - INTERVAL  30 HOUR);
 
 INSERT INTO `exchange_offers` (`listing_id`, `sender_id`, `offered_book`, `message`, `status`, `created_at`) VALUES
-(4, 2, 'Toi Ac Va Hinh Phat',  'Chao ban, minh co cuon Toi Ac Va Hinh Phat ban NXB Van Hoc, moi 95%. Doi voi minh nhe!', 'PENDING', UTC_TIMESTAMP(6) - INTERVAL 20 HOUR),
-(3, 1, 'Tu Duy Nhanh Va Cham', 'Minh co dung cuon ban dang tim, con moi 90%. Ban xem co hop khong nhe!',                 'PENDING', UTC_TIMESTAMP(6) - INTERVAL 10 HOUR);
+(4, 2, 'Tội Ác Và Hình Phạt',  'Chào bạn, mình có cuốn Tội Ác Và Hình Phạt bản NXB Văn Học, mới 95%. Đổi với mình nhé!', 'PENDING', UTC_TIMESTAMP(6) - INTERVAL 20 HOUR),
+(3, 1, 'Tư Duy Nhanh Và Chậm', 'Mình có đúng cuốn bạn đang tìm, còn mới 90%. Bạn xem có hợp không nhé!',                 'PENDING', UTC_TIMESTAMP(6) - INTERVAL 10 HOUR);
 
 -- --------------------------------------------------------
 -- BAI DANG CONG DONG (POSTS)
 -- --------------------------------------------------------
 INSERT INTO `posts` (`post_id`, `user_id`, `page_id`, `club_id`, `book_id`, `content`, `media_url`, `visibility`, `created_at`) VALUES
-(1, 1, NULL, NULL, 6, 'Dang doc Atomic Habits va thay thay doi that su ro rang sau 30 ngay. Ai dang tim cach xay dung thoi quen moi thi nen doc ngay!', 'https://images.unsplash.com/photo-1506880018603-83d5b814b5a6', 'PUBLIC', UTC_TIMESTAMP(6) - INTERVAL 48 HOUR),
-(2, 2, NULL, NULL, 4, 'Mat Biec la cuon minh doc di doc lai nhieu lan nhat. Van Nguyen Nhat Anh nhe nhang ma am anh la ky.', NULL, 'PUBLIC', UTC_TIMESTAMP(6) - INTERVAL 36 HOUR),
-(3, 3, NULL, NULL, 1, 'Nha Gia Kim nhac minh rang hanh trinh quan trong hon dich den. "Khi con that su mong muon dieu gi, ca vu tru se chung suc giup con."', 'https://images.unsplash.com/photo-1513364776144-60967b0f800f', 'PUBLIC', UTC_TIMESTAMP(6) - INTERVAL 12 HOUR);
+(1, 1, NULL, NULL, 6, 'Đang đọc Atomic Habits và thấy thay đổi thật sự rõ ràng sau 30 ngày. Ai đang tìm cách xây dựng thói quen mới thì nên đọc ngay!', 'https://images.unsplash.com/photo-1506880018603-83d5b814b5a6', 'PUBLIC', UTC_TIMESTAMP(6) - INTERVAL 48 HOUR),
+(2, 2, NULL, NULL, 4, 'Mắt Biếc là cuốn mình đọc đi đọc lại nhiều lần nhất. Văn Nguyễn Nhật Ánh nhẹ nhàng mà ám ảnh lạ kỳ.', NULL, 'PUBLIC', UTC_TIMESTAMP(6) - INTERVAL 36 HOUR),
+(3, 3, NULL, NULL, 1, 'Nhà Giả Kim nhắc mình rằng hành trình quan trọng hơn đích đến. "Khi con thật sự mong muốn điều gì, cả vũ trụ sẽ chung sức giúp con."', 'https://images.unsplash.com/photo-1513364776144-60967b0f800f', 'PUBLIC', UTC_TIMESTAMP(6) - INTERVAL 12 HOUR);
 
 INSERT INTO post_reactions (post_id, user_id, reaction_type) VALUES
 (1, 2, 'LOVE'),
@@ -851,20 +855,20 @@ INSERT INTO post_reactions (post_id, user_id, reaction_type) VALUES
 (3, 2, 'LOVE');
 
 INSERT INTO comments (comment_id, post_id, user_id, parent_comment_id, content, created_at) VALUES
-(1, 1, 2, NULL, 'Cuon nay minh cung dang doc! Chuong ve Identity-based habits hay lam.', UTC_TIMESTAMP() - INTERVAL 40 HOUR),
-(2, 1, 1,    1, 'Dung roi, phan do thay doi cach minh nhin hoan toan. Khong phai "toi muon doc sach" ma la "toi la nguoi doc sach".', UTC_TIMESTAMP() - INTERVAL 38 HOUR),
-(3, 2, 3, NULL, 'Doan ket lam minh khoc may lan roi. Tac gia sao co the viet buon den vay.', UTC_TIMESTAMP() - INTERVAL 30 HOUR),
-(4, 3, 4, NULL, 'Cau trich dan nay hay qua, luu lai ngay!', UTC_TIMESTAMP() - INTERVAL 10 HOUR);
+(1, 1, 2, NULL, 'Cuốn này mình cũng đang đọc! Chương về Identity-based habits hay lắm.', UTC_TIMESTAMP() - INTERVAL 40 HOUR),
+(2, 1, 1,    1, 'Đúng rồi, phần đó thay đổi cách mình nhìn hoàn toàn. Không phải "tôi muốn đọc sách" mà là "tôi là người đọc sách".', UTC_TIMESTAMP() - INTERVAL 38 HOUR),
+(3, 2, 3, NULL, 'Đoạn kết làm mình khóc mấy lần rồi. Tác giả sao có thể viết buồn đến vậy.', UTC_TIMESTAMP() - INTERVAL 30 HOUR),
+(4, 3, 4, NULL, 'Câu trích dẫn này hay quá, lưu lại ngay!', UTC_TIMESTAMP() - INTERVAL 10 HOUR);
 
 -- --------------------------------------------------------
 -- THONG BAO (NOTIFICATIONS)
 -- --------------------------------------------------------
 INSERT INTO `notifications` (`user_id`, `message`, `link`, `is_read`, `created_at`) VALUES
-(1, 'Don hang BKG240921 da giao thanh cong. Mo hop Blind Book xem ben trong co gi nhe!', '/orders/6',           FALSE, UTC_TIMESTAMP(6) - INTERVAL 12 HOUR),
-(1, 'Nguyen Hoang Nam muon doi "Toi Ac Va Hinh Phat" lay "Nha Gia Kim" cua ban.',        '/exchange?tab=mine', FALSE, UTC_TIMESTAMP(6) - INTERVAL 20 HOUR),
-(3, 'Tran Duc Anh muon doi "Tu Duy Nhanh Va Cham" lay "Sapiens" cua ban.',              '/exchange?tab=mine', FALSE, UTC_TIMESTAMP(6) - INTERVAL 10 HOUR),
-(6, 'Ban co don hang moi BKG240922 dang cho xac nhan.',                                  '/shop-admin',        FALSE, UTC_TIMESTAMP(6) - INTERVAL 48 HOUR),
-(7, 'San pham moi "AI Va Tuong Lai Loai Nguoi" cua Fahasa Official dang cho duyet.',     '/admin',             FALSE, UTC_TIMESTAMP(6) - INTERVAL 48 HOUR);
+(1, 'Đơn hàng BKG240921 đã giao thành công. Mở hộp Blind Book xem bên trong có gì nhé!', '/orders/6',           FALSE, UTC_TIMESTAMP(6) - INTERVAL 12 HOUR),
+(1, 'Nguyễn Hoàng Nam muốn đổi "Tội Ác Và Hình Phạt" lấy "Nhà Giả Kim" của bạn.',        '/exchange?tab=mine', FALSE, UTC_TIMESTAMP(6) - INTERVAL 20 HOUR),
+(3, 'Trần Đức Anh muốn đổi "Tư Duy Nhanh Và Chậm" lấy "Sapiens" của bạn.',              '/exchange?tab=mine', FALSE, UTC_TIMESTAMP(6) - INTERVAL 10 HOUR),
+(6, 'Bạn có đơn hàng mới BKG240922 đang chờ xác nhận.',                                  '/shop-admin',        FALSE, UTC_TIMESTAMP(6) - INTERVAL 48 HOUR),
+(7, 'Sản phẩm mới "AI Và Tương Lai Loài Người" của Fahasa Official đang chờ duyệt.',     '/admin',             FALSE, UTC_TIMESTAMP(6) - INTERVAL 48 HOUR);
 
 -- --------------------------------------------------------
 -- GAMIFICATION
@@ -880,4 +884,4 @@ INSERT INTO user_activities (user_id, activity_type, points_awarded, created_at)
 -- BAO CAO VI PHAM
 -- --------------------------------------------------------
 INSERT INTO reports (report_id, reporter_id, target_type, target_id, reason, status, resolved_by, created_at) VALUES
-(1, 2, 'POST', 1, 'Bai viet co noi dung spam, dang lai nhieu lan.', 'PENDING', NULL, UTC_TIMESTAMP() - INTERVAL 5 HOUR);
+(1, 2, 'POST', 1, 'Bài viết có nội dung spam, đăng lại nhiều lần.', 'PENDING', NULL, UTC_TIMESTAMP() - INTERVAL 5 HOUR);
