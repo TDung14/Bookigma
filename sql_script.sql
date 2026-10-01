@@ -585,9 +585,80 @@ CREATE TABLE user_points (
     FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE
 );
 
+
 -- ========================================================
--- 9. TOI UU HOA CHI MUC (INDEXES)
+-- 9. BAN BE & LOI MOI KET BAN
 -- ========================================================
+CREATE TABLE `friend_requests` (
+    `id` BIGINT NOT NULL AUTO_INCREMENT,
+    `requester_id` BIGINT NOT NULL,
+    `receiver_id` BIGINT NOT NULL,
+    `status` ENUM('PENDING','ACCEPTED','REJECTED','CANCELLED') NOT NULL DEFAULT 'PENDING',
+    `created_at` DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+    `updated_at` DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6),
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uk_friend_request_pair` (`requester_id`, `receiver_id`),
+    KEY `idx_friend_request_receiver_status` (`receiver_id`, `status`),
+    KEY `idx_friend_request_requester_status` (`requester_id`, `status`),
+    CONSTRAINT `fk_friend_request_requester`
+        FOREIGN KEY (`requester_id`) REFERENCES `users` (`user_id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_friend_request_receiver`
+        FOREIGN KEY (`receiver_id`) REFERENCES `users` (`user_id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ========================================================
+-- 10. CHAT / TIN NHAN
+-- ========================================================
+CREATE TABLE `chat_conversations` (
+    `id` BIGINT NOT NULL AUTO_INCREMENT,
+    `type` VARCHAR(20) NOT NULL DEFAULT 'DIRECT',
+    `name` VARCHAR(255) NULL,
+    `created_by` BIGINT NULL,
+    `created_at` TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+    `updated_at` TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+    PRIMARY KEY (`id`),
+    KEY `idx_chat_conversations_updated_at` (`updated_at`),
+    CONSTRAINT `fk_chat_conversations_creator`
+        FOREIGN KEY (`created_by`) REFERENCES `users` (`user_id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE `chat_conversation_participants` (
+    `conversation_id` BIGINT NOT NULL,
+    `user_id` BIGINT NOT NULL,
+    PRIMARY KEY (`conversation_id`, `user_id`),
+    KEY `idx_chat_participant_user` (`user_id`),
+    CONSTRAINT `fk_chat_participant_conversation`
+        FOREIGN KEY (`conversation_id`) REFERENCES `chat_conversations` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_chat_participant_user`
+        FOREIGN KEY (`user_id`) REFERENCES `users` (`user_id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE `chat_messages` (
+    `id` BIGINT NOT NULL AUTO_INCREMENT,
+    `conversation_id` BIGINT NOT NULL,
+    `sender_id` BIGINT NOT NULL,
+    `content` VARCHAR(2000) NOT NULL,
+    `type` VARCHAR(20) NOT NULL DEFAULT 'TEXT',
+    `created_at` TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+    PRIMARY KEY (`id`),
+    KEY `idx_chat_messages_conversation_created` (`conversation_id`, `created_at`),
+    KEY `idx_chat_messages_sender` (`sender_id`),
+    CONSTRAINT `fk_chat_message_conversation`
+        FOREIGN KEY (`conversation_id`) REFERENCES `chat_conversations` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_chat_message_sender`
+        FOREIGN KEY (`sender_id`) REFERENCES `users` (`user_id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ========================================================
+-- 11. TOI UU HOA CHI MUC (INDEXES)
+-- ========================================================
+
+
+-- Indexes cho tương tác bài viết. Các bảng post_reactions/comments đã có trong schema.
+CREATE INDEX idx_post_reactions_post ON post_reactions(post_id, created_at);
+CREATE INDEX idx_post_reactions_user ON post_reactions(user_id, post_id);
+CREATE INDEX idx_comments_post_created ON comments(post_id, created_at);
+CREATE INDEX idx_comments_user ON comments(user_id, created_at);
 
 CREATE INDEX idx_posts_feed ON posts(user_id, created_at DESC);
 CREATE INDEX idx_posts_club ON posts(club_id);
@@ -595,17 +666,13 @@ CREATE INDEX idx_posts_page ON posts(page_id);
 CREATE INDEX idx_stories_active ON stories(expires_at);
 CREATE INDEX idx_user_rankings ON user_points(monthly_points DESC, total_points DESC);
 
--- ========================================================
--- 10. DU LIEU MAU DE DEMO
--- ========================================================
--- Mat khau moi tai khoan mau: 123456
---   user@bookigma.vn   (ducanh)  - doc gia, co san don hang va mot hop Blind Book da giao
---   shop@bookigma.vn   (fahasa)  - chu shop Fahasa Official
---   nxbtre@bookigma.vn (nxbtre)  - chu shop NXB Tre
---   admin@bookigma.vn  (admin)   - quan tri vien, duyet san pham moi
--- Thoi gian dung UTC_TIMESTAMP() vi backend ket noi voi serverTimezone=UTC.
+
 
 SET FOREIGN_KEY_CHECKS = 0;
+TRUNCATE TABLE chat_messages;
+TRUNCATE TABLE chat_conversation_participants;
+TRUNCATE TABLE chat_conversations;
+TRUNCATE TABLE friend_requests;
 TRUNCATE TABLE notifications;
 TRUNCATE TABLE exchange_offers;
 TRUNCATE TABLE exchange_listings;
@@ -638,250 +705,9 @@ TRUNCATE TABLE reports;
 TRUNCATE TABLE users;
 SET FOREIGN_KEY_CHECKS = 1;
 
--- --------------------------------------------------------
--- GOI DICH VU
--- --------------------------------------------------------
-INSERT INTO subscription_plans (plan_id, name, price, duration_days, description, max_reading_limit) VALUES
-(1, 'Gói Miễn Phí (Standard Free)',          0.00,    3650, 'Đọc các đầu sách kinh điển cộng đồng, tham gia thảo luận nhóm.', 3),
-(2, 'Gói Mọt Sách Tháng (Bookworm Monthly)', 59000.00,  30, 'Đọc toàn bộ kho sách VIP không giới hạn, không có quảng cáo trong 30 ngày.', NULL),
-(3, 'Gói Mọt Sách Quý (Bookworm Quarterly)', 159000.00, 90, 'Tiết kiệm 10%, mở khóa toàn bộ sách VIP và huy hiệu độc quyền.', NULL),
-(4, 'Gói Học Giả Năm (Scholar Yearly)',      599000.00, 365,'Đọc sách VIP không giới hạn cả năm, giảm giá 10% khi mua sách giấy.', NULL);
 
--- --------------------------------------------------------
--- TAI KHOAN NGUOI DUNG
--- --------------------------------------------------------
-INSERT INTO `users` (`user_id`, `username`, `email`, `password_hash`, `full_name`, `avatar_url`, `bio`, `role`, `is_active`, `created_at`) VALUES
-(1, 'ducanh',   'user@bookigma.vn',   '$2a$10$KsgnH9AMOcdtNizkcggv2.4NCnNKXmFUofpIRi0jLfpXa.KQNtcSW', 'Trần Đức Anh',     'https://i.pravatar.cc/150?img=12', 'Sinh viên năm 3, thích sách kỹ năng và truyền cảm hứng.', 'USER',  TRUE, UTC_TIMESTAMP(6) - INTERVAL 258 DAY),
-(2, 'hoangnam', 'nam@bookigma.vn',    '$2a$10$HmOcA4ZYbXnuc0/f1BGm4eEzENpIPNDb4n.BYiqVg8LwXkWvnQ0Pa', 'Nguyễn Hoàng Nam', 'https://i.pravatar.cc/150?img=33', 'Mê văn học Việt Nam.', 'USER',  TRUE, UTC_TIMESTAMP(6) - INTERVAL 239 DAY),
-(3, 'lethao',   'thao@bookigma.vn',   '$2a$10$qyCjZY4tVzXy2LV7MuSoEOAO0SeRMcxWomhgvvPy84mpCVaX.PP32', 'Lê Thảo',          'https://i.pravatar.cc/150?img=47', 'Review sách mỗi tuần.', 'USER',  TRUE, UTC_TIMESTAMP(6) - INTERVAL 221 DAY),
-(4, 'lananh',   'lananh@bookigma.vn', '$2a$10$EJAXBcJyHMrUt6YDmEBr6u78C1.Adp4x35RnYoz66LM0rRWtm7mKi', 'Vũ Lan Anh',       'https://i.pravatar.cc/150?img=45', 'Thích sách thiếu nhi.', 'USER',  TRUE, UTC_TIMESTAMP(6) - INTERVAL 195 DAY),
-(5, 'fahasa',   'shop@bookigma.vn',   '$2a$10$xLSIdddmYOofK6IBrVnh/OqDcNmjMhsZ/NKbdsgXhH8zzu2d5qwaO', 'Fahasa Official',  'https://i.pravatar.cc/150?img=68', 'Nhà sách chính hãng.', 'SHOP',  TRUE, UTC_TIMESTAMP(6) - INTERVAL 332 DAY),
-(6, 'nxbtre',   'nxbtre@bookigma.vn', '$2a$10$6AUN.I1gZmYaE9KFoN2xFuRie0L71HxoVjI4r5GviHmaeAB.ZCtGq', 'NXB Trẻ',          'https://i.pravatar.cc/150?img=3',  'Nhà xuất bản Trẻ.', 'SHOP',  TRUE, UTC_TIMESTAMP(6) - INTERVAL 293 DAY),
-(7, 'admin',    'admin@bookigma.vn',  '$2a$10$O/UVsIoGUgAT7eORD/IJlOILDv0qaTnSq2lDQ/h7IDcPZBMLocWDG', 'Quản trị viên',    'https://i.pravatar.cc/150?img=59', NULL, 'ADMIN', TRUE, UTC_TIMESTAMP(6) - INTERVAL 363 DAY);
 
-INSERT INTO user_points (user_id, total_points, monthly_points, current_tier) VALUES
-(1, 820,  240, 'Học Giả Bạc'),
-(2, 450,  120, 'Hộ Vệ Sách'),
-(3, 310,   90, 'Tập Sự'),
-(4, 180,   50, 'Tập Sự'),
-(5, 0,     0,  'Quản Trị'),
-(6, 0,     0,  'Quản Trị'),
-(7, 0,     0,  'Quản Trị');
 
-INSERT INTO user_subscriptions (user_id, plan_id, start_date, end_date, status) VALUES
-(1, 4, UTC_TIMESTAMP() - INTERVAL 30  DAY, UTC_TIMESTAMP() + INTERVAL 335  DAY, 'ACTIVE'),
-(2, 2, UTC_TIMESTAMP() - INTERVAL 10  DAY, UTC_TIMESTAMP() + INTERVAL 20   DAY, 'ACTIVE'),
-(3, 1, UTC_TIMESTAMP() - INTERVAL 60  DAY, UTC_TIMESTAMP() + INTERVAL 3000 DAY, 'ACTIVE'),
-(4, 1, UTC_TIMESTAMP() - INTERVAL 15  DAY, UTC_TIMESTAMP() + INTERVAL 3000 DAY, 'ACTIVE');
 
--- --------------------------------------------------------
--- SHOP
--- --------------------------------------------------------
-INSERT INTO `shops` (`shop_id`, `owner_id`, `name`, `description`, `avatar_url`, `rating`, `follower_count`, `is_verified`, `created_at`) VALUES
-(1, 5, 'Fahasa Official', 'Nhà sách Fahasa — sách chính hãng, giao hàng toàn quốc.',  'https://i.pravatar.cc/150?img=68', 4.8, 12400, TRUE, UTC_TIMESTAMP(6) - INTERVAL 332 DAY),
-(2, 6, 'NXB Trẻ',         'Nhà xuất bản Trẻ — kho sách văn học và thiếu nhi.',        'https://i.pravatar.cc/150?img=3',  4.9,  8600, TRUE, UTC_TIMESTAMP(6) - INTERVAL 293 DAY);
 
--- --------------------------------------------------------
--- THE LOAI & TAC GIA
--- --------------------------------------------------------
-INSERT INTO categories (category_id, name, slug) VALUES
-(1, 'Truyền cảm hứng',     'truyen-cam-hung'),
-(2, 'Tâm lý - Kỹ năng',    'tam-ly-ky-nang'),
-(3, 'Văn học Việt Nam',    'van-hoc-viet-nam'),
-(4, 'Văn học nước ngoài',  'van-hoc-nuoc-ngoai'),
-(5, 'Khoa học - Công nghệ','khoa-hoc-cong-nghe'),
-(6, 'Kinh tế',             'kinh-te'),
-(7, 'Thiếu nhi',           'thieu-nhi');
 
-INSERT INTO authors (author_id, name) VALUES
-(1,  'Paulo Coelho'),
-(2,  'Daniel Kahneman'),
-(3,  'Dale Carnegie'),
-(4,  'Nguyễn Nhật Ánh'),
-(5,  'Yuval Noah Harari'),
-(6,  'James Clear'),
-(7,  'Nguyên Phong'),
-(8,  'Rosie Nguyễn'),
-(9,  'Fyodor Dostoevsky'),
-(10, 'Kai-Fu Lee'),
-(11, 'Tô Hoài'),
-(12, 'José Mauro de Vasconcelos');
-
--- --------------------------------------------------------
--- KHO SACH
--- tags: cach nhau bang dau phay, khop voi StringListConverter cua backend
--- Ten the loai va tag phai CO DAU va viet y het BlindBoxMood (so khop chinh xac tung ky tu).
--- BlindBoxMood.MOTIVATION -> categories: Truyền cảm hứng, Tâm lý - Kỹ năng
---                         -> tags: ước mơ, hành trình, thói quen, phát triển bản thân, tuổi trẻ
--- BlindBoxMood.CRY        -> categories: Văn học Việt Nam, Văn học nước ngoài
---                         -> tags: buồn, cảm động, tuổi thơ, tình yêu, gia đình
--- BlindBoxMood.SKILL      -> categories: Tâm lý - Kỹ năng, Kinh tế
---                         -> tags: kỹ năng mềm, giao tiếp, năng suất, ra quyết định, thói quen
--- BlindBoxMood.ESCAPE     -> categories: Văn học nước ngoài, Thiếu nhi, Văn học Việt Nam
---                         -> tags: phiêu lưu, kinh điển, hành trình, tâm linh
--- BlindBoxMood.CURIOUS    -> categories: Khoa học - Công nghệ
---                         -> tags: khoa học, lịch sử, công nghệ, xã hội, tiến hóa
--- --------------------------------------------------------
-INSERT INTO `books` (`book_id`, `shop_id`, `title`, `author_id`, `category_id`, `description`, `cover_image_url`, `page_count`, `tags`, `is_digital`, `is_for_sale`, `sale_price`, `original_price`, `stock_quantity`, `sold_count`, `rating_avg`, `rating_count`, `status`, `created_at`) VALUES
-(1,  1, 'Nhà Giả Kim',                     1,  1, 'Câu chuyện về cậu bé chăn cừu Santiago đi tìm kho báu và khám phá ra vận mệnh của chính mình.',                   'https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?w=400&q=80',  228, 'triết lý,hành trình,ước mơ,tâm linh',           TRUE, TRUE,  79000,  99000, 148, 5120, 4.9, 2418, 'ACTIVE',  UTC_TIMESTAMP(6) - INTERVAL 120 DAY),
-(2,  2, 'Tư Duy Nhanh Và Chậm',            2,  2, 'Giải Nobel Kinh tế Daniel Kahneman giải thích hai hệ thống chi phối cách chúng ta suy nghĩ.',                    'https://images.unsplash.com/photo-1589829085413-56de8ae18c73?w=400&q=80', 542, 'tâm lý học,ra quyết định,hành vi,khoa học',    TRUE, TRUE, 145000, 189000,  62, 2340, 4.8, 1180, 'ACTIVE',  UTC_TIMESTAMP(6) - INTERVAL 115 DAY),
-(3,  1, 'Đắc Nhân Tâm',                    3,  2, 'Cuốn sách kinh điển về nghệ thuật giao tiếp và ứng xử, giúp xây dựng mối quan hệ bền vững.',                     'https://images.unsplash.com/photo-1512820790803-83ca734da794?w=400&q=80',  320, 'giao tiếp,kỹ năng mềm,quan hệ',                 TRUE, TRUE,  89000, 110000, 320, 8800, 4.7, 3902, 'ACTIVE',  UTC_TIMESTAMP(6) - INTERVAL 110 DAY),
-(4,  2, 'Mắt Biếc',                        4,  3, 'Câu chuyện tình đơn phương day dứt của Ngạn dành cho Hà Lan, trải dài từ làng Đo Đo tới thành phố.',             'https://images.unsplash.com/photo-1495446815901-a7297e633e8d?w=400&q=80',  268, 'tình yêu,tuổi thơ,làng quê,buồn',               TRUE, TRUE,  95000, 120000,  95, 6400, 4.9, 2760, 'ACTIVE',  UTC_TIMESTAMP(6) - INTERVAL 105 DAY),
-(5,  1, 'Sapiens: Lược Sử Loài Người',     5,  5, 'Hành trình 70.000 năm của loài Homo sapiens, từ những bầy người săn bắt hái lượm đến chủ nhân của hành tinh.',  'https://images.unsplash.com/photo-1532012197267-da84d127e765?w=400&q=80',  554, 'lịch sử,tiến hóa,xã hội,khoa học',              TRUE, TRUE, 199000, 259000,  48, 3100, 4.8, 1540, 'ACTIVE',  UTC_TIMESTAMP(6) - INTERVAL 100 DAY),
-(6,  1, 'Atomic Habits - Thay Đổi Tí Hon', 6,  2, 'Phương pháp đã được chứng minh để xây dựng thói quen tốt bằng những thay đổi 1% mỗi ngày.',                    'https://images.unsplash.com/photo-1544947950-fa07a98d237f?w=400&q=80',   320, 'thói quen,năng suất,phát triển bản thân',       TRUE, TRUE, 139000, 169000, 210, 4500, 4.9, 2210, 'ACTIVE',  UTC_TIMESTAMP(6) - INTERVAL  95 DAY),
-(7,  2, 'Muôn Kiếp Nhân Sinh',             7,  1, 'Những câu chuyện về luân hồi, nhân quả và ý nghĩa sâu xa của kiếp người qua lời kể của Thomas.',               'https://images.unsplash.com/photo-1481627834876-b7833e8f5570?w=400&q=80',  398, 'tâm linh,triết lý,nhân quả,hành trình',         TRUE, TRUE, 129000, 158000,  76, 3900, 4.7, 1890, 'ACTIVE',  UTC_TIMESTAMP(6) - INTERVAL  90 DAY),
-(8,  2, 'Tuổi Trẻ Đáng Giá Bao Nhiêu',     8,  1, 'Cuốn sách gối đầu giường của người trẻ Việt về học, làm và đi.',                                               'https://images.unsplash.com/photo-1524578271613-d550eacf6090?w=400&q=80',  285, 'tuổi trẻ,phát triển bản thân,du lịch',          TRUE, TRUE,  75000,  90000, 130, 2800, 4.5, 1420, 'ACTIVE',  UTC_TIMESTAMP(6) - INTERVAL  85 DAY),
-(9,  1, 'Tội Ác Và Hình Phạt',             9,  4, 'Kiệt tác tâm lý về tội lỗi, sự dằn vặt và con đường cứu chuộc của Raskolnikov.',                                'https://images.unsplash.com/photo-1519682337058-a94d519337bc?w=400&q=80',  671, 'kinh điển,tâm lý,triết lý,Nga',                 TRUE, TRUE, 165000, 199000,  34, 1200, 4.6,  880, 'ACTIVE',  UTC_TIMESTAMP(6) - INTERVAL  80 DAY),
-(10, 1, 'AI Và Tương Lai Loài Người',     10,  5, 'Cuộc đua AI giữa Mỹ và Trung Quốc và những gì nó có nghĩa với công việc, xã hội và ý nghĩa cuộc sống.',        'https://images.unsplash.com/photo-1507842217343-583bb7270b66?w=400&q=80',  412, 'công nghệ,AI,tương lai,kinh tế',                TRUE, TRUE, 189000, 229000,  55,  980, 4.6,  640, 'PENDING', UTC_TIMESTAMP(6) - INTERVAL   2 DAY),
-(11, 2, 'Dế Mèn Phiêu Lưu Ký',            11,  7, 'Cuộc phiêu lưu kinh điển của chú Dế Mèn, tác phẩm thiếu nhi được yêu thích nhất Việt Nam.',                    'https://images.unsplash.com/photo-1541963463532-d68292c34b19?w=400&q=80',  168, 'thiếu nhi,phiêu lưu,kinh điển,Việt Nam',        TRUE, TRUE,  58000,  72000, 240, 5600, 4.8, 1980, 'ACTIVE',  UTC_TIMESTAMP(6) - INTERVAL  70 DAY),
-(12, 2, 'Cây Cam Ngọt Của Tôi',           12,  4, 'Câu chuyện cảm động về cậu bé Zezé và cây cam ngọt — người bạn tưởng tượng của em.',                           'https://images.unsplash.com/photo-1476275466078-4007374efbbe?w=400&q=80',  244, 'tuổi thơ,cảm động,gia đình,buồn',               TRUE, TRUE, 108000, 128000,  88, 7200, 4.9, 3100, 'ACTIVE',  UTC_TIMESTAMP(6) - INTERVAL  65 DAY);
-
--- --------------------------------------------------------
--- NOI DUNG DOC THU (BOOK CHAPTERS)
--- --------------------------------------------------------
-INSERT INTO book_chapters (book_id, chapter_index, title, content_text) VALUES
-(1, 1, 'Chương 1: Tiếng gọi từ vũ trụ',
- 'Cậu tên là Santiago. Trời đã chập tối khi cậu cùng đàn cừu đến một nhà thờ cổ sụp đổ, mái đã sập từ lâu và một cây chăn lớn đã mọc lên ngay nơi xưa là phòng thánh.\n\nCậu quyết định ngủ lại đấy qua đêm. Khi cậu thức giấc thì trời hãy còn tối. Nhìn lên, cậu thấy các vì sao lấp lánh qua mái nhà thủng. Cậu vừa mơ đúng giấc mơ tuần trước và lại tỉnh dậy trước khi giấc mơ chấm dứt.'),
-(1, 2, 'Chương 2: Ông vua già xứ Salem',
- 'Ông già mặc áo choàng ngồi xuống cạnh cậu. Ông nói rằng ông là Melchizedek, vua xứ Salem.\n\n"Vận mệnh là điều mà con hằng mong muốn thực hiện," ông nói. "Ai cũng biết được vận mệnh của mình khi còn trẻ."\n\n"Khi con thật sự mong muốn điều gì, cả vũ trụ sẽ chung sức giúp con đạt được điều ấy," ông vua nói, rồi biến mất vào ánh nắng ban trưa.'),
-(1, 3, 'Chương 3: Sa mạc và bài học của gió',
- 'Đoàn lữ hành đi vào sa mạc. Cát trải dài đến tận chân trời, và mỗi ngày Santiago lại học được một điều mới từ sự im lặng mênh mông ấy.\n\nNgười luyện kim đan nói: "Sa mạc sẽ dạy con tất cả, nhưng nó đòi hỏi con phải lắng nghe. Con phải học ngôn ngữ mà mọi vật trên đời đều nói chung."'),
-(2, 1, 'Chương 1: Hai hệ thống',
- 'Hệ thống 1 hoạt động tự động và nhanh chóng, hầu như không cần nỗ lực và không có cảm giác về sự kiểm soát có chủ ý.\n\nHệ thống 2 phân bổ sự chú ý cho các hoạt động tinh thần đòi hỏi nỗ lực. Khi chúng ta nghĩ về bản thân mình, ta đồng nhất với Hệ thống 2 — nhưng phần lớn quyết định trong ngày lại do Hệ thống 1 âm thầm đưa ra.'),
-(2, 2, 'Chương 2: Sự chú ý và nỗ lực',
- 'Hệ thống 2 có khả năng hạn chế. Khi bạn đang bận rộn với một việc đòi hỏi nỗ lực, bạn gần như mù trước những gì đang xảy ra xung quanh.\n\nThí nghiệm "con khỉ vô hình" cho thấy khi tập trung đếm số lần chuyền bóng, một nửa số người xem hoàn toàn không nhìn thấy người mặc đồ khỉ đi ngang qua màn hình.'),
-(3, 1, 'Chương 1: Muốn lấy mật đừng phá tổ ong',
- 'Ngày 7 tháng 5 năm 1931, thành phố New York chứng kiến cuộc vây bắt tội phạm gay cấn nhất trong lịch sử. "Hai Khẩu Súng" Crowley bị bao vây trên căn hộ ở đại lộ West End.\n\nBài học: chỉ trích là vô ích, bởi nó khiến người ta phải phòng thủ và thường làm họ cố sức biện minh cho mình.'),
-(4, 1, 'Chương 1: Làng Đo Đo',
- 'Tôi sinh ra ở làng Đo Đo. Làng tôi nhỏ, nhỏ đến mức chỉ cần đứng ở đầu làng gọi to một tiếng là cuối làng đã nghe.\n\nHà Lan có đôi mắt rất đẹp. Mắt to, tròn và đen láy. Nhưng cái đẹp của đôi mắt ấy không nằm ở hình dáng mà nằm ở cái nhìn — một cái nhìn khiến người ta thấy mình vừa được che chở vừa bị bỏ rơi.'),
-(5, 1, 'Chương 1: Một loài vật chẳng có gì đặc biệt',
- 'Khoảng 13,5 tỷ năm trước, vật chất, năng lượng, thời gian và không gian ra đời trong sự kiện gọi là Vụ Nổ Lớn.\n\nHomo sapiens xuất hiện ở Đông Phi khoảng 200.000 năm trước. Trong phần lớn lịch sử, chúng ta là một loài vật tầm thường, đứng giữa chuỗi thức ăn.'),
-(6, 1, 'Chương 1: Sức mạnh đáng kinh ngạc của thói quen nguyên tử',
- 'Nếu bạn tốt hơn 1% mỗi ngày trong một năm, cuối cùng bạn sẽ tốt hơn 37 lần. Ngược lại, nếu tệ đi 1% mỗi ngày, bạn gần như trở về con số 0.\n\nThói quen là lãi kép của sự tự cải thiện. Chúng có vẻ nhỏ bé và vô nghĩa ở thời điểm hiện tại, nhưng qua nhiều tháng năm chúng tạo ra khác biệt khổng lồ.'),
-(7, 1, 'Chương 1: Cuộc gặp gỡ định mệnh',
- 'Thomas là một nhà tài chính thành đạt ở New York. Nhưng đằng sau sự thành công ấy là những giấc mơ lặp đi lặp lại về một kiếp sống khác, ở một vùng đất khác.\n\nÔng kể: "Tôi thấy mình đứng giữa đền Karnak, mặc áo tu sĩ, và biết rõ từng viên đá ở đó — dù đời này tôi chưa từng đặt chân đến Ai Cập."'),
-(8, 1, 'Chương 1: Học',
- 'Tôi tin rằng thứ tài sản lớn nhất của tuổi trẻ không phải là thời gian, mà là khả năng học hỏi nhanh hơn bất kỳ giai đoạn nào khác của đời người.\n\nMỗi cuốn sách bạn đọc là một cuộc đối thoại với người thông minh nhất trong lĩnh vực đó, với giá rẻ hơn một bữa ăn.'),
-(9, 1, 'Chương 1: Căn gác xép',
- 'Vào một buổi chiều nóng nực đầu tháng Bảy, một chàng trai trẻ bước ra khỏi căn gác xép thuê lại ở ngõ S., chậm rãi và như còn lưỡng lự, đi về phía cầu K.\n\nChàng đã mắc nợ bà chủ nhà và sợ gặp bà ta. Không phải vì chàng nhút nhát — mà vì từ lâu chàng đã rơi vào trạng thái căng thẳng và cáu bẳn giống như chứng nghi bệnh.'),
-(10, 1, 'Chương 1: Khoảnh khắc Sputnik của Trung Quốc',
- 'Tháng 5 năm 2017, AlphaGo đánh bại Kha Khiết — kỳ thủ cờ vây số một thế giới. Với phương Tây đó là một tin công nghệ. Với Trung Quốc, đó là khoảnh khắc Sputnik.'),
-(11, 1, 'Chương 1: Tôi sống độc lập từ thuở bé',
- 'Tôi sống độc lập từ thuở bé. Ấy là tục lệ lâu đời trong họ nhà dế chúng tôi. Vả lại, mẹ thường bảo chúng tôi rằng: "Phải như thế để các con biết kiếm ăn một mình cho quen đi."'),
-(12, 1, 'Chương 1: Người khám phá ra mọi thứ',
- 'Chúng tôi nắm tay nhau đi dọc phố. Totoca chẳng vội gì. Anh dạy tôi biết cuộc sống là thế nào. Và điều đó khiến tôi rất hài lòng, vì anh tôi là người khám phá ra mọi thứ.');
-
--- --------------------------------------------------------
--- MA GIAM GIA (VOUCHERS)
--- --------------------------------------------------------
-INSERT INTO `vouchers` (`code`, `label`, `discount_type`, `discount_value`, `max_discount`, `min_order_amount`, `is_active`) VALUES
-('BOOKIGMA10', 'Giảm 10% tối đa 30.000đ',          'PERCENT', 10.00,    30000.00, 100000.00, TRUE),
-('FREESHIP',   'Miễn phí vận chuyển',               'SHIPPING', 0.00,      NULL,  150000.00, TRUE),
-('GIAM50K',    'Giảm 50.000đ cho đơn từ 300.000đ',  'AMOUNT',  50000.00,  NULL,   300000.00, TRUE);
-
--- --------------------------------------------------------
--- BLIND BOX MAU
--- Mot hop da giao de demo "Mo hop" ngay khi vao trang don hang.
--- --------------------------------------------------------
-INSERT INTO `blind_boxes` (`box_id`, `user_id`, `book_id`, `tier`, `mood`, `price`, `status`, `revealed_at`, `created_at`) VALUES
-(1, 1, 7, 'STANDARD', 'MOTIVATION', 150000.00, 'ORDERED', NULL, UTC_TIMESTAMP(6) - INTERVAL 72 HOUR);
-
--- --------------------------------------------------------
--- DON HANG MAU
--- --------------------------------------------------------
-INSERT INTO `orders` (`order_id`, `order_code`, `user_id`, `shop_id`, `recipient_name`, `recipient_phone`, `shipping_address`, `note`, `payment_method`, `voucher_code`, `subtotal`, `shipping_fee`, `discount_amount`, `total_amount`, `status`, `created_at`, `updated_at`) VALUES
-(1, 'BKG240915', 1, 1, 'Trần Đức Anh',    '0901234567', '12 Nguyễn Trãi, Thanh Xuân, Hà Nội',     NULL,                    'COD',  NULL,         89000.00, 25000.00,     0.00, 114000.00, 'COMPLETED', UTC_TIMESTAMP(6) - INTERVAL 288 HOUR, UTC_TIMESTAMP(6) - INTERVAL 192 HOUR),
-(2, 'BKG240920', 1, 1, 'Trần Đức Anh',    '0901234567', '12 Nguyễn Trãi, Thanh Xuân, Hà Nội',     NULL,                    'BANK', 'BOOKIGMA10',297000.00, 25000.00, 29700.00, 292300.00, 'SHIPPING',  UTC_TIMESTAMP(6) - INTERVAL  96 HOUR, UTC_TIMESTAMP(6) - INTERVAL  48 HOUR),
-(3, 'BKG240922', 3, 2, 'Lê Thảo',         '0912345678', '45 Lê Lợi, Quận 1, TP.HCM',              NULL,                    'MOMO', NULL,        108000.00, 25000.00,     0.00, 133000.00, 'PENDING',   UTC_TIMESTAMP(6) - INTERVAL  48 HOUR, NULL),
-(4, 'BKG240918', 4, 2, 'Vũ Lan Anh',      '0987654321', '88 Trần Phú, Hải Châu, Đà Nẵng',         'Gói quà giúp mình nhé', 'COD',  'FREESHIP',  174000.00,     0.00,     0.00, 174000.00, 'CONFIRMED', UTC_TIMESTAMP(6) - INTERVAL 144 HOUR, UTC_TIMESTAMP(6) - INTERVAL 132 HOUR),
-(5, 'BKG240910', 2, 1, 'Nguyễn Hoàng Nam','0933222111', '7 Cầu Giấy, Hà Nội',                     NULL,                    'COD',  NULL,        199000.00, 25000.00,     0.00, 224000.00, 'CANCELLED', UTC_TIMESTAMP(6) - INTERVAL 360 HOUR, UTC_TIMESTAMP(6) - INTERVAL 336 HOUR),
-(6, 'BKG240921', 1, 2, 'Trần Đức Anh',    '0901234567', '12 Nguyễn Trãi, Thanh Xuân, Hà Nội',     NULL,                    'MOMO', NULL,        150000.00, 25000.00,     0.00, 175000.00, 'DELIVERED', UTC_TIMESTAMP(6) - INTERVAL  72 HOUR, UTC_TIMESTAMP(6) - INTERVAL  12 HOUR);
-
-INSERT INTO `order_items` (`order_id`, `book_id`, `blind_box_id`, `book_title`, `cover_image_url`, `quantity`, `unit_price`) VALUES
-(1, 3,  NULL, 'Đắc Nhân Tâm',                  'https://images.unsplash.com/photo-1512820790803-83ca734da794?w=400&q=80', 1,  89000.00),
-(2, 6,  NULL, 'Atomic Habits - Thay Đổi Tí Hon','https://images.unsplash.com/photo-1544947950-fa07a98d237f?w=400&q=80', 1, 139000.00),
-(2, 1,  NULL, 'Nhà Giả Kim',                   'https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?w=400&q=80',  2,  79000.00),
-(3, 12, NULL, 'Cây Cam Ngọt Của Tôi',           'https://images.unsplash.com/photo-1476275466078-4007374efbbe?w=400&q=80', 1, 108000.00),
-(4, 11, NULL, 'Dế Mèn Phiêu Lưu Ký',            'https://images.unsplash.com/photo-1541963463532-d68292c34b19?w=400&q=80', 3,  58000.00),
-(5, 5,  NULL, 'Sapiens: Lược Sử Loài Người',    'https://images.unsplash.com/photo-1532012197267-da84d127e765?w=400&q=80', 1, 199000.00),
-(6, 7,  1,    'Muôn Kiếp Nhân Sinh',             'https://images.unsplash.com/photo-1481627834876-b7833e8f5570?w=400&q=80', 1, 150000.00);
-
-INSERT INTO `order_status_history` (`order_id`, `status`, `note`, `created_at`) VALUES
-(1, 'PENDING',   'Đơn hàng được tạo',                                         UTC_TIMESTAMP(6) - INTERVAL 288 HOUR),
-(1, 'CONFIRMED', 'Shop xác nhận đơn hàng',                                    UTC_TIMESTAMP(6) - INTERVAL 283 HOUR),
-(1, 'SHIPPING',  'Đang giao bởi GHTK',                                        UTC_TIMESTAMP(6) - INTERVAL 264 HOUR),
-(1, 'DELIVERED', 'Giao hàng thành công',                                      UTC_TIMESTAMP(6) - INTERVAL 216 HOUR),
-(1, 'COMPLETED', 'Khách xác nhận đã nhận hàng',                               UTC_TIMESTAMP(6) - INTERVAL 192 HOUR),
-(2, 'PENDING',   'Đơn hàng được tạo',                                         UTC_TIMESTAMP(6) - INTERVAL  96 HOUR),
-(2, 'CONFIRMED', 'Shop xác nhận đơn hàng',                                    UTC_TIMESTAMP(6) - INTERVAL  86 HOUR),
-(2, 'SHIPPING',  'Đang giao bởi GHN',                                         UTC_TIMESTAMP(6) - INTERVAL  48 HOUR),
-(3, 'PENDING',   'Đơn hàng được tạo',                                         UTC_TIMESTAMP(6) - INTERVAL  48 HOUR),
-(4, 'PENDING',   'Đơn hàng được tạo',                                         UTC_TIMESTAMP(6) - INTERVAL 144 HOUR),
-(4, 'CONFIRMED', 'Shop xác nhận đơn hàng',                                    UTC_TIMESTAMP(6) - INTERVAL 132 HOUR),
-(5, 'PENDING',   'Đơn hàng được tạo',                                         UTC_TIMESTAMP(6) - INTERVAL 360 HOUR),
-(5, 'CANCELLED', 'Khách hủy: đặt nhầm số lượng',                              UTC_TIMESTAMP(6) - INTERVAL 336 HOUR),
-(6, 'PENDING',   'Đơn hàng được tạo',                                         UTC_TIMESTAMP(6) - INTERVAL  72 HOUR),
-(6, 'CONFIRMED', 'Shop xác nhận đơn hàng',                                    UTC_TIMESTAMP(6) - INTERVAL  67 HOUR),
-(6, 'SHIPPING',  'Đang giao bởi GHN',                                         UTC_TIMESTAMP(6) - INTERVAL  48 HOUR),
-(6, 'DELIVERED', 'Giao hàng thành công — bấm Mở hộp để xem sách bên trong',   UTC_TIMESTAMP(6) - INTERVAL  12 HOUR);
-
--- --------------------------------------------------------
--- SAN TRAO DOI SACH (EXCHANGE)
--- --------------------------------------------------------
-INSERT INTO `exchange_listings` (`listing_id`, `owner_id`, `book_title`, `wanted`, `book_condition`, `location`, `cover_url`, `note`, `status`, `created_at`) VALUES
-(1, 2, 'Mắt Biếc',                   'Dế Mèn Phiêu Lưu Ký',          'Mới 95%', 'Hà Nội',  'https://images.unsplash.com/photo-1495446815901-a7297e633e8d?w=400&q=80', 'Sách đọc 1 lần, không gấp trang, bọc bìa kính.', 'OPEN', UTC_TIMESTAMP(6) - INTERVAL 120 HOUR),
-(2, 4, 'Tuổi Trẻ Đáng Giá Bao Nhiêu','Sách kỹ năng mềm bất kỳ',      'Mới 90%', 'TP.HCM',  'https://images.unsplash.com/photo-1524578271613-d550eacf6090?w=400&q=80', 'Có vài dòng highlight bằng bút nhớ.',           'OPEN', UTC_TIMESTAMP(6) - INTERVAL  96 HOUR),
-(3, 3, 'Sapiens: Lược Sử Loài Người','Tư Duy Nhanh Và Chậm',         'Mới 99%', 'Đà Nẵng', 'https://images.unsplash.com/photo-1532012197267-da84d127e765?w=400&q=80', 'Bản bìa mềm, còn nguyên seal tem NXB.',         'OPEN', UTC_TIMESTAMP(6) - INTERVAL  60 HOUR),
-(4, 1, 'Nhà Giả Kim',                'Tội Ác Và Hình Phạt',          'Mới 90%', 'Hà Nội',  'https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?w=400&q=80',   'Đọc xong một lần, sách còn thơm mùi giấy.',     'OPEN', UTC_TIMESTAMP(6) - INTERVAL  30 HOUR);
-
-INSERT INTO `exchange_offers` (`listing_id`, `sender_id`, `offered_book`, `message`, `status`, `created_at`) VALUES
-(4, 2, 'Tội Ác Và Hình Phạt',  'Chào bạn, mình có cuốn Tội Ác Và Hình Phạt bản NXB Văn Học, mới 95%. Đổi với mình nhé!', 'PENDING', UTC_TIMESTAMP(6) - INTERVAL 20 HOUR),
-(3, 1, 'Tư Duy Nhanh Và Chậm', 'Mình có đúng cuốn bạn đang tìm, còn mới 90%. Bạn xem có hợp không nhé!',                 'PENDING', UTC_TIMESTAMP(6) - INTERVAL 10 HOUR);
-
--- --------------------------------------------------------
--- BAI DANG CONG DONG (POSTS)
--- --------------------------------------------------------
-INSERT INTO `posts` (`post_id`, `user_id`, `page_id`, `club_id`, `book_id`, `content`, `media_url`, `visibility`, `created_at`) VALUES
-(1, 1, NULL, NULL, 6, 'Đang đọc Atomic Habits và thấy thay đổi thật sự rõ ràng sau 30 ngày. Ai đang tìm cách xây dựng thói quen mới thì nên đọc ngay!', 'https://images.unsplash.com/photo-1506880018603-83d5b814b5a6', 'PUBLIC', UTC_TIMESTAMP(6) - INTERVAL 48 HOUR),
-(2, 2, NULL, NULL, 4, 'Mắt Biếc là cuốn mình đọc đi đọc lại nhiều lần nhất. Văn Nguyễn Nhật Ánh nhẹ nhàng mà ám ảnh lạ kỳ.', NULL, 'PUBLIC', UTC_TIMESTAMP(6) - INTERVAL 36 HOUR),
-(3, 3, NULL, NULL, 1, 'Nhà Giả Kim nhắc mình rằng hành trình quan trọng hơn đích đến. "Khi con thật sự mong muốn điều gì, cả vũ trụ sẽ chung sức giúp con."', 'https://images.unsplash.com/photo-1513364776144-60967b0f800f', 'PUBLIC', UTC_TIMESTAMP(6) - INTERVAL 12 HOUR);
-
-INSERT INTO post_reactions (post_id, user_id, reaction_type) VALUES
-(1, 2, 'LOVE'),
-(1, 3, 'BOOKWORM'),
-(2, 1, 'LOVE'),
-(2, 4, 'LIKE'),
-(3, 1, 'INSIGHTFUL'),
-(3, 2, 'LOVE');
-
-INSERT INTO comments (comment_id, post_id, user_id, parent_comment_id, content, created_at) VALUES
-(1, 1, 2, NULL, 'Cuốn này mình cũng đang đọc! Chương về Identity-based habits hay lắm.', UTC_TIMESTAMP() - INTERVAL 40 HOUR),
-(2, 1, 1,    1, 'Đúng rồi, phần đó thay đổi cách mình nhìn hoàn toàn. Không phải "tôi muốn đọc sách" mà là "tôi là người đọc sách".', UTC_TIMESTAMP() - INTERVAL 38 HOUR),
-(3, 2, 3, NULL, 'Đoạn kết làm mình khóc mấy lần rồi. Tác giả sao có thể viết buồn đến vậy.', UTC_TIMESTAMP() - INTERVAL 30 HOUR),
-(4, 3, 4, NULL, 'Câu trích dẫn này hay quá, lưu lại ngay!', UTC_TIMESTAMP() - INTERVAL 10 HOUR);
-
--- --------------------------------------------------------
--- THONG BAO (NOTIFICATIONS)
--- --------------------------------------------------------
-INSERT INTO `notifications` (`user_id`, `message`, `link`, `is_read`, `created_at`) VALUES
-(1, 'Đơn hàng BKG240921 đã giao thành công. Mở hộp Blind Book xem bên trong có gì nhé!', '/orders/6',           FALSE, UTC_TIMESTAMP(6) - INTERVAL 12 HOUR),
-(1, 'Nguyễn Hoàng Nam muốn đổi "Tội Ác Và Hình Phạt" lấy "Nhà Giả Kim" của bạn.',        '/exchange?tab=mine', FALSE, UTC_TIMESTAMP(6) - INTERVAL 20 HOUR),
-(3, 'Trần Đức Anh muốn đổi "Tư Duy Nhanh Và Chậm" lấy "Sapiens" của bạn.',              '/exchange?tab=mine', FALSE, UTC_TIMESTAMP(6) - INTERVAL 10 HOUR),
-(6, 'Bạn có đơn hàng mới BKG240922 đang chờ xác nhận.',                                  '/shop-admin',        FALSE, UTC_TIMESTAMP(6) - INTERVAL 48 HOUR),
-(7, 'Sản phẩm mới "AI Và Tương Lai Loài Người" của Fahasa Official đang chờ duyệt.',     '/admin',             FALSE, UTC_TIMESTAMP(6) - INTERVAL 48 HOUR);
-
--- --------------------------------------------------------
--- GAMIFICATION
--- --------------------------------------------------------
-INSERT INTO user_activities (user_id, activity_type, points_awarded, created_at) VALUES
-(1, 'READ_CHAPTER', 20, UTC_TIMESTAMP() - INTERVAL 2 DAY),
-(1, 'CREATE_POST',  50, UTC_TIMESTAMP() - INTERVAL 2 DAY),
-(2, 'CREATE_POST',  50, UTC_TIMESTAMP() - INTERVAL 1 DAY),
-(3, 'WRITE_REVIEW', 40, UTC_TIMESTAMP() - INTERVAL 18 HOUR),
-(1, 'LOGIN_STREAK', 10, UTC_TIMESTAMP() - INTERVAL 6 HOUR);
-
--- --------------------------------------------------------
--- BAO CAO VI PHAM
--- --------------------------------------------------------
-INSERT INTO reports (report_id, reporter_id, target_type, target_id, reason, status, resolved_by, created_at) VALUES
-(1, 2, 'POST', 1, 'Bài viết có nội dung spam, đăng lại nhiều lần.', 'PENDING', NULL, UTC_TIMESTAMP() - INTERVAL 5 HOUR);
