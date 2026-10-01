@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { BookOpen, Calendar, Clock, Flame, Package, ShoppingBag, Pencil, Save, X } from 'lucide-react';
+import { BookOpen, Calendar, Clock, Flame, Package, ShoppingBag, Pencil, Save, X, KeyRound } from 'lucide-react';
 import { useApp, useAuth, useToast } from '../hooks/useStore';
 import { currency, dateOnly, duration, timeAgo } from '../lib/format';
 import { ProgressBar, StatCard } from '../components/common/ui';
@@ -13,6 +13,8 @@ export default function ProfilePage() {
   const toast = useToast();
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState({ email: '', fullName: '', bio: '', avatarUrl: '' });
+  const [passwordForm, setPasswordForm] = useState({ currentPassword: '', newPassword: '', confirmPassword: '' });
+  const [changingPassword, setChangingPassword] = useState(false);
 
   const isOwnProfile = !userId || String(userId) === String(authUser?.id ?? '');
   const profileUser = useMemo(() => {
@@ -63,6 +65,31 @@ export default function ProfilePage() {
   const spent = myOrders.filter((o) => o.status !== 'cancelled').reduce((s, o) => s + o.total, 0);
   const readSeconds = entries.reduce((s, e) => s + (e.secondsRead || 0), 0);
 
+  const submitPassword = async (e) => {
+    e.preventDefault();
+    if (passwordForm.newPassword.length < 6) {
+      toast('Mật khẩu mới phải có ít nhất 6 ký tự.', 'error');
+      return;
+    }
+    if (passwordForm.newPassword !== passwordForm.confirmPassword) {
+      toast('Mật khẩu xác nhận không khớp.', 'error');
+      return;
+    }
+    setChangingPassword(true);
+    try {
+      await apiCall(`/users/${authUser.id}/password`, 'PUT', {
+        currentPassword: passwordForm.currentPassword,
+        newPassword: passwordForm.newPassword,
+      }, { userId: authUser.id });
+      setPasswordForm({ currentPassword: '', newPassword: '', confirmPassword: '' });
+      toast('Đổi mật khẩu thành công.', 'success');
+    } catch (error) {
+      toast(error.message || 'Không thể đổi mật khẩu.', 'error');
+    } finally {
+      setChangingPassword(false);
+    }
+  };
+
   const submitProfile = async (e) => {
     e.preventDefault();
     const result = await updateProfile(form);
@@ -100,7 +127,8 @@ export default function ProfilePage() {
         </div>
 
         {editing && (
-          <form onSubmit={submitProfile} className="card" style={{ marginTop: 20, background: 'var(--bg-soft)' }}>
+          <div>
+            <form onSubmit={submitProfile} className="card" style={{ marginTop: 20, background: 'var(--bg-soft)' }}>
             <h3 style={{ marginTop: 0 }}>Chỉnh sửa thông tin cá nhân</h3>
             <div className="grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))' }}>
               <div className="field">
@@ -123,7 +151,20 @@ export default function ProfilePage() {
             <button className="btn btn-primary" type="submit" disabled={loading} style={{ marginTop: 12 }}>
               <Save size={15} /> {loading ? 'Đang lưu...' : 'Lưu thay đổi'}
             </button>
-          </form>
+            </form>
+
+          {isOwnProfile && (
+            <form onSubmit={submitPassword} className="card" style={{ marginTop: 16, background: 'var(--bg-soft)' }}>
+              <h3 style={{ marginTop: 0 }}><KeyRound size={17} style={{ verticalAlign: 'middle', marginRight: 6 }} />Đổi mật khẩu</h3>
+              <div className="grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))' }}>
+                <div className="field"><label className="label">Mật khẩu hiện tại</label><input className="input" type="password" value={passwordForm.currentPassword} onChange={(e) => setPasswordForm({ ...passwordForm, currentPassword: e.target.value })} required /></div>
+                <div className="field"><label className="label">Mật khẩu mới</label><input className="input" type="password" minLength={6} value={passwordForm.newPassword} onChange={(e) => setPasswordForm({ ...passwordForm, newPassword: e.target.value })} required /></div>
+                <div className="field"><label className="label">Xác nhận mật khẩu mới</label><input className="input" type="password" minLength={6} value={passwordForm.confirmPassword} onChange={(e) => setPasswordForm({ ...passwordForm, confirmPassword: e.target.value })} required /></div>
+              </div>
+              <button className="btn btn-primary" type="submit" disabled={changingPassword} style={{ marginTop: 12 }}><KeyRound size={15} /> {changingPassword ? 'Đang đổi...' : 'Đổi mật khẩu'}</button>
+            </form>
+          )}
+          </div>
         )}
       </div>
 
@@ -131,7 +172,7 @@ export default function ProfilePage() {
         <StatCard icon={BookOpen} label="Sách trong tủ" value={entries.length} sub={`${entries.filter((e) => e.finished).length} cuốn đã xong`} />
         <StatCard icon={Clock} label="Thời gian đọc" value={duration(readSeconds)} color="var(--purple)" bg="var(--purple-soft)" />
         <StatCard icon={ShoppingBag} label="Đã chi tiêu" value={currency(spent)} sub={`${myOrders.length} đơn hàng`} color="var(--info)" bg="var(--info-soft)" />
-        <StatCard icon={Flame} label="Bài viết" value={myPosts.length} sub={`${myPosts.reduce((s, p) => s + (p.likedBy?.length || 0), 0)} lượt thích`} color="var(--warning)" bg="var(--warning-soft)" />
+        <StatCard icon={Flame} label="Bài viết" value={myPosts.length} sub={`${myPosts.reduce((s, p) => s + (p.likeCount ?? p.likedBy?.length ?? 0), 0)} lượt thích`} color="var(--warning)" bg="var(--warning-soft)" />
       </div>
 
       <div className="grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))' }}>
@@ -158,7 +199,7 @@ export default function ProfilePage() {
               <p className="small clamp-2" style={{ margin: '0 0 6px' }}>{p.content}</p>
               <div className="row tiny muted" style={{ gap: 14 }}>
                 <span>{timeAgo(p.time)}</span>
-                <span>{p.likedBy?.length || 0} thích</span>
+                <span>{p.likeCount ?? p.likedBy?.length ?? 0} thích</span>
                 <span>{p.comments?.length || 0} bình luận</span>
               </div>
             </div>

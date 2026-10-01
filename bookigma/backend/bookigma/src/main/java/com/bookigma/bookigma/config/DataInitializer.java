@@ -24,10 +24,10 @@ public class DataInitializer {
             ensureDefaultUser(
                     userRepository,
                     passwordEncoder,
-                    "user",
-                    "user@bookigma.vn",
-                    "User",
-                    User.Role.USER
+                    "admin",
+                    "admin@bookigma.vn",
+                    "Administrator",
+                    User.Role.ADMIN
             );
 
             ensureDefaultUser(
@@ -42,10 +42,45 @@ public class DataInitializer {
             ensureDefaultUser(
                     userRepository,
                     passwordEncoder,
-                    "admin",
-                    "admin@bookigma.vn",
-                    "Administrator",
-                    User.Role.ADMIN
+                    "user",
+                    "user@bookigma.vn",
+                    "User",
+                    User.Role.USER
+            );
+
+            ensureDefaultUser(
+                    userRepository,
+                    passwordEncoder,
+                    "user1",
+                    "user1@bookigma.vn",
+                    "User1",
+                    User.Role.USER
+            );
+
+            ensureDefaultUser(
+                    userRepository,
+                    passwordEncoder,
+                    "user2",
+                    "user2@bookigma.vn",
+                    "User2",
+                    User.Role.USER
+            );
+
+            ensureDefaultUser(
+                    userRepository,
+                    passwordEncoder,
+                    "user3",
+                    "user3@bookigma.vn",
+                    "User3",
+                    User.Role.USER
+            );
+            ensureDefaultUser(
+                    userRepository,
+                    passwordEncoder,
+                    "user4",
+                    "user4@bookigma.vn",
+                    "User4",
+                    User.Role.USER
             );
         };
     }

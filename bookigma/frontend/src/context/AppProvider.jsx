@@ -7,6 +7,8 @@ import { apiCall } from '../services/api';
 import * as shopApi from '../services/shopApi';
 import * as exchangeApi from '../services/exchangeApi';
 import * as notificationApi from '../services/notificationApi';
+import * as chatApi from '../lib/chatApi';
+import * as friendApi from '../services/friendApi';
 import { useAuth } from '../hooks/useStore';
 
 /**
@@ -72,54 +74,62 @@ export function AppProvider({ children }) {
   const role = user?.role ?? null;
 
   const [users, setUsers] = useState(() => load('users', seed.users));
-  const [posts, setPosts] = useState(() => load('posts', seed.posts));
+  const [posts, setPosts] = useState([]);
   const [reports, setReports] = useState(() => load('reports', seed.reports));
-  const [conversations, setConversations] = useState(() => load('conversations', seed.conversations));
+  const [conversations, setConversations] = useState([]);
+  const [friendState, setFriendState] = useState({ friendIds: [], sentPendingIds: [], receivedPendingIds: [] });
   const [progressAll, setProgressAll] = useState(() => load('progress', seed.readingProgress));
   const [localNotifications, setLocalNotifications] = useState(() => load('notifications', seed.notifications));
   const [daily, setDaily] = useState(() => load('daily', {}));
   const [redemptions, setRedemptions] = useState(() => load('redemptions', seed.redemptions));
   const [social, setSocial] = useState(() =>
     load('social', {
-      friends: { u1: ['u2', 'u3'], u2: ['u1'], u3: ['u1'], u5: ['u2'] },
+      friends: {},
       followings: { u1: ['u3', 'u5'], u2: ['u3'], u3: ['u5'], u5: ['u1'] },
     })
   );
 
   useEffect(() => save('users', users), [users]);
-  useEffect(() => save('posts', posts), [posts]);
   useEffect(() => save('social', social), [social]);
 
-  // Feed là dữ liệu thật từ MySQL. Nếu backend chưa chạy, giữ seed/local data để UI vẫn mở được.
+  // Feed lấy dữ liệu thật từ MySQL; không dùng seed/localStorage cho bài viết.
+  const normalizePost = useCallback((p) => ({
+    id: p.id,
+    authorId: p.userId,
+    authorName: p.authorName || p.username,
+    username: p.username,
+    avatarUrl: p.avatarUrl || 'https://i.pravatar.cc/150?img=12',
+    content: p.content,
+    image: p.imageUrl || null,
+    bookId: p.bookId ?? null,
+    time: p.createdAt ? new Date(p.createdAt).getTime() : Date.now(),
+    likedBy: Array.isArray(p.likedBy) ? p.likedBy : [],
+    likeCount: Number(p.likeCount || 0),
+    likedByMe: Boolean(p.likedByMe),
+    comments: Array.isArray(p.comments) ? p.comments.map((c) => ({
+      id: c.id, authorId: c.userId, authorName: c.authorName || c.username, username: c.username,
+      avatarUrl: c.avatarUrl || 'https://i.pravatar.cc/150?img=12', text: c.content,
+      time: c.createdAt ? new Date(c.createdAt).getTime() : Date.now(), parentCommentId: c.parentCommentId,
+    })) : [],
+    hidden: false,
+  }), []);
+
+  const refreshPosts = useCallback(async () => {
+    const data = await apiCall('/posts', 'GET', null, { userId });
+    if (Array.isArray(data)) setPosts(data.map(normalizePost));
+  }, [userId, normalizePost]);
+
   useEffect(() => {
     let cancelled = false;
-    apiCall('/posts')
-      .then((data) => {
-        if (cancelled || !Array.isArray(data)) return;
-        setPosts(
-          data.map((p) => ({
-            id: p.id,
-            authorId: p.userId,
-            authorName: p.authorName,
-            avatarUrl: p.avatarUrl,
-            content: p.content,
-            image: p.imageUrl || null,
-            bookId: p.bookId ?? null,
-            time: p.createdAt ? new Date(p.createdAt).getTime() : Date.now(),
-            likedBy: [],
-            comments: [],
-            hidden: false,
-          }))
-        );
-      })
-      .catch(() => {});
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+    if (!userId) { setPosts([]); return undefined; }
+    refreshPosts().catch(() => {});
+    const timer = setInterval(() => {
+      if (!cancelled) refreshPosts().catch(() => {});
+    }, 5000);
+    return () => { cancelled = true; clearInterval(timer); };
+  }, [userId, refreshPosts]);
 
   useEffect(() => save('reports', reports), [reports]);
-  useEffect(() => save('conversations', conversations), [conversations]);
   useEffect(() => save('progress', progressAll), [progressAll]);
   useEffect(() => save('notifications', localNotifications), [localNotifications]);
   useEffect(() => save('daily', daily), [daily]);
@@ -363,43 +373,118 @@ export function AppProvider({ children }) {
   }, [syncUsers]);
 
   // ---------- Mạng xã hội / Bạn bè ----------
-  const getFriends = useCallback((uId) => social.friends?.[uId] || [], [social]);
+  const getFriends = useCallback((uId) => {
+    if (!uId || String(uId) !== String(userId)) return [];
+    return friendState.friendIds || [];
+  }, [friendState.friendIds, userId]);
+
   const getFollowing = useCallback((uId) => social.followings?.[uId] || [], [social]);
+
   const getFollowers = useCallback(
     (uId) => Object.entries(social.followings || {}).filter(([, ids]) => ids.includes(uId)).map(([id]) => id),
     [social]
   );
+
   const isFriend = useCallback(
-    (uId, otherId) => !!uId && !!otherId && uId !== otherId && getFriends(uId).includes(otherId),
+    (uId, otherId) => String(uId) !== String(otherId) && getFriends(uId).some((id) => String(id) === String(otherId)),
     [getFriends]
   );
+
   const isFollowing = useCallback(
-    (uId, otherId) => !!uId && !!otherId && uId !== otherId && getFollowing(uId).includes(otherId),
+    (uId, otherId) => !!uId && !!otherId && String(uId) !== String(otherId) && getFollowing(uId).some((id) => String(id) === String(otherId)),
     [getFollowing]
   );
 
-  const toggleFriend = useCallback((uId, otherId) => {
-    if (!uId || !otherId || uId === otherId) return false;
-    let nextValue = false;
-    setSocial((prev) => {
-      const nextFriends = { ...(prev.friends || {}) };
-      const mine = new Set(nextFriends[uId] || []);
-      const theirs = new Set(nextFriends[otherId] || []);
-      if (mine.has(otherId)) {
-        mine.delete(otherId);
-        theirs.delete(uId);
-        nextValue = false;
-      } else {
-        mine.add(otherId);
-        theirs.add(uId);
-        nextValue = true;
-      }
-      nextFriends[uId] = Array.from(mine);
-      nextFriends[otherId] = Array.from(theirs);
-      return { ...prev, friends: nextFriends };
+  const hasSentFriendRequest = useCallback(
+    (uId, otherId) => String(uId) === String(userId) && (friendState.sentPendingIds || []).some((id) => String(id) === String(otherId)),
+    [friendState.sentPendingIds, userId]
+  );
+
+  const hasReceivedFriendRequest = useCallback(
+    (uId, otherId) => String(uId) === String(userId) && (friendState.receivedPendingIds || []).some((id) => String(id) === String(otherId)),
+    [friendState.receivedPendingIds, userId]
+  );
+
+  const refreshFriendState = useCallback(async () => {
+    if (!userId) return;
+    const state = await friendApi.getFriendState(userId);
+    setFriendState({
+      friendIds: (state?.friendIds || []).map(String),
+      sentPendingIds: (state?.sentPendingIds || []).map(String),
+      receivedPendingIds: (state?.receivedPendingIds || []).map(String),
     });
-    return nextValue;
-  }, []);
+
+    // Đồng bộ username/fullName/avatar thật từ database vào danh sách users.
+    const remoteUsers = [
+      ...(state?.friends || []),
+      ...(state?.sentPendingUsers || []),
+      ...(state?.receivedPendingUsers || []),
+    ];
+    if (remoteUsers.length) {
+      setUsers((prev) => {
+        const map = new Map(prev.map((u) => [String(u.id), u]));
+        remoteUsers.forEach((u) => {
+          const existing = map.get(String(u.id)) || {};
+          map.set(String(u.id), {
+            ...existing,
+            id: Number(u.id),
+            username: u.username,
+            fullName: u.fullName,
+            name: u.fullName || u.username || existing.name || 'Người dùng',
+            avatarUrl: u.avatarUrl || existing.avatarUrl || null,
+            avatar: u.avatarUrl || existing.avatar || `https://i.pravatar.cc/150?u=${encodeURIComponent(u.username || u.id)}`,
+            bio: u.bio || '',
+            role: String(u.role || existing.role || 'USER').toLowerCase(),
+          });
+        });
+        return Array.from(map.values());
+      });
+    }
+  }, [userId]);
+
+  useEffect(() => {
+    if (!userId) {
+      setFriendState({ friendIds: [], sentPendingIds: [], receivedPendingIds: [] });
+      return undefined;
+    }
+    refreshFriendState().catch(() => {});
+    return undefined;
+  }, [userId, refreshFriendState]);
+
+  const toggleFriend = useCallback(async (uId, otherId) => {
+    if (!uId || !otherId || String(uId) === String(otherId)) return false;
+    try {
+      if (isFriend(uId, otherId) || hasSentFriendRequest(uId, otherId)) {
+        await friendApi.cancelFriendRequest(uId, otherId);
+      } else {
+        await friendApi.sendFriendRequest(uId, otherId);
+      }
+      await refreshFriendState();
+      return true;
+    } catch {
+      return false;
+    }
+  }, [isFriend, hasSentFriendRequest, refreshFriendState]);
+
+  const acceptFriendRequest = useCallback(async (uId, otherId) => {
+    try {
+      await friendApi.acceptFriendRequest(uId, otherId);
+      await refreshFriendState();
+      return true;
+    } catch {
+      return false;
+    }
+  }, [refreshFriendState]);
+
+  const rejectFriendRequest = useCallback(async (uId, otherId) => {
+    try {
+      await friendApi.rejectFriendRequest(uId, otherId);
+      await refreshFriendState();
+      return true;
+    } catch {
+      return false;
+    }
+  }, [refreshFriendState]);
 
   const toggleFollow = useCallback((uId, otherId) => {
     if (!uId || !otherId || uId === otherId) return false;
@@ -407,13 +492,8 @@ export function AppProvider({ children }) {
     setSocial((prev) => {
       const nextFollowing = { ...(prev.followings || {}) };
       const mine = new Set(nextFollowing[uId] || []);
-      if (mine.has(otherId)) {
-        mine.delete(otherId);
-        nextValue = false;
-      } else {
-        mine.add(otherId);
-        nextValue = true;
-      }
+      if (mine.has(otherId)) { mine.delete(otherId); nextValue = false; }
+      else { mine.add(otherId); nextValue = true; }
       nextFollowing[uId] = Array.from(mine);
       return { ...prev, followings: nextFollowing };
     });
@@ -575,53 +655,43 @@ export function AppProvider({ children }) {
     [userId, patchAccount, refreshCatalog]
   );
 
-  // ---------- Bài đăng ----------
+  // ---------- Bài đăng (MySQL) ----------
   const addPost = useCallback(async (post) => {
+    if (!userId) throw new Error('Bạn cần đăng nhập để đăng bài.');
     const saved = await apiCall('/posts', 'POST', {
-      userId: post.authorId,
       content: post.content,
       imageUrl: post.image || null,
       bookId: /^\d+$/.test(String(post.bookId || '')) ? Number(post.bookId) : null,
       visibility: 'PUBLIC',
-    });
-
-    const normalized = {
-      id: saved.id,
-      authorId: saved.userId,
-      authorName: saved.authorName,
-      avatarUrl: saved.avatarUrl,
-      content: saved.content,
-      image: saved.imageUrl || null,
-      bookId: saved.bookId ?? null,
-      time: saved.createdAt ? new Date(saved.createdAt).getTime() : Date.now(),
-      likedBy: [],
-      comments: [],
-      hidden: false,
-    };
-
-    setPosts((prev) => [normalized, ...prev]);
+    }, { userId });
+    const normalized = normalizePost(saved);
+    setPosts((prev) => [normalized, ...prev.filter((p) => p.id !== normalized.id)]);
     return normalized;
-  }, []);
+  }, [userId, normalizePost]);
 
-  const toggleLike = useCallback((postId, uId) => {
-    setPosts((prev) =>
-      prev.map((p) => {
-        if (p.id !== postId) return p;
-        const liked = p.likedBy.includes(uId);
-        return { ...p, likedBy: liked ? p.likedBy.filter((id) => id !== uId) : [...p.likedBy, uId] };
-      })
-    );
-  }, []);
+  const toggleLike = useCallback(async (postId) => {
+    if (!userId) throw new Error('Bạn cần đăng nhập để thích bài viết.');
+    const saved = await apiCall(`/posts/${postId}/like`, 'POST', null, { userId });
+    const normalized = normalizePost(saved);
+    setPosts((prev) => prev.map((p) => p.id === normalized.id ? normalized : p));
+    return normalized;
+  }, [userId, normalizePost]);
 
-  const addComment = useCallback((postId, comment) => {
-    setPosts((prev) =>
-      prev.map((p) =>
-        p.id === postId
-          ? { ...p, comments: [...p.comments, { ...comment, id: uid('c'), time: Date.now() }] }
-          : p
-      )
-    );
-  }, []);
+  const addComment = useCallback(async (postId, comment) => {
+    if (!userId) throw new Error('Bạn cần đăng nhập để bình luận.');
+    const savedComment = await apiCall(`/posts/${postId}/comments`, 'POST', {
+      content: comment.text,
+      parentCommentId: comment.parentCommentId || null,
+    }, { userId });
+    const normalizedComment = {
+      id: savedComment.id, authorId: savedComment.userId, authorName: savedComment.authorName || savedComment.username,
+      username: savedComment.username, avatarUrl: savedComment.avatarUrl, text: savedComment.content,
+      time: savedComment.createdAt ? new Date(savedComment.createdAt).getTime() : Date.now(),
+      parentCommentId: savedComment.parentCommentId,
+    };
+    setPosts((prev) => prev.map((p) => p.id === postId ? { ...p, comments: [...p.comments, normalizedComment] } : p));
+    return normalizedComment;
+  }, [userId]);
 
   const setPostHidden = useCallback((postId, hidden) => {
     setPosts((prev) => prev.map((p) => (p.id === postId ? { ...p, hidden } : p)));
@@ -712,51 +782,92 @@ export function AppProvider({ children }) {
   );
 
   // ---------- Chat ----------
-  const findOrCreateConversation = useCallback(
-    (userA, userB) => {
-      let found = conversations.find((c) => c.participants.includes(userA) && c.participants.includes(userB));
-      if (found) return found.id;
-      const conv = {
-        id: uid('cv'),
-        participants: [userA, userB],
-        messages: [],
-        updatedAt: Date.now(),
-        readBy: {},
-      };
-      setConversations((prev) => [conv, ...prev]);
-      return conv.id;
-    },
-    [conversations]
-  );
+  const mapConversation = useCallback((c, previous = null) => ({
+    id: String(c.id),
+    name: c.name,
+    type: c.type,
+    participants: (c.participantIds || []).map(String),
+    messages: (c.messages || []).map((m) => ({
+      id: String(m.id),
+      senderId: String(m.senderId),
+      text: m.content,
+      at: new Date(m.createdAt).getTime(),
+    })),
+    updatedAt: new Date(c.updatedAt).getTime(),
+    readBy: previous?.readBy || {},
+  }), []);
 
-  const sendMessage = useCallback((convId, senderId, text) => {
-    setConversations((prev) =>
-      prev.map((c) =>
-        c.id === convId
-          ? {
-              ...c,
-              messages: [...c.messages, { id: uid('m'), senderId, text, at: Date.now() }],
-              updatedAt: Date.now(),
-              readBy: { ...c.readBy, [senderId]: c.messages.length + 1 },
-            }
-          : c
-      )
+  const refreshConversations = useCallback(async () => {
+    if (!userId) return [];
+    const data = await chatApi.listChatConversations(userId);
+    setConversations((prev) => {
+      const old = new Map(prev.map((c) => [String(c.id), c]));
+      return (Array.isArray(data) ? data : []).map((c) => mapConversation(c, old.get(String(c.id))));
+    });
+    return data;
+  }, [userId, mapConversation]);
+
+  useEffect(() => {
+    if (!userId) {
+      setConversations([]);
+      return undefined;
+    }
+    refreshConversations().catch(() => {});
+    const timer = setInterval(() => refreshConversations().catch(() => {}), 2500);
+    return () => clearInterval(timer);
+  }, [userId, refreshConversations]);
+
+  const findOrCreateConversation = useCallback(async (userA, userB) => {
+    const existing = conversations.find((c) =>
+      c.type === 'DIRECT' &&
+      c.participants.some((p) => String(p) === String(userA)) &&
+      c.participants.some((p) => String(p) === String(userB))
     );
+    if (existing) return existing.id;
+
+    const created = await chatApi.createDirectConversation(userA, userB);
+    const mapped = mapConversation(created);
+    setConversations((prev) => [mapped, ...prev.filter((c) => String(c.id) !== String(mapped.id))]);
+    return mapped.id;
+  }, [conversations, mapConversation]);
+
+  const createGroupConversation = useCallback(async (creatorId, participantIds, name) => {
+    const created = await chatApi.createGroupConversation({
+      creatorId,
+      participantIds: participantIds.map(Number),
+      name,
+    });
+    const mapped = mapConversation(created);
+    setConversations((prev) => [mapped, ...prev]);
+    return mapped;
+  }, [mapConversation]);
+
+  const sendMessage = useCallback(async (convId, senderId, text) => {
+    const saved = await chatApi.sendChatMessage(convId, senderId, text);
+    const message = {
+      id: String(saved.id),
+      senderId: String(saved.senderId),
+      text: saved.content,
+      at: new Date(saved.createdAt).getTime(),
+    };
+    setConversations((prev) => prev.map((c) => c.id === String(convId)
+      ? { ...c, messages: [...c.messages, message], updatedAt: message.at, readBy: { ...c.readBy, [String(senderId)]: c.messages.length + 1 } }
+      : c));
+    return message;
   }, []);
 
   const markConversationRead = useCallback((convId, uId) => {
-    setConversations((prev) => {
-      const conv = prev.find((c) => c.id === convId);
-      if (!conv || (conv.readBy?.[uId] ?? 0) >= conv.messages.length) return prev;
-      return prev.map((c) => (c.id === convId ? { ...c, readBy: { ...c.readBy, [uId]: conv.messages.length } } : c));
-    });
+    setConversations((prev) => prev.map((c) =>
+      c.id === String(convId)
+        ? { ...c, readBy: { ...c.readBy, [String(uId)]: c.messages.length } }
+        : c
+    ));
   }, []);
 
   const unreadCount = useCallback(
-    (uId) =>
-      conversations
-        .filter((c) => c.participants.includes(uId))
-        .reduce((sum, c) => sum + Math.max(0, c.messages.length - (c.readBy?.[uId] ?? 0)), 0),
+    (uId) => conversations
+      .filter((c) => c.participants.includes(String(uId)) || c.participants.includes(uId))
+      .reduce((sum, c) => sum + Math.max(0, c.messages.length - (c.readBy?.[String(uId)] ?? 0)), 0),
     [conversations]
   );
 
@@ -927,6 +1038,7 @@ export function AppProvider({ children }) {
       users,
       books,
       posts,
+      refreshPosts,
       exchanges,
       orders: account.orders,
       reports,
@@ -954,6 +1066,10 @@ export function AppProvider({ children }) {
       isFriend,
       isFollowing,
       toggleFriend,
+      acceptFriendRequest,
+      rejectFriendRequest,
+      hasSentFriendRequest,
+      hasReceivedFriendRequest,
       toggleFollow,
       refreshCatalog,
       refreshCart,
@@ -993,7 +1109,9 @@ export function AppProvider({ children }) {
       setExchangeStatus,
       deleteExchange,
       findOrCreateConversation,
+      createGroupConversation,
       sendMessage,
+      refreshConversations,
       markConversationRead,
       unreadCount,
       getProgress,
@@ -1019,6 +1137,7 @@ export function AppProvider({ children }) {
       users,
       books,
       posts,
+      refreshPosts,
       exchanges,
       account.orders,
       reports,
@@ -1046,6 +1165,10 @@ export function AppProvider({ children }) {
       isFriend,
       isFollowing,
       toggleFriend,
+      acceptFriendRequest,
+      rejectFriendRequest,
+      hasSentFriendRequest,
+      hasReceivedFriendRequest,
       toggleFollow,
       refreshCatalog,
       refreshCart,
@@ -1085,7 +1208,9 @@ export function AppProvider({ children }) {
       setExchangeStatus,
       deleteExchange,
       findOrCreateConversation,
+      createGroupConversation,
       sendMessage,
+      refreshConversations,
       markConversationRead,
       unreadCount,
       getProgress,

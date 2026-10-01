@@ -4,25 +4,17 @@ import lombok.Builder;
 import lombok.Data;
 
 import java.time.LocalDateTime;
-import java.util.List;
 
 @Data
 @Builder
-public class PostResponseDto {
+public class CommentResponseDto {
     private Long id;
+    private Long postId;
     private Long userId;
     private String username;
     private String authorName;
     private String avatarUrl;
-    private Long bookId;
-    private Long pageId;
-    private Long clubId;
     private String content;
-    private String imageUrl;
-    private String visibility;
+    private Long parentCommentId;
     private LocalDateTime createdAt;
-    private long likeCount;
-    private boolean likedByMe;
-    private List<Long> likedBy;
-    private List<CommentResponseDto> comments;
 }

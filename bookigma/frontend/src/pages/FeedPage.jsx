@@ -68,13 +68,18 @@ export default function FeedPage() {
     toast(`Đã đăng bài — nhận ${POINT_RULES.createPost} điểm Gigma.`);
   };
 
-  const submitComment = (postId) => {
+  const submitComment = async (postId) => {
+    if (!user) return navigate('/login');
     const text = (commentDraft[postId] || '').trim();
     if (!text) return;
-    addComment(postId, { authorId: user.id, text });
-    setCommentDraft((d) => ({ ...d, [postId]: '' }));
-    earnPoints(user.id, POINT_RULES.createComment);
-    trackDaily(user.id, 'social', 1);
+    try {
+      await addComment(postId, { text });
+      setCommentDraft((d) => ({ ...d, [postId]: '' }));
+      earnPoints(user.id, POINT_RULES.createComment);
+      trackDaily(user.id, 'social', 1);
+    } catch (error) {
+      toast(error.message || 'Không thể gửi bình luận.', 'error');
+    }
   };
 
   return (
@@ -157,14 +162,15 @@ export default function FeedPage() {
           {/* Danh sách bài đăng */}
           {visiblePosts.map((post) => {
             const localAuthor = userById(post.authorId);
-            const author = localAuthor || {
+            // Tên/avatar từ backend là nguồn chính; không để seed/localStorage ghi đè tên thật.
+            const author = {
               id: post.authorId,
-              name: post.authorName || 'Người dùng',
-              avatar: post.avatarUrl || 'https://i.pravatar.cc/150?img=12',
-              role: 'user',
+              name: post.authorName || post.username || localAuthor?.name || 'Người dùng',
+              avatar: post.avatarUrl || localAuthor?.avatar || 'https://i.pravatar.cc/150?img=12',
+              role: localAuthor?.role || 'user',
             };
             const book = post.bookId ? bookById(post.bookId) : null;
-            const liked = user && post.likedBy.includes(user.id);
+            const liked = user && post.likedByMe;
             const showComments = openComments[post.id];
 
             return (
@@ -225,7 +231,7 @@ export default function FeedPage() {
                 )}
 
                 <div className="row-between tiny muted" style={{ paddingBottom: 8 }}>
-                  <span>{post.likedBy.length} lượt thích</span>
+                  <span>{post.likeCount ?? post.likedBy.length} lượt thích</span>
                   <span>{post.comments.length} bình luận</span>
                 </div>
 
@@ -233,7 +239,10 @@ export default function FeedPage() {
                   <button
                     className="btn btn-ghost btn-sm"
                     style={{ flex: 1, border: 'none', color: liked ? 'var(--accent-green)' : 'var(--text-sub)', fontWeight: liked ? 700 : 600 }}
-                    onClick={() => (user ? toggleLike(post.id, user.id) : navigate('/login'))}
+                    onClick={async () => {
+                      if (!user) return navigate('/login');
+                      try { await toggleLike(post.id); } catch (error) { toast(error.message || 'Không thể cập nhật lượt thích.', 'error'); }
+                    }}
                   >
                     <ThumbsUp size={17} fill={liked ? 'currentColor' : 'none'} /> Thích
                   </button>
@@ -257,11 +266,13 @@ export default function FeedPage() {
                   <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid var(--border-color)' }} className="stack">
                     {post.comments.map((c) => {
                       const cAuthor = userById(c.authorId);
+                      const commentName = c.authorName || cAuthor?.name || c.username || 'Người dùng';
+                      const commentAvatar = c.avatarUrl || cAuthor?.avatar || 'https://i.pravatar.cc/150?img=12';
                       return (
                         <div key={c.id} className="row" style={{ alignItems: 'flex-start', gap: 8 }}>
-                          <img src={cAuthor?.avatar} alt="" className="avatar" style={{ width: 30, height: 30 }} />
+                          <img src={commentAvatar} alt="" className="avatar" style={{ width: 30, height: 30 }} />
                           <div style={{ background: 'var(--bg-soft)', borderRadius: 12, padding: '8px 12px', flex: 1 }}>
-                            <div className="tiny strong">{cAuthor?.name}</div>
+                            <div className="tiny strong">{commentName}</div>
                             <div className="small">{c.text}</div>
                             <div className="tiny muted" style={{ marginTop: 3 }}>{timeAgo(c.time)}</div>
                           </div>

@@ -56,3 +56,11 @@ export async function apiCall(endpoint, method = 'GET', body = null, { userId } 
     throw new Error(getApiErrorMessage(error), { cause: error });
   }
 }
+
+export const postApi = {
+  getAll: (userId = null) => apiCall('/posts', 'GET', null, { userId }),
+  getByUser: (userId, currentUserId = null) => apiCall(`/posts/user/${userId}`, 'GET', null, { userId: currentUserId }),
+  create: (body, userId) => apiCall('/posts', 'POST', body, { userId }),
+  toggleLike: (postId, userId) => apiCall(`/posts/${postId}/like`, 'POST', null, { userId }),
+  addComment: (postId, body, userId) => apiCall(`/posts/${postId}/comments`, 'POST', body, { userId }),
+};

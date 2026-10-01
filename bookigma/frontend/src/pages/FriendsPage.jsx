@@ -3,277 +3,215 @@ import { useNavigate } from 'react-router-dom';
 import { MessageSquare, Search, UserCheck, UserMinus, UserPlus, Users } from 'lucide-react';
 import { useApp, useAuth, useToast } from '../hooks/useStore';
 
+const DEFAULT_AVATAR = 'https://i.pravatar.cc/150?img=12';
+
 export default function FriendsPage() {
   const navigate = useNavigate();
   const toast = useToast();
   const { user } = useAuth();
-  const {
-    users,
-    isFriend,
-    isFollowing,
-    hasSentFriendRequest,
-    hasReceivedFriendRequest,
-    getFollowers,
-    getFollowing,
-    toggleFriend,
-    acceptFriendRequest,
-    toggleFollow,
-    findOrCreateConversation,
-  } = useApp();
+  const app = useApp() || {};
+  const userId = user?.id ?? null;
+
+  const users = app.users || [];
+  const isFriend = app.isFriend || (() => false);
+  const isFollowing = app.isFollowing || (() => false);
+  const hasSentFriendRequest = app.hasSentFriendRequest || (() => false);
+  const hasReceivedFriendRequest = app.hasReceivedFriendRequest || (() => false);
+  const getFollowers = app.getFollowers || (() => []);
+  const getFollowing = app.getFollowing || (() => []);
+  const toggleFriend = app.toggleFriend || (async () => false);
+  const acceptFriendRequest = app.acceptFriendRequest || (async () => false);
+  const rejectFriendRequest = app.rejectFriendRequest || (async () => false);
+  const toggleFollow = app.toggleFollow || (() => false);
+  const findOrCreateConversation = app.findOrCreateConversation;
+
   const [searchQuery, setSearchQuery] = useState('');
   const [filter, setFilter] = useState('all');
 
-  const isDemoSeedUser = (person) =>
-    ['u1', 'u2', 'u3', 'u4', 'u5'].includes(String(person.id)) &&
-    typeof person.email === 'string' && person.email.endsWith('@bookigma.vn');
-
-  const people = useMemo(
-    () => users.filter((u) => String(u.id) !== String(user.id) && u.role === 'user' && !isDemoSeedUser(u)),
-    [user.id, users]
-  );
+  const people = useMemo(() => {
+    if (!userId) return [];
+    return users.filter((u) => u && String(u.id) !== String(userId) && String(u.role || 'user').toLowerCase() === 'user');
+  }, [users, userId]);
 
   const normalizedSearch = searchQuery.trim().toLowerCase();
 
-  const filteredPeople = useMemo(() => {
-    return people.filter((person) => {
-      const haystack = [
-        person.name,
-        person.fullName,
-        person.username,
-        person.email,
-        person.bio || '',
-      ]
-        .filter(Boolean)
-        .join(' ')
-        .toLowerCase();
+  const personDisplayName = (person) => person?.fullName || person?.name || person?.username || 'Người dùng';
+  const personUsername = (person) => person?.username || person?.email || '';
+  const personAvatar = (person) => person?.avatarUrl || person?.avatar || DEFAULT_AVATAR;
 
-      const matchesSearch = !normalizedSearch || haystack.includes(normalizedSearch);
-      if (!matchesSearch) return false;
+  const friends = useMemo(() => people.filter((p) => isFriend(userId, p.id)), [people, userId, isFriend]);
+  const pendingReceived = useMemo(() => people.filter((p) => hasReceivedFriendRequest(userId, p.id)), [people, userId, hasReceivedFriendRequest]);
+  const following = useMemo(() => people.filter((p) => isFollowing(userId, p.id)), [people, userId, isFollowing]);
+  const followers = useMemo(() => {
+    const ids = getFollowers(userId) || [];
+    return ids.map((id) => users.find((u) => String(u.id) === String(id))).filter(Boolean);
+  }, [userId, getFollowers, users]);
 
-      const friendStatus = isFriend(user.id, person.id);
-      const sentRequest = hasSentFriendRequest(user.id, person.id);
-      const receivedRequest = hasReceivedFriendRequest(user.id, person.id);
-      const followStatus = isFollowing(user.id, person.id);
-
-      if (filter === 'friends') return friendStatus;
-      if (filter === 'following') return followStatus && !friendStatus;
-      if (filter === 'waiting') return receivedRequest || sentRequest;
-      if (filter === 'new') return !friendStatus && !followStatus && !sentRequest && !receivedRequest;
-      return true;
-    });
-  }, [people, user.id, normalizedSearch, filter, isFriend, isFollowing, hasSentFriendRequest, hasReceivedFriendRequest]);
-
-  const friends = people.filter((person) => isFriend(user.id, person.id));
-  const pendingSent = people.filter((person) => hasSentFriendRequest(user.id, person.id));
-  const pendingReceived = people.filter((person) => hasReceivedFriendRequest(user.id, person.id));
-  const following = people.filter((person) => isFollowing(user.id, person.id));
-  const followers = getFollowers(user.id).map((id) => users.find((u) => u.id === id)).filter(Boolean);
+  const filteredPeople = useMemo(() => people.filter((person) => {
+    const haystack = [personDisplayName(person), personUsername(person), person.bio || ''].join(' ').toLowerCase();
+    if (normalizedSearch && !haystack.includes(normalizedSearch)) return false;
+    const friend = isFriend(userId, person.id);
+    const sent = hasSentFriendRequest(userId, person.id);
+    const received = hasReceivedFriendRequest(userId, person.id);
+    const follow = isFollowing(userId, person.id);
+    if (filter === 'friends') return friend;
+    if (filter === 'following') return follow && !friend;
+    if (filter === 'waiting') return sent || received;
+    if (filter === 'new') return !friend && !follow && !sent && !received;
+    return true;
+  }), [people, normalizedSearch, filter, userId, isFriend, isFollowing, hasSentFriendRequest, hasReceivedFriendRequest]);
 
   const messageUser = async (otherId) => {
-    const convId = await findOrCreateConversation(user.id, otherId);
-    navigate(`/chat/${convId}`);
-    toast('Đã mở cuộc trò chuyện.', 'info');
+    if (!findOrCreateConversation || !userId) return;
+    try {
+      const convId = await findOrCreateConversation(userId, otherId);
+      if (convId) navigate(`/chat/${convId}`);
+    } catch (e) {
+      toast(e?.message || 'Không thể mở cuộc trò chuyện.', 'info');
+    }
   };
+
+  const handleFriendAction = async (person) => {
+    const name = personUsername(person) || personDisplayName(person);
+    const friend = isFriend(userId, person.id);
+    const sent = hasSentFriendRequest(userId, person.id);
+
+    if (friend) {
+      const confirmed = window.confirm(`Bạn có chắc chắn muốn hủy kết bạn với "${name}" không?`);
+      if (!confirmed) return;
+    } else if (sent) {
+      const confirmed = window.confirm(`Bạn có chắc chắn muốn hủy lời mời kết bạn với "${name}" không?`);
+      if (!confirmed) return;
+    }
+
+    const ok = await toggleFriend(userId, person.id);
+    toast(
+      ok ? (friend ? 'Đã hủy kết bạn.' : sent ? 'Đã hủy lời mời kết bạn.' : 'Đã gửi lời mời kết bạn.') : 'Không thể thực hiện thao tác.',
+      ok ? 'success' : 'info'
+    );
+  };
+
+  const handleAccept = async (person) => {
+    const ok = await acceptFriendRequest(userId, person.id);
+    toast(ok ? 'Đã xác nhận kết bạn.' : 'Không thể xác nhận kết bạn.', ok ? 'success' : 'info');
+  };
+
+  const handleReject = async (person) => {
+    const ok = await rejectFriendRequest(userId, person.id);
+    toast(ok ? 'Đã từ chối lời mời kết bạn.' : 'Không thể từ chối lời mời.', ok ? 'success' : 'info');
+  };
+
+  if (!user) return <div className="main-layout" style={{ padding: 20 }}><div className="card">Đang tải thông tin người dùng...</div></div>;
+
+  const PersonRow = ({ person, action }) => (
+    <div className="row" style={{ justifyContent: 'space-between', gap: 10, padding: '8px 4px', borderBottom: '1px solid var(--border-color)' }}>
+      <div className="row" style={{ gap: 10, minWidth: 0 }}>
+        <img src={personAvatar(person)} alt={personDisplayName(person)} className="avatar" style={{ width: 40, height: 40, objectFit: 'cover' }} />
+        <div style={{ minWidth: 0 }}>
+          <div className="strong small">{personDisplayName(person)}</div>
+          <div className="tiny muted">@{personUsername(person)}</div>
+        </div>
+      </div>
+      {action}
+    </div>
+  );
 
   return (
     <div className="main-layout" style={{ maxWidth: 1400 }}>
-      <div className="page-head row-between" style={{ flexWrap: 'wrap' }}>
-        <div>
-          <h1>Bạn bè & Theo dõi</h1>
-          <p>Quản lý kết bạn, theo dõi và nhắn tin ngay cả khi chưa là bạn bè.</p>
-        </div>
+      <div className="page-head">
+        <h1>Bạn bè & Theo dõi</h1>
+        <p className="muted small">Danh sách được lấy từ tài khoản thật trong database.</p>
       </div>
 
       <div className="grid" style={{ gridTemplateColumns: 'minmax(280px, 1fr) minmax(0, 2fr)', gap: 20, alignItems: 'start' }}>
         <aside className="stack" style={{ gap: 16 }}>
           <div className="card" style={{ padding: 16 }}>
-            <div className="row-between" style={{ marginBottom: 14 }}>
-              <h3 style={{ margin: 0 }}>Bạn bè & Theo dõi</h3>
-            </div>
-            <div className="grid" style={{ gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 10 }}>
-              <div className="card" style={{ padding: 12, background: 'var(--bg-soft)' }}>
-                <div className="tiny muted">Bạn bè</div>
-                <div className="strong" style={{ fontSize: 22 }}>{friends.length}</div>
-              </div>
-              <div className="card" style={{ padding: 12, background: 'var(--bg-soft)' }}>
-                <div className="tiny muted">Đang theo dõi</div>
-                <div className="strong" style={{ fontSize: 22 }}>{following.length}</div>
-              </div>
-              <div className="card" style={{ padding: 12, background: 'var(--bg-soft)' }}>
-                <div className="tiny muted">Người theo dõi</div>
-                <div className="strong" style={{ fontSize: 22 }}>{followers.length}</div>
-              </div>
+            <h3>Thống kê</h3>
+            <div className="grid" style={{ gridTemplateColumns: 'repeat(3, 1fr)', gap: 10 }}>
+              <div className="card" style={{ padding: 12 }}><div className="tiny muted">Bạn bè</div><div className="strong" style={{ fontSize: 22 }}>{friends.length}</div></div>
+              <div className="card" style={{ padding: 12 }}><div className="tiny muted">Đang theo dõi</div><div className="strong" style={{ fontSize: 22 }}>{following.length}</div></div>
+              <div className="card" style={{ padding: 12 }}><div className="tiny muted">Người theo dõi</div><div className="strong" style={{ fontSize: 22 }}>{followers.length}</div></div>
             </div>
           </div>
 
           <div className="card" style={{ padding: 16 }}>
-            <div className="row-between" style={{ marginBottom: 12 }}>
-              <h3 style={{ margin: 0 }}>Bạn bè</h3>
-              <span className="badge badge-green">{friends.length}</span>
-            </div>
-            <div className="stack" style={{ gap: 10 }}>
-              {friends.length === 0 ? (
-                <div className="small muted">Bạn chưa kết bạn với ai.</div>
-              ) : (
-                friends.map((person) => (
-                  <div key={person.id} className="row" style={{ justifyContent: 'space-between', gap: 10, padding: '8px 4px', borderBottom: '1px solid var(--border-color)' }}>
-                    <div className="row" style={{ gap: 10 }}>
-                      <img src={person.avatar} alt="" className="avatar" style={{ width: 36, height: 36 }} />
-                      <div>
-                        <div className="strong small">{person.name}</div>
-                        <div className="tiny muted">@{person.username || person.email}</div>
-                      </div>
-                    </div>
-                    <button className="btn btn-sm btn-ghost" onClick={() => messageUser(person.id)}>
-                      <MessageSquare size={14} /> Nhắn tin
-                    </button>
+            <div className="row-between"><h3>Bạn bè</h3><span className="badge badge-green">{friends.length}</span></div>
+            <div className="stack" style={{ gap: 4 }}>
+              {friends.length === 0 ? <div className="small muted">Bạn chưa kết bạn với ai.</div> : friends.map((person) => (
+                <PersonRow key={person.id} person={person} action={
+                  <div className="row" style={{ gap: 6 }}>
+                    <button className="btn btn-sm btn-ghost" onClick={() => messageUser(person.id)}><MessageSquare size={14} /> Nhắn tin</button>
+                    <button className="btn btn-sm btn-ghost" onClick={() => handleFriendAction(person)}><UserMinus size={14} /> Hủy bạn</button>
                   </div>
-                ))
-              )}
+                } />
+              ))}
             </div>
           </div>
 
           <div className="card" style={{ padding: 16 }}>
-            <div className="row-between" style={{ marginBottom: 12 }}>
-              <h3 style={{ margin: 0 }}>Yêu cầu kết bạn</h3>
-              <span className="badge badge-amber">{pendingReceived.length}</span>
-            </div>
-            <div className="stack" style={{ gap: 10 }}>
-              {pendingReceived.length === 0 ? (
-                <div className="small muted">Không có yêu cầu mới.</div>
-              ) : (
-                pendingReceived.map((person) => (
-                  <div key={person.id} className="row" style={{ justifyContent: 'space-between', gap: 10, padding: '8px 4px', borderBottom: '1px solid var(--border-color)' }}>
-                    <div className="row" style={{ gap: 10 }}>
-                      <img src={person.avatar} alt="" className="avatar" style={{ width: 36, height: 36 }} />
-                      <div>
-                        <div className="strong small">{person.name}</div>
-                        <div className="tiny muted">@{person.username || person.email}</div>
-                      </div>
-                    </div>
-                    <button
-                      className="btn btn-sm btn-primary"
-                      onClick={() => {
-                        const accepted = acceptFriendRequest(user.id, person.id);
-                        toast(accepted ? 'Đã xác nhận kết bạn.' : 'Không thể xác nhận kết bạn.', accepted ? 'success' : 'info');
-                      }}
-                    >
-                      Xác nhận
-                    </button>
+            <div className="row-between"><h3>Yêu cầu kết bạn</h3><span className="badge badge-amber">{pendingReceived.length}</span></div>
+            <div className="stack" style={{ gap: 4 }}>
+              {pendingReceived.length === 0 ? <div className="small muted">Không có yêu cầu mới.</div> : pendingReceived.map((person) => (
+                <PersonRow key={person.id} person={person} action={
+                  <div className="row" style={{ gap: 6 }}>
+                    <button className="btn btn-sm btn-primary" onClick={() => handleAccept(person)}><UserCheck size={14} /> Xác nhận</button>
+                    <button className="btn btn-sm btn-ghost" onClick={() => handleReject(person)}>Từ chối</button>
                   </div>
-                ))
-              )}
+                } />
+              ))}
             </div>
           </div>
         </aside>
 
         <main className="card" style={{ padding: 20 }}>
           <div className="row-between" style={{ marginBottom: 16, gap: 12, flexWrap: 'wrap' }}>
-            <div>
-              <h3 style={{ margin: 0 }}>Tìm kiếm & đề xuất</h3>
-              <div className="small muted">Khám phá mọi người để kết bạn, theo dõi hoặc nhắn tin.</div>
-            </div>
+            <div><h3>Tìm kiếm người dùng</h3><div className="small muted">Tên, username và ảnh được lấy từ database.</div></div>
             <div style={{ flex: 1, minWidth: 220, maxWidth: 420, position: 'relative' }}>
-              <Search size={16} style={{ position: 'absolute', left: 12, top: 11, color: 'var(--text-sub)' }} />
-              <input
-                className="input"
-                style={{ paddingLeft: 36, height: 40 }}
-                placeholder="Tìm kiếm theo tên, username, email..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-              />
+              <Search size={16} style={{ position: 'absolute', left: 12, top: 11 }} />
+              <input className="input" style={{ paddingLeft: 36, height: 40 }} placeholder="Tìm kiếm theo tên, username..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
             </div>
           </div>
 
           <div className="row" style={{ gap: 8, marginBottom: 18, flexWrap: 'wrap' }}>
-            {['all', 'friends', 'following', 'waiting', 'new'].map((option) => (
-              <button
-                key={option}
-                className={`btn btn-sm ${filter === option ? 'btn-primary' : 'btn-ghost'}`}
-                onClick={() => setFilter(option)}
-              >
-                {option === 'all' && 'Tất cả'}
-                {option === 'friends' && 'Bạn bè'}
-                {option === 'following' && 'Đang theo dõi'}
-                {option === 'waiting' && 'Chờ xác nhận'}
-                {option === 'new' && 'Gợi ý mới'}
+            {['all', 'friends', 'waiting', 'new'].map((option) => (
+              <button key={option} className={`btn btn-sm ${filter === option ? 'btn-primary' : 'btn-ghost'}`} onClick={() => setFilter(option)}>
+                {option === 'all' ? 'Tất cả' : option === 'friends' ? 'Bạn bè' : option === 'waiting' ? 'Chờ xác nhận' : 'Gợi ý mới'}
               </button>
             ))}
           </div>
 
           <div className="grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 16 }}>
-            {filteredPeople.length === 0 && (
-              <div className="small muted" style={{ gridColumn: '1 / -1', padding: '12px 6px' }}>
-                Không tìm thấy người dùng phù hợp với từ khóa "{searchQuery || 'hiện tại'}".
-              </div>
-            )}
-
             {filteredPeople.map((person) => {
-              const friendStatus = isFriend(user.id, person.id);
-              const sentRequest = hasSentFriendRequest(user.id, person.id);
-              const receivedRequest = hasReceivedFriendRequest(user.id, person.id);
-              const followStatus = isFollowing(user.id, person.id);
-
+              const friend = isFriend(userId, person.id);
+              const sent = hasSentFriendRequest(userId, person.id);
+              const received = hasReceivedFriendRequest(userId, person.id);
+              const follow = isFollowing(userId, person.id);
               return (
                 <div key={person.id} className="card" style={{ padding: 16 }}>
                   <div className="row" style={{ gap: 12, alignItems: 'flex-start' }}>
-                    <img src={person.avatar} alt="" className="avatar" style={{ width: 52, height: 52 }} />
+                    <img src={personAvatar(person)} alt={personDisplayName(person)} className="avatar" style={{ width: 52, height: 52, objectFit: 'cover' }} />
                     <div style={{ flex: 1, minWidth: 0 }}>
-                      <div className="strong small" style={{ marginBottom: 4 }}>{person.name}</div>
-                      <div className="tiny muted" style={{ marginBottom: 8 }}>@{person.username || person.email}</div>
+                      <div className="strong small">{personDisplayName(person)}</div>
+                      <div className="tiny muted">@{personUsername(person)}</div>
                     </div>
                   </div>
-
-                  <div className="tiny muted" style={{ marginBottom: 12, minHeight: 32 }}>
-                    {person.bio || 'Chưa cập nhật giới thiệu.'}
-                  </div>
-
+                  <div className="tiny muted" style={{ margin: '12px 0', minHeight: 32 }}>{person.bio || 'Chưa cập nhật giới thiệu.'}</div>
                   <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
-                    {receivedRequest ? (
-                      <button
-                        className="btn btn-sm btn-primary"
-                        onClick={() => {
-                          const accepted = acceptFriendRequest(user.id, person.id);
-                          toast(accepted ? 'Đã xác nhận kết bạn.' : 'Không thể xác nhận kết bạn.', accepted ? 'success' : 'info');
-                        }}
-                      >
-                        <UserCheck size={14} /> Xác nhận
-                      </button>
-                    ) : (
-                      <button
-                        className={`btn btn-sm ${friendStatus ? 'btn-ghost' : 'btn-primary'}`}
-                        onClick={() => {
-                          const added = toggleFriend(user.id, person.id);
-                          toast(added ? 'Đã gửi lời mời kết bạn.' : 'Đã hủy lời mời kết bạn.', added ? 'success' : 'info');
-                        }}
-                      >
-                        {friendStatus ? <UserMinus size={14} /> : <UserPlus size={14} />}
-                        {friendStatus ? 'Huỷ kết bạn' : sentRequest ? 'Hủy lời mời' : 'Kết bạn'}
-                      </button>
-                    )}
-
-                    <button
-                      className={`btn btn-sm ${followStatus ? 'btn-ghost' : 'btn-soft'}`}
-                      onClick={() => {
-                        const active = toggleFollow(user.id, person.id);
-                        toast(active ? 'Đã theo dõi người này.' : 'Đã hủy theo dõi.', active ? 'success' : 'info');
-                      }}
-                    >
-                      <UserCheck size={14} />
-                      {followStatus ? 'Huỷ theo dõi' : 'Theo dõi'}
+                    {received ? <button className="btn btn-sm btn-primary" onClick={() => handleAccept(person)}><UserCheck size={14} /> Xác nhận</button> :
+                      <button className={`btn btn-sm ${friend ? 'btn-ghost' : 'btn-primary'}`} onClick={() => handleFriendAction(person)}>
+                        {friend ? <UserMinus size={14} /> : <UserPlus size={14} />}
+                        {friend ? 'Hủy kết bạn' : sent ? 'Hủy lời mời' : 'Kết bạn'}
+                      </button>}
+                    <button className={`btn btn-sm ${follow ? 'btn-ghost' : 'btn-soft'}`} onClick={() => toggleFollow(userId, person.id)}>
+                      <UserCheck size={14} /> {follow ? 'Hủy theo dõi' : 'Theo dõi'}
                     </button>
-
-                    <button className="btn btn-sm btn-ghost" onClick={() => messageUser(person.id)}>
-                      <MessageSquare size={14} /> Nhắn tin
-                    </button>
+                    <button className="btn btn-sm btn-ghost" onClick={() => messageUser(person.id)}><MessageSquare size={14} /> Nhắn tin</button>
                   </div>
-
-                  <div className="row tiny muted" style={{ gap: 10, marginTop: 12 }}>
-                    <span><Users size={13} /> {getFollowing(person.id).length} đang theo dõi</span>
-                  </div>
+                  <div className="row tiny muted" style={{ gap: 10, marginTop: 12 }}><span><Users size={13} /> {(getFollowing(person.id) || []).length} đang theo dõi</span></div>
                 </div>
               );
             })}
+            {filteredPeople.length === 0 && <div className="small muted" style={{ gridColumn: '1 / -1' }}>Không tìm thấy người dùng phù hợp.</div>}
           </div>
         </main>
       </div>

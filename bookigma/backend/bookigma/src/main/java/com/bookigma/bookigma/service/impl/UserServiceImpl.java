@@ -2,6 +2,8 @@
 package com.bookigma.bookigma.service.impl;
 
 import com.bookigma.bookigma.dto.AuthRequest;
+import com.bookigma.bookigma.dto.ChangePasswordRequest;
+import com.bookigma.bookigma.service.EmailService;
 import com.bookigma.bookigma.dto.UserProfileDto;
 import com.bookigma.bookigma.entity.User;
 import com.bookigma.bookigma.repository.UserRepository;
@@ -11,6 +13,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.security.SecureRandom;
 import java.util.stream.Collectors;
 
 @Service
@@ -18,13 +21,17 @@ public class UserServiceImpl implements UserService {
 
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
+    private final EmailService emailService;
+    private final SecureRandom secureRandom = new SecureRandom();
 
     public UserServiceImpl(
             UserRepository userRepository,
-            PasswordEncoder passwordEncoder
+            PasswordEncoder passwordEncoder,
+            EmailService emailService
     ) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
+        this.emailService = emailService;
     }
 
     // Đăng ký tài khoản
@@ -175,6 +182,53 @@ public class UserServiceImpl implements UserService {
         User updatedUser = userRepository.save(user);
 
         return toDto(updatedUser);
+    }
+
+
+    @Override
+    @Transactional
+    public void forgotPassword(String email) {
+        if (email == null || email.isBlank()) {
+            throw new IllegalArgumentException("Email không được để trống.");
+        }
+        String normalizedEmail = email.trim().toLowerCase(java.util.Locale.ROOT);
+        User user = userRepository.findByEmailIgnoreCase(normalizedEmail)
+                .orElseThrow(() -> new IllegalArgumentException("Email chưa được đăng ký trong hệ thống."));
+
+        String newPassword = generateTemporaryPassword(10);
+
+        // Gửi email trước. Nếu SMTP lỗi thì mật khẩu trong database không bị đổi
+        // sang một mật khẩu mà người dùng chưa nhận được.
+        emailService.sendNewPassword(user.getEmail(), user.getUsername(), newPassword);
+
+        user.setPasswordHash(passwordEncoder.encode(newPassword));
+        userRepository.save(user);
+    }
+
+    @Override
+    @Transactional
+    public void changePassword(Long userId, ChangePasswordRequest request) {
+        User user = findUser(userId);
+        if (request == null || request.currentPassword() == null || request.newPassword() == null) {
+            throw new IllegalArgumentException("Dữ liệu đổi mật khẩu không hợp lệ.");
+        }
+        if (!passwordEncoder.matches(request.currentPassword(), user.getPasswordHash())) {
+            throw new IllegalArgumentException("Mật khẩu hiện tại không đúng.");
+        }
+        if (request.newPassword().length() < 6) {
+            throw new IllegalArgumentException("Mật khẩu mới phải có ít nhất 6 ký tự.");
+        }
+        user.setPasswordHash(passwordEncoder.encode(request.newPassword()));
+        userRepository.save(user);
+    }
+
+    private String generateTemporaryPassword(int length) {
+        final String chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%";
+        StringBuilder result = new StringBuilder(length);
+        for (int i = 0; i < length; i++) {
+            result.append(chars.charAt(secureRandom.nextInt(chars.length())));
+        }
+        return result.toString();
     }
 
     // Tìm người dùng theo ID

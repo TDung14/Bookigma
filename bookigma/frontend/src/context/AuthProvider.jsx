@@ -249,7 +249,8 @@ export function AuthProvider({ children }) {
             fullName: data.fullName,
             bio: data.bio,
             avatarUrl: data.avatarUrl,
-          }
+          },
+          { userId: user.id }
         );
 
         const normalized = normalizeUser(apiUser);

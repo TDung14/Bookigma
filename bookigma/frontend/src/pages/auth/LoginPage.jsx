@@ -12,6 +12,7 @@ import {
   useAuth,
   useToast,
 } from '../../hooks/useStore';
+import { apiCall } from '../../services/api';
 
 export default function LoginPage() {
 
@@ -45,6 +46,9 @@ export default function LoginPage() {
     useState('');
 
   const [regConfirmPassword, setRegConfirmPassword] =
+    useState('');
+
+  const [forgotEmail, setForgotEmail] =
     useState('');
 
   const [showLoginPassword, setShowLoginPassword] =
@@ -187,6 +191,25 @@ export default function LoginPage() {
         'Đăng ký tài khoản thành công!'
       );
     };
+
+  const handleForgotSubmit = async (event) => {
+    event.preventDefault();
+    setError('');
+
+    if (!forgotEmail.trim()) {
+      setError('Vui lòng nhập email đã đăng ký.');
+      return;
+    }
+
+    try {
+      await apiCall('/auth/forgot-password', 'POST', { email: forgotEmail.trim() });
+      toast('Mật khẩu mới đã được gửi tới email của bạn.', 'success');
+      setForgotEmail('');
+      setMode('login');
+    } catch (err) {
+      setError(err.message || 'Không thể xử lý yêu cầu.');
+    }
+  };
 
   return (
     <div
@@ -469,9 +492,18 @@ export default function LoginPage() {
                   : 'Đăng nhập'}
               </button>
 
+              <button
+                type="button"
+                className="btn btn-ghost btn-block"
+                style={{ marginTop: 8 }}
+                onClick={() => { setMode('forgot'); setError(''); }}
+              >
+                Quên mật khẩu?
+              </button>
+
             </form>
 
-          ) : (
+          ) : mode === 'register' ? (
 
             <form
               onSubmit={
@@ -683,6 +715,44 @@ export default function LoginPage() {
 
               </button>
 
+            </form>
+          ) : (
+            <form onSubmit={handleForgotSubmit} className="card" style={{ padding: 20 }}>
+              <h2 style={{ margin: '0 0 8px' }}>Quên mật khẩu</h2>
+              <p className="small muted" style={{ margin: '0 0 16px' }}>
+                Nhập email tài khoản. Backend sẽ tạo mật khẩu mới, lưu vào database và gửi mật khẩu mới qua email.
+              </p>
+
+              <div className="field" style={{ marginBottom: 12 }}>
+                <label className="label">Email tài khoản</label>
+                <input
+                  className="input"
+                  type="email"
+                  value={forgotEmail}
+                  onChange={(event) => setForgotEmail(event.target.value)}
+                  autoComplete="email"
+                  required
+                />
+              </div>
+
+              {error && (
+                <div className="badge badge-red" style={{ marginBottom: 12, padding: 8 }}>
+                  {error}
+                </div>
+              )}
+
+              <button type="submit" className="btn btn-primary btn-block btn-lg">
+                Gửi mật khẩu mới
+              </button>
+
+              <button
+                type="button"
+                className="btn btn-ghost btn-block"
+                style={{ marginTop: 8 }}
+                onClick={() => { setMode('login'); setError(''); }}
+              >
+                Quay lại đăng nhập
+              </button>
             </form>
           )}
 
