@@ -178,8 +178,8 @@ export function AppProvider({ children }) {
         userId ? exchangeApi.fetchMyListings(userId) : [],
         userId ? exchangeApi.fetchSentOffers(userId) : [],
         userId ? notificationApi.fetchNotifications(userId) : [],
-        role === 'shop' ? shopApi.fetchSellerBooks(userId) : [],
-        role === 'shop' ? shopApi.fetchSellerOrders(userId) : [],
+        (role === 'shop' || role === 'moderator') ? shopApi.fetchSellerBooks(userId) : [],
+        (role === 'shop' || role === 'moderator') ? shopApi.fetchSellerOrders(userId) : [],
         role === 'admin' ? shopApi.fetchAdminBooks(userId) : [],
         role === 'admin' ? shopApi.fetchAdminOrders(userId) : [],
       ]);
@@ -231,7 +231,7 @@ export function AppProvider({ children }) {
   }, [userId, patchAccount]);
 
   const refreshSellerData = useCallback(async () => {
-    if (role !== 'shop') return;
+    if (role !== 'shop' && role !== 'moderator') return;
     try {
       const [sellerBooks, sellerOrders] = await Promise.all([
         shopApi.fetchSellerBooks(userId),

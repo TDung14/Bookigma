@@ -7,6 +7,8 @@ import com.bookigma.bookigma.service.EmailService;
 import com.bookigma.bookigma.dto.UserProfileDto;
 import com.bookigma.bookigma.entity.User;
 import com.bookigma.bookigma.repository.UserRepository;
+import com.bookigma.bookigma.repository.ShopRepository;
+import com.bookigma.bookigma.entity.Shop;
 import com.bookigma.bookigma.service.UserService;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -22,16 +24,19 @@ public class UserServiceImpl implements UserService {
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
     private final EmailService emailService;
+    private final ShopRepository shopRepository;
     private final SecureRandom secureRandom = new SecureRandom();
 
     public UserServiceImpl(
             UserRepository userRepository,
             PasswordEncoder passwordEncoder,
-            EmailService emailService
+            EmailService emailService,
+            ShopRepository shopRepository
     ) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
         this.emailService = emailService;
+        this.shopRepository = shopRepository;
     }
 
     // Đăng ký tài khoản
@@ -80,7 +85,7 @@ public class UserServiceImpl implements UserService {
     }
 
     @Override
-    @Transactional(readOnly = true)
+    @Transactional
     public UserProfileDto login(AuthRequest request) {
         if (request == null) {
             throw new IllegalArgumentException("Dữ liệu đăng nhập không hợp lệ!");
@@ -118,6 +123,18 @@ public class UserServiceImpl implements UserService {
             throw new IllegalArgumentException(
                     "Sai tên đăng nhập hoặc mật khẩu!"
             );
+        }
+
+        // SHOP và MODERATOR đều có một kênh bán riêng. Tự khởi tạo nếu tài khoản
+        // vừa được cấp role nhưng chưa có bản ghi trong bảng shops.
+        if ((user.getRole() == User.Role.SHOP || user.getRole() == User.Role.MODERATOR)
+                && shopRepository.findByOwner_Id(user.getId()).isEmpty()) {
+            shopRepository.save(Shop.builder()
+                    .owner(user)
+                    .name((user.getRole() == User.Role.MODERATOR ? "Bookigma Moderator - " : "Bookigma Shop - ") + user.getUsername())
+                    .description("Kênh bán sách trên Bookigma")
+                    .verified(user.getRole() == User.Role.MODERATOR)
+                    .build());
         }
 
         return toDto(user);

@@ -8,11 +8,13 @@ import com.bookigma.bookigma.dto.CommentResponseDto;
 import com.bookigma.bookigma.dto.PostResponseDto;
 import com.bookigma.bookigma.entity.Comment;
 import com.bookigma.bookigma.entity.Post;
+import com.bookigma.bookigma.entity.Shop;
 import com.bookigma.bookigma.entity.User;
 import com.bookigma.bookigma.repository.CommentRepository;
 import com.bookigma.bookigma.repository.PostRepository;
 import com.bookigma.bookigma.repository.UserRepository;
 import com.bookigma.bookigma.repository.OrderRepository;
+import com.bookigma.bookigma.repository.ShopRepository;
 import com.bookigma.bookigma.service.PostService;
 import com.bookigma.bookigma.report.dto.ReportResponse;
 import com.bookigma.bookigma.report.dto.ResolveReportRequest;
@@ -31,6 +33,7 @@ public class AdminServiceImpl implements AdminService {
     private final PostRepository postRepository;
     private final CommentRepository commentRepository;
     private final OrderRepository orderRepository;
+    private final ShopRepository shopRepository;
     private final PasswordEncoder passwordEncoder;
     private final PostService postService;
     private final ReportService reportService;
@@ -40,6 +43,7 @@ public class AdminServiceImpl implements AdminService {
             PostRepository postRepository,
             CommentRepository commentRepository,
             OrderRepository orderRepository,
+            ShopRepository shopRepository,
             PasswordEncoder passwordEncoder,
             PostService postService,
             ReportService reportService
@@ -48,6 +52,7 @@ public class AdminServiceImpl implements AdminService {
         this.postRepository = postRepository;
         this.commentRepository = commentRepository;
         this.orderRepository = orderRepository;
+        this.shopRepository = shopRepository;
         this.passwordEncoder = passwordEncoder;
         this.postService = postService;
         this.reportService = reportService;
@@ -100,7 +105,9 @@ public class AdminServiceImpl implements AdminService {
                 .active(request.active() == null || request.active())
                 .build();
 
-        return toUserResponse(userRepository.save(user));
+        User saved = userRepository.save(user);
+        ensureShopForSeller(saved);
+        return toUserResponse(saved);
     }
 
     @Override
@@ -164,7 +171,9 @@ public class AdminServiceImpl implements AdminService {
             user.setActive(request.active());
         }
 
-        return toUserResponse(userRepository.save(user));
+        User saved = userRepository.save(user);
+        ensureShopForSeller(saved);
+        return toUserResponse(saved);
     }
 
     @Override
@@ -186,7 +195,9 @@ public class AdminServiceImpl implements AdminService {
 
         validateRole(newRole);
         user.setRole(newRole);
-        return toUserResponse(userRepository.save(user));
+        User saved = userRepository.save(user);
+        ensureShopForSeller(saved);
+        return toUserResponse(saved);
     }
 
     @Override
@@ -287,6 +298,21 @@ public class AdminServiceImpl implements AdminService {
         }
 
         return admin;
+    }
+
+
+    private void ensureShopForSeller(User user) {
+        if (user == null || (user.getRole() != User.Role.SHOP && user.getRole() != User.Role.MODERATOR)) {
+            return;
+        }
+        if (shopRepository.findByOwner_Id(user.getId()).isEmpty()) {
+            shopRepository.save(Shop.builder()
+                    .owner(user)
+                    .name((user.getRole() == User.Role.MODERATOR ? "Bookigma Moderator - " : "Bookigma Shop - ") + user.getUsername())
+                    .description("Kênh bán sách trên Bookigma")
+                    .verified(user.getRole() == User.Role.MODERATOR)
+                    .build());
+        }
     }
 
     private User findUser(Long userId) {

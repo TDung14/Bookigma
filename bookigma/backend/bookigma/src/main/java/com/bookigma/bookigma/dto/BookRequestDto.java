@@ -29,6 +29,8 @@ public class BookRequestDto {
     @DecimalMin(value = "1000", message = "Giá bán tối thiểu là 1.000đ")
     private BigDecimal price;
 
+    @NotNull(message = "Giá gốc không được để trống")
+    @DecimalMin(value = "1000", message = "Giá gốc tối thiểu là 1.000đ")
     private BigDecimal originalPrice;
 
     @NotNull(message = "Tồn kho không được để trống")
@@ -46,4 +48,7 @@ public class BookRequestDto {
     private String description;
 
     private List<String> tags;
+
+    /** Đưa sách vào kho Blind Book. Có thể đồng thời bán ở Bookigma Shop. */
+    private Boolean blindBook;
 }

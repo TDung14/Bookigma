@@ -62,10 +62,14 @@ public class Book {
     @Builder.Default
     private Boolean forSale = true;
 
+    @Column(name = "is_blind_book", nullable = false)
+    @Builder.Default
+    private Boolean blindBook = false;
+
     @Column(name = "sale_price", nullable = false, precision = 10, scale = 2)
     private BigDecimal salePrice;
 
-    @Column(name = "original_price", precision = 10, scale = 2)
+    @Column(name = "original_price", nullable = false, precision = 10, scale = 2)
     private BigDecimal originalPrice;
 
     @Column(name = "stock_quantity", nullable = false)
@@ -107,11 +111,26 @@ public class Book {
         if (status == null) {
             status = Status.PENDING;
         }
+        validatePrices();
     }
 
     @PreUpdate
     protected void onUpdate() {
+        validatePrices();
         updatedAt = LocalDateTime.now();
+    }
+
+    /**
+     * Quy tắc nghiệp vụ: giá bán phải lớn hơn hoặc bằng giá gốc.
+     * Đây là lớp bảo vệ thứ hai sau validation ở service/database.
+     */
+    private void validatePrices() {
+        if (salePrice == null || originalPrice == null) {
+            throw new IllegalArgumentException("Giá bán và giá gốc không được để trống.");
+        }
+        if (salePrice.compareTo(originalPrice) < 0) {
+            throw new IllegalArgumentException("Giá bán phải lớn hơn hoặc bằng giá gốc.");
+        }
     }
 
     /** Sách đang hiển thị trên cửa hàng và còn có thể đặt mua. */

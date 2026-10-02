@@ -55,7 +55,7 @@ function Dropdown({ button, children, width = 300, align = 'right' }) {
 
 export default function Navbar() {
   const { isDark, toggleTheme } = useTheme();
-  const { user, logout, isAdmin, isShop } = useAuth();
+  const { user, logout, isAdmin, isSeller } = useAuth();
   const {
     getCart, unreadCount, notifications, markNotificationsRead, books,
     conversations, userById, sendMessage, markConversationRead, findOrCreateConversation,
@@ -256,7 +256,7 @@ export default function Navbar() {
               <MenuLink to="/orders" icon={Package}>Đơn hàng của tôi</MenuLink>
               <MenuLink to="/library" icon={BookOpen}>Tủ sách & tiến trình đọc</MenuLink>
               <MenuLink to="/rewards" icon={Zap}>Nhiệm vụ & phần thưởng</MenuLink>
-              {isShop && <MenuLink to="/shop-admin" icon={Store}>Kênh người bán</MenuLink>}
+              {isSeller && <MenuLink to="/shop-admin" icon={Store}>Kênh người bán</MenuLink>}
               {isAdmin && <MenuLink to="/admin" icon={ShieldCheck}>Quản trị hệ thống</MenuLink>}
               <hr className="divider" style={{ margin: '6px 0' }} />
               <button className="list-item small" onClick={hardReset}>

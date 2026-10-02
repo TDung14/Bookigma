@@ -14,7 +14,8 @@ import Modal from '../../components/common/Modal';
 
 const TABS = [
   { id: 'overview', label: 'Tổng quan' },
-  { id: 'products', label: 'Sản phẩm' },
+  { id: 'products', label: 'Bookigma Shop' },
+  { id: 'blind-books', label: 'Kho Blind Book' },
   { id: 'orders', label: 'Đơn hàng' },
   { id: 'revenue', label: 'Doanh thu' },
 ];
@@ -41,7 +42,7 @@ const EMPTY_FORM = {
 export default function ShopDashboard() {
   const { user } = useAuth();
   const {
-    shops, categories, sellerBooks, sellerOrders, refreshSellerData, accountReady,
+    shops, sellerBooks, sellerOrders, refreshSellerData, refreshCatalog, accountReady,
     saveSellerBook, deleteSellerBook, updateSellerOrderStatus,
   } = useApp();
   const toast = useToast();
@@ -54,8 +55,23 @@ export default function ShopDashboard() {
 
   // Lấy đơn mới nhất mỗi lần mở kênh người bán (khách có thể vừa đặt / vừa hủy).
   useEffect(() => {
-    refreshSellerData();
-  }, [refreshSellerData]);
+    let cancelled = false;
+
+    const loadSellerChannel = async () => {
+      await refreshSellerData();
+      if (!cancelled) {
+        // SellerController có thể tự tạo shop cho SHOP/MODERATOR lần đầu.
+        // Chỉ tải lại danh sách shop sau khi seller data đã hoàn tất để tránh race condition.
+        await refreshCatalog();
+      }
+    };
+
+    loadSellerChannel();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [refreshSellerData, refreshCatalog]);
 
   const shop = shops.find((s) => s.ownerId === user.id);
   const myBooks = sellerBooks;
@@ -89,14 +105,17 @@ export default function ShopDashboard() {
     return Object.entries(map).map(([name, value]) => ({ name, value }));
   }, [myBooks]);
 
-  const openCreate = () => { setForm(EMPTY_FORM); setEditing('new'); };
+  const openCreate = () => { setForm({ ...EMPTY_FORM, blindBook: false }); setEditing('new'); };
+
+  const openCreateBlind = () => { setForm({ ...EMPTY_FORM, blindBook: true }); setEditing('new-blind'); };
 
   const openEdit = (book) => {
     setForm({
       title: book.title, author: book.author, price: String(book.price),
       originalPrice: String(book.originalPrice || book.price), stock: String(book.stock),
-      category: book.category, cover: book.cover, description: book.description,
+      category: book.category || '', cover: book.cover || '', description: book.description || '',
       pages: String(book.pages || ''), tags: (book.tags || []).join(', '),
+      blindBook: !!book.blindBook,
     });
     setEditing(book.id);
   };
@@ -104,23 +123,41 @@ export default function ShopDashboard() {
   const saveProduct = async () => {
     if (!form.title.trim() || !form.author.trim()) return toast('Hãy nhập tên sách và tác giả.', 'error');
     const price = Number(form.price);
-    if (!price || price <= 0) return toast('Giá bán phải là số lớn hơn 0.', 'error');
+    const originalPrice = Number(form.originalPrice);
+
+    if (!price || price <= 0) {
+      return toast('Giá bán phải là số lớn hơn 0.', 'error');
+    }
+
+    if (!originalPrice || originalPrice <= 0) {
+      return toast('Giá gốc phải là số lớn hơn 0.', 'error');
+    }
+
+    if (price < originalPrice) {
+      return toast('Giá bán phải lớn hơn hoặc bằng giá gốc.', 'error');
+    }
+
+    if (!form.category.trim()) {
+      return toast('Hãy nhập thể loại sách.', 'error');
+    }
 
     setSaving(true);
     try {
-      await saveSellerBook(editing === 'new' ? null : editing, {
+      const isNew = editing === 'new' || editing === 'new-blind';
+      await saveSellerBook(isNew ? null : editing, {
         title: form.title.trim(),
         author: form.author.trim(),
         category: form.category,
         price,
-        originalPrice: Number(form.originalPrice) || price,
+        originalPrice,
         stock: Number(form.stock) || 0,
         pages: Number(form.pages) || null,
         coverUrl: form.cover.trim() || null,
         description: form.description.trim(),
         tags: form.tags.split(',').map((t) => t.trim()).filter(Boolean),
+        blindBook: !!form.blindBook,
       });
-      toast(editing === 'new' ? 'Đã tạo sản phẩm, đang chờ quản trị viên duyệt.' : 'Đã cập nhật sản phẩm.');
+      toast(isNew ? (form.blindBook ? 'Đã thêm sách vào kho Blind Book, đang chờ quản trị viên duyệt.' : 'Đã tạo sản phẩm, đang chờ quản trị viên duyệt.') : 'Đã cập nhật sản phẩm.');
       setEditing(null);
     } catch (error) {
       toast(error.message || 'Không thể lưu sản phẩm.', 'error');
@@ -265,8 +302,8 @@ export default function ShopDashboard() {
       {/* ---------- Sản phẩm ---------- */}
       {tab === 'products' && (
         <div className="card table-wrap">
-          {myBooks.length === 0 ? (
-            <EmptyState icon={Package} title="Shop chưa có sản phẩm nào" action={<button className="btn btn-primary" onClick={openCreate}>Thêm sản phẩm đầu tiên</button>} />
+          {myBooks.filter((b) => !b.blindBook).length === 0 ? (
+            <EmptyState icon={Package} title="Bookigma Shop chưa có sản phẩm nào" action={<button className="btn btn-primary" onClick={openCreate}>Thêm sản phẩm đầu tiên</button>} />
           ) : (
             <table className="table">
               <thead>
@@ -276,7 +313,7 @@ export default function ShopDashboard() {
                 </tr>
               </thead>
               <tbody>
-                {myBooks.map((b) => (
+                {myBooks.filter((b) => !b.blindBook).map((b) => (
                   <tr key={b.id}>
                     <td>
                       <Link to={`/book/${b.id}`} className="row" style={{ gap: 10 }}>
@@ -312,6 +349,38 @@ export default function ShopDashboard() {
                         </button>
                       </div>
                     </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      )}
+
+      {/* ---------- Kho Blind Book ---------- */}
+      {tab === 'blind-books' && (
+        <div className="card table-wrap">
+          <div className="row-between" style={{ marginBottom: 16, flexWrap: 'wrap', gap: 10 }}>
+            <div>
+              <h3 style={{ margin: 0, fontSize: 17 }}>Kho Blind Book</h3>
+              <p className="tiny muted" style={{ margin: '5px 0 0' }}>Các sách được thuật toán sử dụng để ghép hộp Blind Book.</p>
+            </div>
+            <button className="btn btn-primary" onClick={openCreateBlind}><Plus size={17} /> Thêm sách Blind Book</button>
+          </div>
+          {myBooks.filter((b) => b.blindBook).length === 0 ? (
+            <EmptyState icon={Gift} title="Kho Blind Book đang trống" action={<button className="btn btn-primary" onClick={openCreateBlind}>Thêm sách đầu tiên</button>} />
+          ) : (
+            <table className="table">
+              <thead><tr><th>Sách</th><th>Thể loại</th><th>Giá tham chiếu</th><th>Tồn kho</th><th>Trạng thái</th><th></th></tr></thead>
+              <tbody>
+                {myBooks.filter((b) => b.blindBook).map((b) => (
+                  <tr key={b.id}>
+                    <td><div className="row" style={{ gap: 10 }}><img src={b.cover} alt="" className="book-cover" style={{ width: 34, height: 46 }} /><div><div className="small strong truncate" style={{ maxWidth: 230 }}>{b.title}</div><div className="tiny muted">{b.author}</div></div></div></td>
+                    <td><span className="badge">{b.category}</span></td>
+                    <td className="price small">{currency(b.price)}</td>
+                    <td><span className={`badge ${b.stock === 0 ? 'badge-red' : b.stock < 10 ? 'badge-amber' : 'badge-green'}`}>{b.stock}</span></td>
+                    <td><span className={`badge ${b.status === 'active' ? 'badge-green' : b.status === 'pending' ? 'badge-amber' : 'badge-red'}`}>{b.status === 'active' ? 'Sẵn sàng' : b.status === 'pending' ? 'Chờ duyệt' : 'Đã ẩn'}</span></td>
+                    <td><div className="row" style={{ gap: 2 }}><button className="btn-icon" onClick={() => openEdit(b)} aria-label="Sửa"><Edit3 size={16} /></button><button className="btn-icon" style={{ color: 'var(--danger)' }} onClick={() => removeProduct(b)} aria-label="Xóa"><Trash2 size={16} /></button></div></td>
                   </tr>
                 ))}
               </tbody>
@@ -420,7 +489,7 @@ export default function ShopDashboard() {
         open={!!editing}
         onClose={() => setEditing(null)}
         width={560}
-        title={editing === 'new' ? 'Thêm sản phẩm mới' : 'Chỉnh sửa sản phẩm'}
+        title={editing === 'new-blind' ? 'Thêm sách vào kho Blind Book' : editing === 'new' ? 'Thêm sản phẩm mới' : form.blindBook ? 'Chỉnh sửa sách Blind Book' : 'Chỉnh sửa sản phẩm'}
         footer={
           <>
             <button className="btn btn-ghost" onClick={() => setEditing(null)}>Hủy</button>
@@ -435,24 +504,51 @@ export default function ShopDashboard() {
           <Field label="Tác giả *">
             {(id) => <input id={id} className="input" value={form.author} onChange={(e) => setForm({ ...form, author: e.target.value })} />}
           </Field>
-          <Field label="Thể loại">
+          <Field label="Thể loại *">
             {(id) => (
-              <select id={id} className="select" value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })}>
-                {categories.map((c) => <option key={c}>{c}</option>)}
-              </select>
+              <input
+                id={id}
+                className="input"
+                type="text"
+                value={form.category}
+                onChange={(e) => setForm({ ...form, category: e.target.value })}
+                placeholder="Nhập tên thể loại, ví dụ: Tiểu thuyết"
+              />
             )}
           </Field>
-          <Field label="Giá bán (đ) *">
-            {(id) => <input id={id} className="input" type="number" value={form.price} onChange={(e) => setForm({ ...form, price: e.target.value })} />}
+          <Field label="Giá bán (đ) *" hint="Giá bán phải lớn hơn hoặc bằng giá gốc.">
+            {(id) => (
+              <input
+                id={id}
+                className="input"
+                type="number"
+                min="1"
+                step="1000"
+                value={form.price}
+                onChange={(e) => setForm({ ...form, price: e.target.value })}
+                placeholder="Nhập giá bán"
+              />
+            )}
           </Field>
-          <Field label="Giá gốc (đ)">
-            {(id) => <input id={id} className="input" type="number" value={form.originalPrice} onChange={(e) => setForm({ ...form, originalPrice: e.target.value })} />}
+          <Field label="Giá gốc (đ) *">
+            {(id) => (
+              <input
+                id={id}
+                className="input"
+                type="number"
+                min="1"
+                step="1000"
+                value={form.originalPrice}
+                onChange={(e) => setForm({ ...form, originalPrice: e.target.value })}
+                placeholder="Nhập giá gốc"
+              />
+            )}
           </Field>
           <Field label="Tồn kho">
-            {(id) => <input id={id} className="input" type="number" value={form.stock} onChange={(e) => setForm({ ...form, stock: e.target.value })} />}
+            {(id) => <input id={id} className="input" type="number" min="0" value={form.stock} onChange={(e) => setForm({ ...form, stock: e.target.value })} />}
           </Field>
           <Field label="Số trang">
-            {(id) => <input id={id} className="input" type="number" value={form.pages} onChange={(e) => setForm({ ...form, pages: e.target.value })} />}
+            {(id) => <input id={id} className="input" type="number" min="0" value={form.pages} onChange={(e) => setForm({ ...form, pages: e.target.value })} />}
           </Field>
           <Field label="Link ảnh bìa" style={{ gridColumn: '1 / -1' }}>
             {(id) => <input id={id} className="input" value={form.cover} onChange={(e) => setForm({ ...form, cover: e.target.value })} placeholder="https://..." />}
@@ -463,6 +559,10 @@ export default function ShopDashboard() {
           <Field label="Mô tả" style={{ gridColumn: '1 / -1' }}>
             {(id) => <textarea id={id} className="textarea" value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />}
           </Field>
+          <label className="row" style={{ gridColumn: '1 / -1', gap: 8, marginTop: 4, cursor: 'pointer' }}>
+            <input type="checkbox" checked={!!form.blindBook} onChange={(e) => setForm({ ...form, blindBook: e.target.checked })} />
+            <span className="small"><b>Đưa vào kho Blind Book</b><br /><span className="tiny muted">Sách được dùng làm nguồn để thuật toán ghép hộp Blind Book.</span></span>
+          </label>
         </div>
       </Modal>
     </div>

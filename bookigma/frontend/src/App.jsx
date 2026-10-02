@@ -41,23 +41,29 @@ function ScrollToTop() {
   return null;
 }
 
-function RequireAuth({ children, role }) {
+function RequireAuth({ children, role, roles }) {
   const { user } = useAuth();
   const location = useLocation();
-  if (!user) return <Navigate to="/login" state={{ from: location.pathname }} replace />;
-  if (role && user.role !== role) {
+
+  if (!user) {
+    return <Navigate to="/login" state={{ from: location.pathname }} replace />;
+  }
+
+  const allowedRoles = roles || (role ? [role] : []);
+  if (allowedRoles.length > 0 && !allowedRoles.includes(user.role)) {
     return (
       <div className="main-layout">
         <div className="card empty">
           <h3>Bạn không có quyền truy cập khu vực này</h3>
           <p className="small">
-            Trang này chỉ dành cho tài khoản {role === ROLES.ADMIN ? 'quản trị viên' : 'moderator/shop'}.
-            Hãy đăng nhập bằng tài khoản phù hợp ở trang đăng nhập.
+            Trang này chỉ dành cho tài khoản phù hợp với khu vực được yêu cầu.
+            Hãy đăng nhập bằng tài khoản có quyền tương ứng.
           </p>
         </div>
       </div>
     );
   }
+
   return children;
 }
 
@@ -106,7 +112,14 @@ function Shell() {
         <Route path="/profile" element={<RequireAuth><ProfilePage /></RequireAuth>} />
         <Route path="/profile/:userId" element={<RequireAuth><ProfilePage /></RequireAuth>} />
 
-        <Route path="/shop-admin/*" element={<RequireAuth role={ROLES.MODERATOR}><ShopDashboard /></RequireAuth>} />
+        <Route
+          path="/shop-admin/*"
+          element={
+            <RequireAuth roles={[ROLES.SHOP, ROLES.MODERATOR]}>
+              <ShopDashboard />
+            </RequireAuth>
+          }
+        />
         <Route path="/admin/*" element={<RequireAuth role={ROLES.ADMIN}><AdminDashboard /></RequireAuth>} />
 
         <Route path="*" element={<Navigate to="/" replace />} />

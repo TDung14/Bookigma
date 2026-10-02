@@ -39,6 +39,7 @@ export function toBook(dto) {
     ratingCount: dto.ratingCount ?? 0,
     pages: dto.pages ?? 0,
     tags: dto.tags || [],
+    blindBook: !!dto.blindBook,
     status: lower(dto.status) || 'active',
     chapterCount: dto.chapterCount ?? 0,
     createdAt: toTime(dto.createdAt),

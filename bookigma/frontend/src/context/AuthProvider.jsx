@@ -9,6 +9,7 @@ const AUTH_STORAGE_KEY = 'authUser';
 
 export const ROLES = Object.freeze({
   USER: 'user',
+  SHOP: 'shop',
   MODERATOR: 'moderator',
   ADMIN: 'admin',
 });
@@ -20,8 +21,12 @@ function normalizeRole(role) {
     return ROLES.ADMIN;
   }
 
-  if (value === 'MODERATOR' || value === 'SHOP') {
+  if (value === 'MODERATOR') {
     return ROLES.MODERATOR;
+  }
+
+  if (value === 'SHOP') {
+    return ROLES.SHOP;
   }
 
   return ROLES.USER;
@@ -30,7 +35,7 @@ function normalizeRole(role) {
 export function homePathForRole(role) {
   const normalized = normalizeRole(role);
   if (normalized === ROLES.ADMIN) return '/admin';
-  if (normalized === ROLES.MODERATOR) return '/shop-admin';
+  if (normalized === ROLES.MODERATOR || normalized === ROLES.SHOP) return '/shop-admin';
   return '/';
 }
 
@@ -375,6 +380,10 @@ export function AuthProvider({ children }) {
         user?.role === ROLES.MODERATOR,
 
       isShop:
+        user?.role === ROLES.SHOP,
+
+      isSeller:
+        user?.role === ROLES.SHOP ||
         user?.role === ROLES.MODERATOR,
 
       loading,

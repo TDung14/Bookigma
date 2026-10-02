@@ -147,9 +147,10 @@ CREATE TABLE `books` (
 
     `is_digital` BOOLEAN NOT NULL DEFAULT FALSE,
     `is_for_sale` BOOLEAN NOT NULL DEFAULT TRUE,
+    `is_blind_book` BOOLEAN NOT NULL DEFAULT FALSE,
 
     `sale_price` DECIMAL(10, 2) NOT NULL DEFAULT 0.00,
-    `original_price` DECIMAL(10, 2) NULL,
+    `original_price` DECIMAL(10, 2) NOT NULL,
 
     `stock_quantity` INT NOT NULL DEFAULT 0,
     `sold_count` INT NOT NULL DEFAULT 0,
@@ -183,7 +184,10 @@ CREATE TABLE `books` (
     CONSTRAINT `fk_books_category`
         FOREIGN KEY (`category_id`)
         REFERENCES `categories`(`category_id`)
-        ON DELETE SET NULL
+        ON DELETE SET NULL,
+
+    CONSTRAINT `chk_books_sale_price`
+        CHECK (`sale_price` >= `original_price`)
 )
 ENGINE=InnoDB
 DEFAULT CHARSET=utf8mb4

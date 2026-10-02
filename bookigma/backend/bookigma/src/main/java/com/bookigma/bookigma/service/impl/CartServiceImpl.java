@@ -91,6 +91,9 @@ public class CartServiceImpl implements CartService {
     private void addBook(Long userId, Long bookId, int quantity) {
         Book book = bookRepository.findById(bookId)
                 .orElseThrow(() -> ApiException.notFound("Không tìm thấy sách."));
+        if (Boolean.TRUE.equals(book.getBlindBook())) {
+            throw ApiException.badRequest("Sách này thuộc kho Blind Book và chỉ được bán qua hộp Blind Book.");
+        }
         if (!book.isPurchasable()) {
             throw ApiException.badRequest("Sách này hiện không còn bán.");
         }

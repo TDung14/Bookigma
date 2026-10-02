@@ -26,6 +26,7 @@ public class BookResponseDto {
     private Integer ratingCount;
     private Integer pages;
     private List<String> tags;
+    private Boolean blindBook;
     /** pending | active | hidden */
     private String status;
     private Integer chapterCount;

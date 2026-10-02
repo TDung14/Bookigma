@@ -27,6 +27,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.text.Normalizer;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -77,6 +78,7 @@ public class BookServiceImpl implements BookService {
     @Transactional(readOnly = true)
     public List<BookResponseDto> getActiveBooks() {
         return bookRepository.findByStatusAndForSaleTrueOrderByCreatedAtDesc(Book.Status.ACTIVE).stream()
+                .filter(book -> !Boolean.TRUE.equals(book.getBlindBook()))
                 .map(DtoMapper::toBookDto)
                 .toList();
     }
@@ -232,13 +234,15 @@ public class BookServiceImpl implements BookService {
         BigDecimal originalPrice = request.getOriginalPrice() == null
                 ? price
                 : request.getOriginalPrice().setScale(2, RoundingMode.HALF_UP);
-        if (originalPrice.compareTo(price) < 0) {
-            throw ApiException.badRequest("Giá gốc phải lớn hơn hoặc bằng giá bán.");
+        if (price.compareTo(originalPrice) < 0) {
+            throw ApiException.badRequest("Giá bán phải lớn hơn hoặc bằng giá gốc.");
         }
 
-        String categoryName = request.getCategory().trim();
-        Category category = categoryRepository.findByNameIgnoreCase(categoryName)
-                .orElseThrow(() -> ApiException.badRequest("Thể loại \"" + categoryName + "\" không tồn tại."));
+        String categoryName = request.getCategory() == null ? "" : request.getCategory().trim();
+        if (categoryName.isEmpty()) {
+            throw ApiException.badRequest("Thể loại không được để trống.");
+        }
+        Category category = resolveCategory(categoryName);
 
         book.setTitle(request.getTitle().trim());
         book.setAuthor(resolveAuthor(request.getAuthor().trim()));
@@ -250,6 +254,40 @@ public class BookServiceImpl implements BookService {
         book.setCoverImageUrl(InputUtils.optionalHttpUrl(request.getCoverUrl()));
         book.setDescription(InputUtils.blankToNull(request.getDescription()));
         book.setTags(normalizeTags(request.getTags()));
+        if (request.getBlindBook() != null) {
+            book.setBlindBook(request.getBlindBook());
+        }
+    }
+
+    /**
+     * Frontend cho phép người bán nhập trực tiếp tên thể loại.
+     * Nếu thể loại đã tồn tại thì dùng lại; nếu chưa có thì tạo mới trong categories.
+     */
+    private Category resolveCategory(String name) {
+        return categoryRepository.findByNameIgnoreCase(name)
+                .orElseGet(() -> categoryRepository.save(
+                        Category.builder()
+                                .name(name)
+                                .slug(toSlug(name))
+                                .build()
+                ));
+    }
+
+    private String toSlug(String value) {
+        String normalized = Normalizer.normalize(value, Normalizer.Form.NFD)
+                .replaceAll("\\p{M}", "")
+                .toLowerCase()
+                .replaceAll("[^a-z0-9]+", "-")
+                .replaceAll("^-|-$", "");
+
+        String base = normalized.isBlank() ? "category" : normalized;
+        String slug = base;
+        int suffix = 2;
+
+        while (categoryRepository.findBySlug(slug).isPresent()) {
+            slug = base + "-" + suffix++;
+        }
+        return slug;
     }
 
     private Author resolveAuthor(String name) {

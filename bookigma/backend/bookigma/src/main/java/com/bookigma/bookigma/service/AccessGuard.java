@@ -6,6 +6,7 @@ import com.bookigma.bookigma.exception.ApiException;
 import com.bookigma.bookigma.repository.ShopRepository;
 import com.bookigma.bookigma.repository.UserRepository;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Transactional;
 
 /**
  * Kiểm tra người dùng hiện tại có tồn tại, còn hoạt động và đúng vai trò hay không.
@@ -42,12 +43,22 @@ public class AccessGuard {
     }
 
     /** Shop của tài khoản chủ shop đang đăng nhập. */
+    @Transactional
     public Shop requireOwnShop(Long userId) {
         User user = requireUser(userId);
-        if (user.getRole() != User.Role.SHOP) {
-            throw ApiException.forbidden("Chỉ tài khoản chủ shop mới dùng được kênh người bán.");
+        if (user.getRole() != User.Role.SHOP && user.getRole() != User.Role.MODERATOR) {
+            throw ApiException.forbidden("Chỉ tài khoản SHOP hoặc MODERATOR mới dùng được kênh người bán.");
         }
-        return shopRepository.findByOwner_Id(user.getId())
-                .orElseThrow(() -> ApiException.notFound("Tài khoản của bạn chưa được gắn với shop nào."));
+
+        return shopRepository.findByOwner_Id(user.getId()).orElseGet(() ->
+                shopRepository.save(Shop.builder()
+                        .owner(user)
+                        .name(user.getRole() == User.Role.MODERATOR
+                                ? "Bookigma Moderator - " + user.getUsername()
+                                : "Bookigma Shop - " + user.getUsername())
+                        .description("Kênh bán sách trên Bookigma")
+                        .verified(user.getRole() == User.Role.MODERATOR)
+                        .build())
+        );
     }
 }

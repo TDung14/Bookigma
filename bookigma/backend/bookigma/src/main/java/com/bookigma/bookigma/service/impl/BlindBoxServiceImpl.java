@@ -83,6 +83,7 @@ public class BlindBoxServiceImpl implements BlindBoxService {
 
         List<Book> candidates = bookRepository
                 .findByStatusAndForSaleTrueAndStockQuantityGreaterThan(Book.Status.ACTIVE, 0).stream()
+                .filter(book -> Boolean.TRUE.equals(book.getBlindBook()))
                 .filter(book -> !excluded.contains(book.getId()))
                 .toList();
         Book picked = BlindBoxMatcher.pick(candidates, mood, tier, ThreadLocalRandom.current())
