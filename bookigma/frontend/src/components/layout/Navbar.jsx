@@ -11,8 +11,7 @@ import { resetAll } from '../../lib/storage';
 
 const NAV_ITEMS = [
   { to: '/', label: 'Bảng tin', icon: Home, end: true },
-  { to: '/shop', label: 'Shop', icon: ShoppingBag },
-  { to: '/blind-book', label: 'Blind Book', icon: Gift },
+  { to: '/shop', label: 'Cửa hàng', icon: ShoppingBag },
   { to: '/exchange', label: 'Trao đổi', icon: Repeat },
   { to: '/library', label: 'Góc đọc', icon: BookOpen },
   { to: '/rewards', label: 'Nhiệm vụ', icon: Zap },

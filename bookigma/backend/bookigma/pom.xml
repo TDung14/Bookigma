@@ -27,7 +27,8 @@
 		<url/>
 	</scm>
 	<properties>
-		<java.version>22</java.version>
+		<java.version>25</java.version>
+		<maven.compiler.release>25</maven.compiler.release>
 	</properties>
 	<dependencies>
         <!-- 1. WebSocket & STOMP Protocol -->
@@ -90,20 +91,22 @@
 			<artifactId>spring-boot-starter-webmvc</artifactId>
 		</dependency>
 
-		<dependency>
-			<groupId>org.springframework.boot</groupId>
-			<artifactId>spring-boot-devtools</artifactId>
-			<scope>runtime</scope>
-			<optional>true</optional>
-		</dependency>
+		<!-- DevTools restart classloader is not compatible with Java 25 in this project; disable it to avoid stale class corruption during app startup. -->
 		<dependency>
 			<groupId>com.mysql</groupId>
 			<artifactId>mysql-connector-j</artifactId>
 			<scope>runtime</scope>
 		</dependency>
 		<dependency>
+			<groupId>com.h2database</groupId>
+			<artifactId>h2</artifactId>
+			<scope>runtime</scope>
+		</dependency>
+
+		<dependency>
 			<groupId>org.projectlombok</groupId>
 			<artifactId>lombok</artifactId>
+			<version>1.18.46</version>
 			<optional>true</optional>
 		</dependency>
 		<dependency>

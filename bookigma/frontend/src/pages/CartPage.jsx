@@ -185,7 +185,7 @@ export default function CartPage() {
               Có sản phẩm không còn đủ hàng — hãy xóa hoặc giảm số lượng trước khi thanh toán.
             </div>
           )}
-          <button className="btn btn-primary btn-lg btn-block" onClick={() => navigate('/checkout')} disabled={hasUnavailable}>
+          <button className="btn btn-primary btn-lg btn-block" onClick={() => navigate('/payment')} disabled={hasUnavailable}>
             Tiến hành thanh toán
           </button>
           <Link to="/shop" className="btn btn-ghost btn-block">Tiếp tục mua sắm</Link>

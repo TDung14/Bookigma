@@ -87,7 +87,7 @@ export default function BookDetailPage() {
   };
 
   const handleBuyNow = async () => {
-    if (await putInCart()) navigate('/checkout');
+    if (await putInCart()) navigate('/payment');
   };
 
   const canPreview = book.chapterCount > 0 || book.chapters?.length > 0;

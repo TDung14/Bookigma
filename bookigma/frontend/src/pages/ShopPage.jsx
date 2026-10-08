@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { RefreshCw, Search, SlidersHorizontal, Store, WifiOff } from 'lucide-react';
-import { useApp } from '../hooks/useStore';
+import { useApp, useAuth } from '../hooks/useStore';
 import BookCard from '../components/book/BookCard';
 import { EmptyState } from '../components/common/ui';
 
@@ -21,7 +21,9 @@ const PRICE_RANGES = [
 ];
 
 export default function ShopPage() {
-  const { books, categories, shops, catalogStatus, refreshCatalog } = useApp();
+  const { books, categories, shops, catalogStatus, refreshCatalog, getCart } = useApp();
+  const { user } = useAuth();
+  const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
 
   const [query, setQuery] = useState(params.get('q') || '');
@@ -29,6 +31,8 @@ export default function ShopPage() {
   const [shopId, setShopId] = useState('all');
   const [price, setPrice] = useState('all');
   const [sort, setSort] = useState('popular');
+
+  const cartCount = user ? getCart(user.id).reduce((sum, line) => sum + line.qty, 0) : 0;
 
   const results = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -67,10 +71,12 @@ export default function ShopPage() {
     <div className="main-layout">
       <div className="page-head row-between" style={{ flexWrap: 'wrap' }}>
         <div>
-          <h1>Bookigma Shop</h1>
+          <h1>Cửa hàng Bookigma</h1>
           <p>Sách chính hãng từ các nhà xuất bản và nhà sách uy tín</p>
         </div>
-        <div className="row" style={{ gap: 8 }}>
+        <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
+          <Link to="/shop" className="btn btn-primary btn-sm">Cửa hàng</Link>
+          
           {shops.map((s) => (
             <button
               key={s.id}
@@ -80,42 +86,55 @@ export default function ShopPage() {
               <Store size={14} /> {s.name}
             </button>
           ))}
+          
         </div>
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,230px) minmax(0,1fr)', gap: 20, alignItems: 'start' }}>
         {/* Bộ lọc */}
-        <aside className="card stack hide-lg" style={{ position: 'sticky', top: 76 }}>
-          <div className="row" style={{ gap: 8 }}>
-            <SlidersHorizontal size={17} color="var(--accent-green)" />
-            <h4 style={{ margin: 0, fontSize: 15 }}>Bộ lọc</h4>
-          </div>
-
-          <div>
-            <label className="label">Thể loại</label>
-            <div className="stack" style={{ gap: 4 }}>
-              <FilterRow active={category === 'all'} onClick={() => setCategory('all')}>Tất cả</FilterRow>
-              {categories.map((c) => (
-                <FilterRow key={c} active={category === c} onClick={() => setCategory(c)}>{c}</FilterRow>
-              ))}
+        <aside className="stack hide-lg" style={{ position: 'sticky', top: 76, gap: 16 }}>
+          <div className="card stack" style={{ gap: 10 }}>
+            <div className="row" style={{ gap: 8 }}>
+              <Store size={17} color="var(--accent-green)" />
+              <h4 style={{ margin: 0, fontSize: 15 }}>Mua sắm</h4>
             </div>
+            <FilterRow active={false} onClick={() => navigate('/cart')}>Giỏ hàng</FilterRow>
+            <FilterRow active={false} onClick={() => navigate('/blind-book')}>Blind Book</FilterRow>
+            <FilterRow active={false} onClick={() => navigate('/payment')}>Thanh toán</FilterRow>
           </div>
 
-          <div>
-            <label className="label">Khoảng giá</label>
-            <div className="stack" style={{ gap: 4 }}>
-              {PRICE_RANGES.map((r) => (
-                <FilterRow key={r.id} active={price === r.id} onClick={() => setPrice(r.id)}>{r.label}</FilterRow>
-              ))}
+          <div className="card stack" style={{ gap: 12 }}>
+            <div className="row" style={{ gap: 8 }}>
+              <SlidersHorizontal size={17} color="var(--accent-green)" />
+              <h4 style={{ margin: 0, fontSize: 15 }}>Bộ lọc</h4>
             </div>
-          </div>
 
-          <button
-            className="btn btn-ghost btn-sm btn-block"
-            onClick={() => { setCategory('all'); setPrice('all'); setShopId('all'); onSearch(''); }}
-          >
-            Xóa toàn bộ bộ lọc
-          </button>
+            <div>
+              <label className="label">Thể loại</label>
+              <div className="stack" style={{ gap: 4 }}>
+                <FilterRow active={category === 'all'} onClick={() => setCategory('all')}>Tất cả</FilterRow>
+                {categories.map((c) => (
+                  <FilterRow key={c} active={category === c} onClick={() => setCategory(c)}>{c}</FilterRow>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <label className="label">Khoảng giá</label>
+              <div className="stack" style={{ gap: 4 }}>
+                {PRICE_RANGES.map((r) => (
+                  <FilterRow key={r.id} active={price === r.id} onClick={() => setPrice(r.id)}>{r.label}</FilterRow>
+                ))}
+              </div>
+            </div>
+
+            <button
+              className="btn btn-ghost btn-sm btn-block"
+              onClick={() => { setCategory('all'); setPrice('all'); setShopId('all'); onSearch(''); }}
+            >
+              Xóa toàn bộ bộ lọc
+            </button>
+          </div>
         </aside>
 
         {/* Kết quả */}

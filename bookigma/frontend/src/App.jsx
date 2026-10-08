@@ -14,6 +14,7 @@ import FeedPage from './pages/FeedPage';
 import ShopPage from './pages/ShopPage';
 import BookDetailPage from './pages/BookDetailPage';
 import CartPage from './pages/CartPage';
+import PaymentPage from './pages/PaymentPage';
 import CheckoutPage from './pages/CheckoutPage';
 import OrderSuccessPage from './pages/OrderSuccessPage';
 import OrdersPage from './pages/OrdersPage';
@@ -100,6 +101,7 @@ function Shell() {
         <Route path="/friends" element={<RequireAuth><FriendsPage /></RequireAuth>} />
 
         <Route path="/cart" element={<RequireAuth><CartPage /></RequireAuth>} />
+        <Route path="/payment" element={<RequireAuth><PaymentPage /></RequireAuth>} />
         <Route path="/checkout" element={<RequireAuth><CheckoutPage /></RequireAuth>} />
         <Route path="/order-success/:id" element={<RequireAuth><OrderSuccessPage /></RequireAuth>} />
         <Route path="/orders" element={<RequireAuth><OrdersPage /></RequireAuth>} />

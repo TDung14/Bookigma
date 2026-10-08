@@ -100,6 +100,11 @@ export default function ExchangePage() {
     setOfferForm({ offeredBook: '', message: '' });
   };
 
+  const goToPayment = () => {
+    if (!user) return navigate('/login');
+    navigate('/payment');
+  };
+
   const sendOffer = async () => {
     if (!offerForm.offeredBook.trim()) return toast('Hãy cho biết cuốn sách bạn mang ra đổi.', 'error');
     const ok = await run(() => sendExchangeOffer(offerTarget.id, {
@@ -129,9 +134,14 @@ export default function ExchangePage() {
           <h1>Sàn trao đổi sách</h1>
           <p>Sẻ chia tri thức, kết nối đam mê — hoàn toàn miễn phí</p>
         </div>
-        <button className="btn btn-primary" onClick={openForm}>
-          <Plus size={17} /> Đăng tin trao đổi
-        </button>
+        <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
+          <button className="btn btn-primary" onClick={openForm}>
+            <Plus size={17} /> Đăng tin trao đổi
+          </button>
+          <button className="btn btn-ghost" onClick={goToPayment}>
+            Thanh toán nhanh
+          </button>
+        </div>
       </div>
 
       {user && (

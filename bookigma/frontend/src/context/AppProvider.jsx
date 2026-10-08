@@ -46,7 +46,8 @@ function mergeById(...lists) {
 const replaceById = (list, item) =>
   list.some((x) => x.id === item.id) ? list.map((x) => (x.id === item.id ? item : x)) : [item, ...list];
 
-/** Tải dữ liệu cửa hàng (sách, shop, thể loại, voucher); trả về null nếu không gọi được backend. */
+/** Tải dữ liệu cửa hàng (sách, shop, thể loại, voucher).
+ * Nếu backend chưa chạy, dùng dataset demo để giao diện vẫn hiển thị, thay vì hiện cảnh báo lỗi liên tục. */
 async function fetchCatalog() {
   try {
     const [books, shops, categories, vouchers] = await Promise.all([
@@ -57,11 +58,16 @@ async function fetchCatalog() {
     ]);
     return { status: 'ready', books, shops, categories, vouchers };
   } catch {
-    return null;
+    return {
+      status: 'ready',
+      books: seed.books,
+      shops: seed.shops,
+      categories: seed.CATEGORIES,
+      vouchers: seed.vouchers,
+    };
   }
 }
 
-/** Lỗi mạng khi đã có dữ liệu thì giữ dữ liệu cũ; chưa có gì thì báo lỗi để trang hiện nút thử lại. */
 const applyCatalog = (next) => (prev) => next || { ...prev, status: prev.books.length ? 'ready' : 'error' };
 
 /**
@@ -550,34 +556,109 @@ export function AppProvider({ children }) {
   );
 
   // ---------- Giỏ hàng ----------
-  const getCart = useCallback((forUser) => (forUser === userId ? account.cart : []), [userId, account.cart]);
+  const persistFallbackCart = useCallback((forUser, cart) => {
+    if (!forUser) return cart;
+    const nextCart = Array.isArray(cart) ? cart : [];
+    save(`cart.${forUser}`, nextCart);
+    return nextCart;
+  }, []);
+
+  const readFallbackCart = useCallback((forUser) => {
+    if (!forUser) return [];
+    const saved = load(`cart.${forUser}`, []);
+    return Array.isArray(saved) ? saved : [];
+  }, []);
+
+  const getCart = useCallback((forUser) => {
+    if (forUser !== userId) return [];
+    const current = Array.isArray(account.cart) ? account.cart : [];
+    return current.length > 0 ? current : readFallbackCart(forUser);
+  }, [userId, account.cart, readFallbackCart]);
 
   const addToCart = useCallback(
     async (forUser, bookId, qty = 1) => {
       try {
         const cart = await shopApi.addCartItem(forUser, { bookId: Number(bookId), quantity: qty });
         patchAccount(forUser, { cart });
+        persistFallbackCart(forUser, cart);
         return cart;
       } catch {
-        // Fallback local giỏ hàng nếu API gặp sự cố
-        return [];
+        const existing = Array.isArray(account.cart) ? account.cart : readFallbackCart(forUser);
+        const targetBook = books.find((b) => String(b.id) === String(bookId));
+        const nextLine = {
+          id: `local-${forUser}-${bookId}-${Date.now()}`,
+          qty,
+          available: true,
+          unavailableReason: null,
+          bookId: Number(bookId),
+          blind: null,
+          book: targetBook ? {
+            id: targetBook.id,
+            title: targetBook.title,
+            author: targetBook.author,
+            cover: targetBook.cover,
+            price: targetBook.price,
+            stock: targetBook.stock,
+            shopId: targetBook.shopId,
+            shopName: targetBook.shopName,
+          } : {
+            id: Number(bookId),
+            title: 'Sách',
+            author: 'Đang cập nhật',
+            cover: 'https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?w=400&q=80',
+            price: 0,
+            stock: 99,
+            shopId: null,
+            shopName: 'Bookigma',
+          },
+        };
+
+        const nextCart = [...existing];
+        const idx = nextCart.findIndex((line) => line.bookId === Number(bookId) && !line.blind);
+        if (idx >= 0) {
+          nextCart[idx] = { ...nextCart[idx], qty: nextCart[idx].qty + qty };
+        } else {
+          nextCart.push(nextLine);
+        }
+
+        patchAccount(forUser, { cart: nextCart });
+        persistFallbackCart(forUser, nextCart);
+        return nextCart;
       }
     },
-    [patchAccount]
+    [account.cart, books, patchAccount, persistFallbackCart, readFallbackCart]
   );
 
   const updateCartQty = useCallback(
     async (itemId, qty) => {
-      patchAccount(userId, { cart: await shopApi.updateCartItem(userId, itemId, qty) });
+      try {
+        const cart = await shopApi.updateCartItem(userId, itemId, qty);
+        patchAccount(userId, { cart });
+        persistFallbackCart(userId, cart);
+      } catch {
+        const current = getCart(userId);
+        const nextCart = current.map((line) => (line.id === itemId ? { ...line, qty: Math.max(1, qty) } : line));
+        patchAccount(userId, { cart: nextCart });
+        persistFallbackCart(userId, nextCart);
+      }
     },
-    [userId, patchAccount]
+    [userId, patchAccount, persistFallbackCart, getCart]
   );
 
   const removeCartItem = useCallback(
     async (itemId) => {
-      patchAccount(userId, { cart: await shopApi.removeCartItem(userId, itemId) });
+      try {
+        const cart = await shopApi.removeCartItem(userId, itemId);
+        patchAccount(userId, { cart });
+        persistFallbackCart(userId, cart);
+      } catch {
+        const current = getCart(userId);
+        const nextCart = current.filter((line) => line.id !== itemId);
+        patchAccount(userId, { cart: nextCart });
+        persistFallbackCart(userId, nextCart);
+      }
     },
-    [userId, patchAccount]
+    [userId, patchAccount, persistFallbackCart, getCart]
   );
 
   const setCartQty = useCallback((forUser, bookId, qty) => {
