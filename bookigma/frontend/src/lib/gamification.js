@@ -6,7 +6,7 @@
  * kỷ luật đọc. Toàn bộ điểm số ở đây đều sinh ra từ hành vi thật trong app
  * (đọc sách, đăng bài, mua hàng) chứ không phải số cứng.
  *
- * Bốn thành phần: điểm Gigma, cấp độ người đọc, nhiệm vụ hằng ngày, và thú ảo.
+ * Bốn thành phần: điểm Bookigma, cấp độ người đọc, nhiệm vụ hằng ngày, và thú ảo.
  */
 
 /** Điểm thưởng cho từng hành vi. Mọi nơi cộng điểm đều phải dùng hằng số ở đây. */
@@ -59,7 +59,7 @@ export const titleForLevel = (level) =>
 
 /**
  * Thú ảo lớn lên bằng chính thời gian đọc của chủ nhân, và có thể cho ăn
- * bằng điểm Gigma. Mỗi giai đoạn mở ra khi thú tích đủ điểm kinh nghiệm.
+ * bằng điểm Bookigma. Mỗi giai đoạn mở ra khi thú tích đủ điểm kinh nghiệm.
  */
 export const PET_STAGES = [
   { min: 0, name: 'Trứng sách', emoji: '🥚', desc: 'Đọc thêm để trứng nở nhé!' },

@@ -37,7 +37,7 @@ export default function ShopPage() {
   const results = useMemo(() => {
     const q = query.trim().toLowerCase();
     const range = PRICE_RANGES.find((r) => r.id === price);
-    let list = books.filter((b) => b.status === 'active');
+    let list = books.filter((b) => b.status === 'active' && b.forSale !== false);
 
     if (q) {
       list = list.filter(

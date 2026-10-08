@@ -90,13 +90,13 @@ export default function RecommendationPage() {
         <div className="stack">
           {rec.items.map(({ book, score, reasons }) => (
             <div key={book.id} className="card card-hover row" style={{ alignItems: 'flex-start', gap: 16 }}>
-              <Link to={`/book/${book.id}`}>
+              <Link to={book.forSale === false ? `/read/${book.id}` : `/book/${book.id}`}>
                 <img src={book.cover} alt="" className="book-cover" style={{ width: 96, height: 132 }} />
               </Link>
 
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div className="row-between" style={{ gap: 10, marginBottom: 4 }}>
-                  <Link to={`/book/${book.id}`}>
+                  <Link to={book.forSale === false ? `/read/${book.id}` : `/book/${book.id}`}>
                     <h3 style={{ margin: 0, fontSize: 17 }}>{book.title}</h3>
                   </Link>
                   <span
@@ -174,7 +174,7 @@ export default function RecommendationPage() {
                 {m.books?.length > 0 && (
                   <div className="stack" style={{ gap: 6, width: '100%' }}>
                     {m.books.map((b) => (
-                      <Link key={b.id} to={`/book/${b.id}`} className="row card-hover" style={{ gap: 10, background: 'var(--bg-soft)', padding: 8, borderRadius: 9 }}>
+                      <Link key={b.id} to={b.forSale === false ? `/read/${b.id}` : `/book/${b.id}`} className="row card-hover" style={{ gap: 10, background: 'var(--bg-soft)', padding: 8, borderRadius: 9 }}>
                         <img src={b.cover} alt="" className="book-cover" style={{ width: 34, height: 46 }} />
                         <div style={{ flex: 1, minWidth: 0 }}>
                           <div className="tiny strong truncate">{b.title}</div>

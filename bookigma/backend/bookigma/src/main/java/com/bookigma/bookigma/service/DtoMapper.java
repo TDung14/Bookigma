@@ -83,6 +83,7 @@ public final class DtoMapper {
                 .pages(book.getPageCount())
                 .tags(book.getTags() == null ? List.of() : List.copyOf(book.getTags()))
                 .blindBook(Boolean.TRUE.equals(book.getBlindBook()))
+                .forSale(Boolean.TRUE.equals(book.getForSale()))
                 .status(lower(book.getStatus()))
                 .chapterCount(book.getChapterCount() == null ? 0 : book.getChapterCount())
                 .chapters(chapters == null ? null : chapters.stream().map(DtoMapper::toChapterDto).toList())
