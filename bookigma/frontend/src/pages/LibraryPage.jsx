@@ -8,6 +8,7 @@ import { EmptyState, ProgressBar, StatCard } from '../components/common/ui';
 const TABS = [
   { id: 'reading', label: 'Đang đọc' },
   { id: 'finished', label: 'Đã đọc xong' },
+  { id: 'explore', label: 'Khám phá Ebook' },
   { id: 'all', label: 'Tất cả' },
 ];
 
@@ -69,25 +70,36 @@ export default function LibraryPage() {
         ))}
       </div>
 
-      {filtered.length === 0 ? (
+      {tab === 'explore' ? (
+        <div className="grid" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))' }}>
+          {books.filter(b => b.chapterCount > 0).map((b) => (
+            <Link key={b.id} to={`/read/${b.id}`} className="card card-hover" style={{ padding: 12 }}>
+              <img src={b.cover} alt="" className="book-cover" style={{ width: '100%', height: 160 }} />
+              <div className="small strong clamp-2" style={{ margin: '10px 0 4px' }}>{b.title}</div>
+              <p className="tiny muted clamp-1" style={{ margin: '0 0 10px' }}>{b.author}</p>
+              <div className="btn btn-primary btn-sm btn-block">Đọc ngay</div>
+            </Link>
+          ))}
+        </div>
+      ) : filtered.length === 0 ? (
         <div className="card">
           <EmptyState
             icon={BookOpen}
             title={tab === 'finished' ? 'Bạn chưa đọc xong cuốn nào' : 'Chưa có cuốn nào đang đọc dở'}
             hint="Mở một cuốn sách bất kỳ, Bookigma sẽ tự động lưu vị trí bạn đang đọc."
-            action={<Link to="/shop" className="btn btn-primary">Khám phá sách</Link>}
+            action={<button className="btn btn-primary" onClick={() => setTab('explore')}>Khám phá Ebook</button>}
           />
         </div>
       ) : (
         <div className="grid" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))' }}>
           {filtered.map((e) => (
             <div key={e.bookId} className="card card-hover row" style={{ alignItems: 'flex-start', gap: 14 }}>
-              <Link to={`/book/${e.bookId}`}>
+              <Link to={e.book.forSale === false ? `/read/${e.bookId}` : `/book/${e.bookId}`}>
                 <img src={e.book.cover} alt="" className="book-cover" style={{ width: 76, height: 104 }} />
               </Link>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div className="row-between" style={{ gap: 8, marginBottom: 2 }}>
-                  <Link to={`/book/${e.bookId}`} className="strong small clamp-2">{e.book.title}</Link>
+                  <Link to={e.book.forSale === false ? `/read/${e.bookId}` : `/book/${e.bookId}`} className="strong small clamp-2">{e.book.title}</Link>
                   {e.finished && <span className="badge badge-green">Xong</span>}
                 </div>
                 <p className="tiny muted" style={{ margin: '0 0 8px' }}>{e.book.author}</p>

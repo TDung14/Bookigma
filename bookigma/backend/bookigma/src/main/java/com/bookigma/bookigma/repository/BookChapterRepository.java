@@ -7,4 +7,5 @@ import java.util.List;
 
 public interface BookChapterRepository extends JpaRepository<BookChapter, Long> {
     List<BookChapter> findByBookIdOrderByChapterIndexAsc(Long bookId);
+    long countByBookId(Long bookId);
 }

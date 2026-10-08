@@ -1,7 +1,7 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
-  Award, Check, Clock, Flame, Gift, Heart, Pencil, Sparkles, Target, Trophy, Zap,
+  Award, Check, Clock, Flame, Gift, Heart, Pencil, Sparkles, Target, Trophy, Zap, CalendarCheck
 } from 'lucide-react';
 import { useApp, useAuth, useToast } from '../hooks/useStore';
 import {
@@ -10,9 +10,11 @@ import {
 } from '../lib/gamification';
 import { currency, duration, timeAgo } from '../lib/format';
 import { ProgressBar, StatCard } from '../components/common/ui';
+import { dailyCheckIn, getPointsSummary, addPointsApi, deductPointsApi } from '../services/pointsApi';
 
 const TABS = [
   { id: 'tasks', label: 'Nhiệm vụ hôm nay' },
+  { id: 'history', label: 'Lịch sử tích điểm' },
   { id: 'pet', label: 'Thú ảo' },
   { id: 'badges', label: 'Huy hiệu' },
   { id: 'shop', label: 'Đổi thưởng' },
@@ -29,10 +31,39 @@ export default function RewardsPage() {
   const [tab, setTab] = useState('tasks');
   const [renaming, setRenaming] = useState(false);
   const [petNameDraft, setPetNameDraft] = useState(user.petName || 'Bạn đọc nhỏ');
+  const [pointsData, setPointsData] = useState(null);
+  const [checkingIn, setCheckingIn] = useState(false);
+
+  const fetchPoints = () => {
+    getPointsSummary(user.id)
+      .then((data) => setPointsData(data))
+      .catch(() => {});
+  };
+
+  useEffect(() => {
+    fetchPoints();
+  }, [user.id]);
+
+  const currentPoints = pointsData?.balance ?? user.points ?? 0;
+
+  const handleDailyCheckIn = async () => {
+    setCheckingIn(true);
+    try {
+      const res = await dailyCheckIn(user.id);
+      const added = res.amount || 50;
+      toast(`Điểm danh thành công! +${added} Điểm Bookigma`, 'success');
+      earnPoints(user.id, added);
+      fetchPoints();
+    } catch (err) {
+      toast(err.message || 'Không thể điểm danh', 'error');
+    } finally {
+      setCheckingIn(false);
+    }
+  };
 
   const daily = getDaily(user.id);
   const tasks = useMemo(() => taskState(daily), [daily]);
-  const lv = levelFromPoints(user.points || 0);
+  const lv = levelFromPoints(currentPoints);
 
   const stats = useMemo(
     () => collectStats({ user, progress: getProgress(user.id), orders, posts, exchanges }),
@@ -45,33 +76,53 @@ export default function RewardsPage() {
   const mood = petMood(user.petLastFed);
   const myRedemptions = redemptions.filter((r) => r.userId === user.id);
 
-  const handleClaim = (task) => {
+  const handleClaim = async (task) => {
     const granted = claimTask(user.id, task.id);
     if (!granted) return toast('Nhiệm vụ chưa hoàn thành.', 'error');
     earnPoints(user.id, granted);
-    toast(`Hoàn thành "${task.label}" — nhận ${granted} điểm Gigma!`);
+    try {
+      await addPointsApi(user.id, granted, 'TASK_REWARD', `Hoàn thành nhiệm vụ: ${task.label}`);
+      fetchPoints();
+    } catch (err) {
+      // Local fallback granted points via earnPoints
+    }
+    toast(`Hoàn thành "${task.label}" — nhận ${granted} điểm!`);
   };
 
-  const handleFeed = () => {
-    if ((user.points || 0) < FEED_COST) return toast(`Cần ${FEED_COST} điểm Gigma để cho ăn.`, 'error');
+  const handleFeed = async () => {
+    if (currentPoints < FEED_COST) return toast(`Cần ${FEED_COST} điểm để cho ăn.`, 'error');
     feedPet(user.id, FEED_COST);
+    try {
+      await deductPointsApi(user.id, FEED_COST, 'FEED_PET', 'Cho thú ảo ăn bánh');
+      fetchPoints();
+    } catch (err) {
+      // Local fallback
+    }
     toast(`${user.petName || 'Thú ảo'} ăn ngon lành! +55 EXP`);
   };
 
-  const handleRedeem = (reward) => {
-    if (!window.confirm(`Đổi "${reward.name}" với ${reward.cost} điểm Gigma?`)) return;
-    const ok = redeemReward(user.id, reward);
-    toast(
-      ok ? `Đã đổi "${reward.name}". Quà sẽ đi kèm đơn hàng kế tiếp của bạn.` : 'Bạn chưa đủ điểm Gigma.',
-      ok ? 'success' : 'error'
-    );
+  const handleRedeem = async (reward) => {
+    if (currentPoints < reward.cost) return toast('Bạn chưa đủ điểm.', 'error');
+    if (!window.confirm(`Đổi "${reward.name}" với ${reward.cost} điểm?`)) return;
+    const ok = redeemReward(user.id, reward, currentPoints);
+    if (ok) {
+      try {
+        await deductPointsApi(user.id, reward.cost, 'REDEEM_REWARD', `Đổi quà: ${reward.name}`);
+        fetchPoints();
+      } catch (err) {
+        // Local fallback
+      }
+      toast(`Đã đổi "${reward.name}". Quà sẽ đi kèm đơn hàng kế tiếp của bạn.`, 'success');
+    } else {
+      toast('Bạn chưa đủ điểm.', 'error');
+    }
   };
 
   return (
     <div className="main-layout">
       <div className="page-head">
         <h1>Nhiệm vụ & Phần thưởng</h1>
-        <p>Đọc sách mỗi ngày để tích điểm Gigma, nuôi thú ảo và đổi quà thật</p>
+        <p>Đọc sách mỗi ngày để tích điểm Bookigma, nuôi thú ảo và đổi quà thật</p>
       </div>
 
       {/* Thẻ cấp độ */}
@@ -86,32 +137,44 @@ export default function RewardsPage() {
               <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
                 <h2 style={{ margin: 0, color: '#fff', fontSize: 20 }}>{user.name}</h2>
                 <span className="badge" style={{ background: 'rgba(255,255,255,.22)', color: '#fff' }}>
-                  Cấp {lv.level} · {titleForLevel(lv.level)}
+                  Hạng {pointsData?.currentTier || titleForLevel(lv.level)}
                 </span>
               </div>
               <div className="row" style={{ gap: 14, marginTop: 6, opacity: .95, fontSize: 13 }}>
-                <span className="row" style={{ gap: 5 }}><Zap size={14} /> {(user.points || 0).toLocaleString('vi-VN')} điểm Gigma</span>
+                <span className="row" style={{ gap: 5 }}><Zap size={14} /> {(pointsData?.balance ?? user.points ?? 0).toLocaleString('vi-VN')} Điểm Bookigma</span>
                 <span className="row" style={{ gap: 5 }}><Flame size={14} /> Chuỗi {user.streak || 0} ngày</span>
               </div>
             </div>
           </div>
 
-          <div style={{ flex: '1 1 260px', maxWidth: 380 }}>
-            <div className="row-between tiny" style={{ marginBottom: 5, opacity: .95 }}>
-              <span>Tiến độ lên cấp {lv.level + 1}</span>
-              <span>{lv.current}/{lv.needed}</span>
-            </div>
-            <div className="progress-track" style={{ background: 'rgba(255,255,255,.28)' }}>
-              <div className="progress-fill" style={{ width: `${lv.percent}%`, background: '#fff' }} />
-            </div>
+          <div className="row" style={{ gap: 12, flexWrap: 'wrap' }}>
+            <button
+              className="btn"
+              onClick={handleDailyCheckIn}
+              disabled={checkingIn || pointsData?.checkedInToday}
+              style={{
+                background: pointsData?.checkedInToday ? 'rgba(255,255,255,.3)' : '#f59e0b',
+                color: '#fff',
+                fontWeight: 600,
+                border: 'none',
+                padding: '10px 18px',
+                borderRadius: 10,
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 6
+              }}
+            >
+              <CalendarCheck size={18} />
+              {pointsData?.checkedInToday ? 'Đã điểm danh hôm nay' : 'Điểm danh nhận +50 Điểm'}
+            </button>
           </div>
         </div>
       </div>
 
       <div className="grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', marginBottom: 20 }}>
-        <StatCard icon={Zap} label="Điểm Gigma" value={(user.points || 0).toLocaleString('vi-VN')} sub="Dùng để đổi quà" />
-        <StatCard icon={Flame} label="Chuỗi ngày đọc" value={`${user.streak || 0} ngày`} sub="Đọc mỗi ngày để giữ chuỗi" color="var(--warning)" bg="var(--warning-soft)" />
-        <StatCard icon={Award} label="Huy hiệu" value={`${earnedCount}/${BADGES.length}`} sub="Đã mở khóa" color="var(--info)" bg="var(--info-soft)" />
+        <StatCard icon={Zap} label="Ví Điểm Bookigma" value={(pointsData?.balance ?? user.points ?? 0).toLocaleString('vi-VN')} sub="Dùng giảm tiền đơn hàng" />
+        <StatCard icon={Flame} label="Tích lũy cả đời" value={`${(pointsData?.lifetimePoints ?? 0).toLocaleString('vi-VN')} Điểm`} sub={`Còn ${pointsData?.pointsToNextTier || 0} điểm lên hạng tiếp`} color="var(--warning)" bg="var(--warning-soft)" />
+        <StatCard icon={Award} label="Hạng hội viên" value={pointsData?.currentTier || 'Tập Sự'} sub={`Tiếp theo: ${pointsData?.nextTier || 'Max'}`} color="var(--info)" bg="var(--info-soft)" />
         <StatCard icon={Clock} label="Thời gian đọc" value={duration(stats.secondsRead)} sub={`${stats.booksFinished} cuốn đã xong`} color="var(--purple)" bg="var(--purple-soft)" />
       </div>
 
@@ -127,6 +190,51 @@ export default function RewardsPage() {
           </button>
         ))}
       </div>
+
+      {/* ---------- Lịch sử giao dịch điểm ---------- */}
+      {tab === 'history' && (
+        <div className="card">
+          <h3 style={{ margin: '0 0 14px', fontSize: 16 }}>Lịch sử biến động Điểm Bookigma</h3>
+          {(!pointsData?.recentTransactions || pointsData.recentTransactions.length === 0) ? (
+            <p className="muted small" style={{ margin: 0 }}>Chưa có giao dịch tích điểm nào.</p>
+          ) : (
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
+                <thead>
+                  <tr style={{ borderBottom: '2px solid var(--border-color)', textAlign: 'left' }}>
+                    <th style={{ padding: '8px 12px' }}>Thời gian</th>
+                    <th style={{ padding: '8px 12px' }}>Loại giao dịch</th>
+                    <th style={{ padding: '8px 12px' }}>Mô tả</th>
+                    <th style={{ padding: '8px 12px', textAlign: 'right' }}>Số điểm</th>
+                    <th style={{ padding: '8px 12px', textAlign: 'right' }}>Số dư sau</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {pointsData.recentTransactions.map((tx) => (
+                    <tr key={tx.id} style={{ borderBottom: '1px solid var(--border-color)' }}>
+                      <td className="tiny muted" style={{ padding: '10px 12px' }}>
+                        {new Date(tx.createdAt).toLocaleString('vi-VN')}
+                      </td>
+                      <td style={{ padding: '10px 12px' }}>
+                        <span className={`badge ${tx.amount > 0 ? 'badge-green' : 'badge-red'}`}>
+                          {tx.type}
+                        </span>
+                      </td>
+                      <td style={{ padding: '10px 12px' }}>{tx.description}</td>
+                      <td style={{ padding: '10px 12px', textAlign: 'right', fontWeight: 600, color: tx.amount > 0 ? 'var(--accent-green)' : 'var(--danger)' }}>
+                        {tx.amount > 0 ? `+${tx.amount}` : tx.amount} Điểm
+                      </td>
+                      <td style={{ padding: '10px 12px', textAlign: 'right', fontWeight: 500 }}>
+                        {tx.balanceAfter.toLocaleString('vi-VN')} Điểm
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* ---------- Nhiệm vụ ---------- */}
       {tab === 'tasks' && (
@@ -152,7 +260,7 @@ export default function RewardsPage() {
                   <button className="btn btn-soft btn-sm btn-block" disabled><Check size={15} /> Đã nhận thưởng</button>
                 ) : t.done ? (
                   <button className="btn btn-primary btn-sm btn-block" onClick={() => handleClaim(t)}>
-                    <Gift size={15} /> Nhận {t.reward} điểm Gigma
+                    <Gift size={15} /> Nhận {t.reward} điểm
                   </button>
                 ) : (
                   <Link to={t.metric === 'social' ? '/' : t.metric === 'explore' ? '/shop' : '/library'} className="btn btn-ghost btn-sm btn-block">
@@ -225,10 +333,10 @@ export default function RewardsPage() {
               <ProgressBar percent={pet.percent} height={9} />
             </div>
 
-            <button className="btn btn-primary btn-lg" style={{ marginTop: 22 }} onClick={handleFeed} disabled={(user.points || 0) < FEED_COST}>
-              <Heart size={17} /> Cho ăn ({FEED_COST} điểm Gigma)
+            <button className="btn btn-primary btn-lg" style={{ marginTop: 22 }} onClick={handleFeed} disabled={currentPoints < FEED_COST}>
+              <Heart size={17} /> Cho ăn ({FEED_COST} điểm)
             </button>
-            {(user.points || 0) < FEED_COST && (
+            {currentPoints < FEED_COST && (
               <p className="tiny muted" style={{ marginTop: 8 }}>Bạn chưa đủ điểm — đọc sách thêm chút nữa nhé.</p>
             )}
           </div>
@@ -237,7 +345,7 @@ export default function RewardsPage() {
             <div className="card">
               <h4 style={{ margin: '0 0 12px', fontSize: 15 }}>Thú ảo lớn lên bằng gì?</h4>
               <p className="small muted" style={{ margin: '0 0 12px', lineHeight: 1.65 }}>
-                Mỗi phút bạn đọc sách, thú ảo nhận 1 EXP. Cho ăn bằng điểm Gigma sẽ cộng thêm 55 EXP.
+                Mỗi phút bạn đọc sách, thú ảo nhận 1 EXP. Cho ăn bằng điểm sẽ cộng thêm 55 EXP.
                 Nói cách khác, con vật này lớn lên bằng chính thói quen đọc của bạn.
               </p>
               <Link to="/library" className="btn btn-ghost btn-sm btn-block">Mở tủ sách và đọc tiếp</Link>
@@ -297,7 +405,7 @@ export default function RewardsPage() {
         <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) minmax(0,320px)', gap: 20, alignItems: 'start' }}>
           <div className="grid" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))' }}>
             {REWARDS.map((r) => {
-              const affordable = (user.points || 0) >= r.cost;
+              const affordable = currentPoints >= r.cost;
               return (
                 <div key={r.id} className="card card-hover" style={{ display: 'flex', flexDirection: 'column' }}>
                   <div style={{ fontSize: 38, textAlign: 'center', marginBottom: 8 }}>{r.emoji}</div>
@@ -311,7 +419,7 @@ export default function RewardsPage() {
                     {r.type === 'physical' && <span className="badge badge-purple">Quà thật</span>}
                   </div>
                   <button className="btn btn-primary btn-sm btn-block" onClick={() => handleRedeem(r)} disabled={!affordable}>
-                    {affordable ? 'Đổi ngay' : `Còn thiếu ${(r.cost - (user.points || 0)).toLocaleString('vi-VN')} điểm`}
+                    {affordable ? 'Đổi ngay' : `Còn thiếu ${(r.cost - currentPoints).toLocaleString('vi-VN')} điểm`}
                   </button>
                 </div>
               );

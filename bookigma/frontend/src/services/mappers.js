@@ -40,6 +40,7 @@ export function toBook(dto) {
     pages: dto.pages ?? 0,
     tags: dto.tags || [],
     blindBook: !!dto.blindBook,
+    forSale: dto.forSale ?? true,
     status: lower(dto.status) || 'active',
     chapterCount: dto.chapterCount ?? 0,
     createdAt: toTime(dto.createdAt),

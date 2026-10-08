@@ -65,7 +65,7 @@ export default function FeedPage() {
     setDraftBookId('');
     earnPoints(user.id, POINT_RULES.createPost);
     trackDaily(user.id, 'social', 1);
-    toast(`Đã đăng bài — nhận ${POINT_RULES.createPost} điểm Gigma.`);
+    toast(`Đã đăng bài — nhận ${POINT_RULES.createPost} điểm Bookigma.`);
   };
 
   const submitComment = async (postId) => {
@@ -219,7 +219,7 @@ export default function FeedPage() {
                 )}
 
                 {book && (
-                  <Link to={`/book/${book.id}`} className="row card-hover" style={{ gap: 12, background: 'var(--bg-soft)', padding: 10, borderRadius: 10, marginBottom: 12 }}>
+                  <Link to={book.forSale === false ? `/read/${book.id}` : `/book/${book.id}`} className="row card-hover" style={{ gap: 12, background: 'var(--bg-soft)', padding: 10, borderRadius: 10, marginBottom: 12 }}>
                     <img src={book.cover} alt="" className="book-cover" style={{ width: 44, height: 60 }} />
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div className="small strong truncate">{book.title}</div>

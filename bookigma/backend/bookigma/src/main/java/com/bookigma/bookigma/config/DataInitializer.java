@@ -12,6 +12,8 @@ import com.bookigma.bookigma.repository.CategoryRepository;
 import com.bookigma.bookigma.repository.ShopRepository;
 import com.bookigma.bookigma.repository.UserRepository;
 import com.bookigma.bookigma.repository.VoucherRepository;
+import com.bookigma.bookigma.repository.BookChapterRepository;
+import com.bookigma.bookigma.entity.BookChapter;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -20,6 +22,11 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.Locale;
+import java.nio.file.Files;
+import java.nio.file.Paths;
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 
 @Configuration
 public class DataInitializer {
@@ -33,6 +40,7 @@ public class DataInitializer {
             CategoryRepository categoryRepository,
             AuthorRepository authorRepository,
             BookRepository bookRepository,
+            BookChapterRepository bookChapterRepository,
             VoucherRepository voucherRepository,
             PasswordEncoder passwordEncoder
     ) {
@@ -47,7 +55,7 @@ public class DataInitializer {
 
             ensureDemoCategories(categoryRepository);
             ensureDemoShop(shopRepository, userRepository);
-            ensureDemoBooks(categoryRepository, authorRepository, shopRepository, bookRepository);
+            ensureDemoBooks(categoryRepository, authorRepository, shopRepository, bookRepository, bookChapterRepository);
             ensureDemoVouchers(voucherRepository);
         };
     }
@@ -81,7 +89,8 @@ public class DataInitializer {
     private void ensureDemoBooks(CategoryRepository categoryRepository,
                                 AuthorRepository authorRepository,
                                 ShopRepository shopRepository,
-                                BookRepository bookRepository) {
+                                BookRepository bookRepository,
+                                BookChapterRepository bookChapterRepository) {
         Shop shop = shopRepository.findAll().stream().findFirst().orElse(null);
         if (shop == null) {
             return;
@@ -111,6 +120,59 @@ public class DataInitializer {
                 "Truyện thiếu nhi nhẹ nhàng, đầy màu sắc và ý nghĩa giáo dục cho trẻ.",
                 "https://images.unsplash.com/photo-1507842217343-583bb7270b66?auto=format&fit=crop&w=800&q=80",
                 180, List.of("thiếu nhi", "truyện ngắn", "giáo dục"), new BigDecimal("145000"), new BigDecimal("99000"), 41);
+
+        Book kieu = createBookIfMissing(bookRepository, authorRepository, "Nguyễn Du", vanHoc, shop, "Truyện Kiều",
+                "Đoạn trường tân thanh - Kiệt tác văn học Việt Nam.",
+                "https://images.unsplash.com/photo-1577985051167-0d49eec21977?auto=format&fit=crop&w=800&q=80",
+                300, List.of("cổ điển", "văn học", "thơ"), new BigDecimal("0"), new BigDecimal("0"), 999);
+
+        if (kieu != null) {
+            kieu.setForSale(false);
+            bookRepository.save(kieu);
+            if (bookChapterRepository.countByBookId(kieu.getId()) == 0) {
+                seedChapters(kieu.getId(), bookChapterRepository);
+            }
+        }
+    }
+
+    private void seedChapters(Long bookId, BookChapterRepository bookChapterRepository) {
+        try {
+            InputStream is = getClass().getResourceAsStream("/truyen_kieu.txt");
+            if (is == null) return;
+            String content = new String(is.readAllBytes(), StandardCharsets.UTF_8);
+            String[] lines = content.split("\\r?\\n");
+            StringBuilder currentChapter = new StringBuilder();
+            int chapterIndex = 0;
+            int lineCount = 0;
+
+            for (String line : lines) {
+                if (line.trim().isEmpty()) continue;
+                currentChapter.append(line.trim()).append("\n\n");
+                lineCount++;
+                if (lineCount >= 200) { // approx 200 verses per chapter
+                    bookChapterRepository.save(BookChapter.builder()
+                            .bookId(bookId)
+                            .chapterIndex(chapterIndex)
+                            .title("Phần " + (chapterIndex + 1))
+                            .contentText(currentChapter.toString())
+                            .build());
+                    chapterIndex++;
+                    currentChapter.setLength(0);
+                    lineCount = 0;
+                }
+            }
+            if (currentChapter.length() > 0) {
+                bookChapterRepository.save(BookChapter.builder()
+                        .bookId(bookId)
+                        .chapterIndex(chapterIndex)
+                        .title("Phần " + (chapterIndex + 1))
+                        .contentText(currentChapter.toString())
+                        .build());
+            }
+            System.out.println("Seeded Truyen Kieu chapters!");
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
     }
 
     private void ensureDemoVouchers(VoucherRepository voucherRepository) {
@@ -140,7 +202,7 @@ public class DataInitializer {
         }
     }
 
-    private void createBookIfMissing(BookRepository bookRepository,
+    private Book createBookIfMissing(BookRepository bookRepository,
                                     AuthorRepository authorRepository,
                                     String authorName,
                                     Category category,
@@ -153,9 +215,12 @@ public class DataInitializer {
                                     BigDecimal salePrice,
                                     BigDecimal originalPrice,
                                     Integer stockQuantity) {
-        boolean exists = bookRepository.findAll().stream().anyMatch(book -> book.getTitle().equalsIgnoreCase(title));
-        if (exists || category == null || shop == null) {
-            return;
+        Book existing = bookRepository.findAll().stream().filter(book -> book.getTitle().equalsIgnoreCase(title)).findFirst().orElse(null);
+        if (existing != null) {
+            return existing;
+        }
+        if (category == null || shop == null) {
+            return null;
         }
 
         Author author = authorRepository.findFirstByNameIgnoreCase(authorName)
@@ -181,7 +246,7 @@ public class DataInitializer {
                 .status(Book.Status.ACTIVE)
                 .build();
 
-        bookRepository.save(book);
+        return bookRepository.save(book);
     }
 
     /**

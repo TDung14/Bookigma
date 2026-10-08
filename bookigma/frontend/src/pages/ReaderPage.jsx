@@ -63,8 +63,7 @@ function ReaderContent() {
   const [bookmarks, setBookmarks] = useState([]);
   const [speaking, setSpeaking] = useState(false);
 
-  // Nhạc nền + Pomodoro
-  const [music, setMusic] = useState(false);
+  // Pomodoro
   const [seconds, setSeconds] = useState(1500);
   const [timerOn, setTimerOn] = useState(false);
 
@@ -136,7 +135,7 @@ function ReaderContent() {
     return () => clearInterval(id);
   }, []);
 
-  // Cứ mỗi phút đọc trọn vẹn thì cộng điểm Gigma, nuôi thú ảo và ghi nhận
+  // Cứ mỗi phút đọc trọn vẹn thì cộng điểm Bookigma, nuôi thú ảo và ghi nhận
   // tiến độ nhiệm vụ "đọc 10 phút". Đây là lý do thú ảo lớn lên theo thói quen thật.
   useEffect(() => {
     if (sessionSeconds === 0 || sessionSeconds % 60 !== 0) return;
@@ -237,7 +236,7 @@ function ReaderContent() {
       {/* Thanh tiến trình cố định */}
       <div style={{ position: 'sticky', top: 'var(--nav-h)', zIndex: 800, background: 'var(--bg-primary)', paddingBottom: 10 }}>
         <div className="card row-between" style={{ padding: '10px 14px', flexWrap: 'wrap', gap: 10 }}>
-          <button className="btn btn-ghost btn-sm" onClick={() => navigate(`/book/${book.id}`)}>
+          <button className="btn btn-ghost btn-sm" onClick={() => navigate(book.forSale === false ? '/library' : `/book/${book.id}`)}>
             <ChevronLeft size={15} /> {book.title}
           </button>
           <div className="row" style={{ flex: '1 1 220px', gap: 10, minWidth: 180 }}>
@@ -317,7 +316,7 @@ function ReaderContent() {
                   trackDaily(user.id, 'chapters', 1);
                   if (!saved?.finished) {
                     earnPoints(user.id, POINT_RULES.finishBook);
-                    toast(`Chúc mừng! Đọc xong cuốn này — nhận ${POINT_RULES.finishBook} điểm Gigma 🎉`);
+                    toast(`Chúc mừng! Đọc xong cuốn này — nhận ${POINT_RULES.finishBook} điểm Bookigma 🎉`);
                   } else {
                     toast('Bạn đã đọc lại xong cuốn sách này 🎉');
                   }
@@ -325,7 +324,7 @@ function ReaderContent() {
                 }
                 earnPoints(user.id, POINT_RULES.finishChapter);
                 trackDaily(user.id, 'chapters', 1);
-                toast(`Xong một chương — nhận ${POINT_RULES.finishChapter} điểm Gigma`);
+                toast(`Xong một chương — nhận ${POINT_RULES.finishChapter} điểm Bookigma`);
                 goChapter(chapterIndex + 1);
               }}
             >
@@ -338,13 +337,6 @@ function ReaderContent() {
         <aside className="stack" style={{ position: 'sticky', top: 130 }}>
           <div className="card stack">
             <h4 style={{ margin: 0, fontSize: 15, paddingBottom: 8, borderBottom: '1px solid var(--border-color)' }}>Góc tập trung</h4>
-
-            <div className="row-between">
-              <span className="row small strong"><Music size={17} color="var(--accent-green)" /> Nhạc nền</span>
-              <button className={`btn btn-sm ${music ? 'btn-primary' : 'btn-soft'}`} onClick={() => setMusic((v) => !v)}>
-                {music ? <Pause size={13} /> : <Play size={13} />} {music ? 'Đang bật' : 'Bật'}
-              </button>
-            </div>
 
             <div className="row-between" style={{ background: 'var(--bg-soft)', padding: 10, borderRadius: 9 }}>
               <span className="row" style={{ gap: 8 }}>

@@ -47,19 +47,22 @@ public class OrderServiceImpl implements OrderService {
     private final VoucherRepository voucherRepository;
     private final AccessGuard accessGuard;
     private final NotificationService notificationService;
+    private final com.bookigma.bookigma.service.PointService pointService;
 
     public OrderServiceImpl(OrderRepository orderRepository,
                             CartItemRepository cartItemRepository,
                             BookRepository bookRepository,
                             VoucherRepository voucherRepository,
                             AccessGuard accessGuard,
-                            NotificationService notificationService) {
+                            NotificationService notificationService,
+                            com.bookigma.bookigma.service.PointService pointService) {
         this.orderRepository = orderRepository;
         this.cartItemRepository = cartItemRepository;
         this.bookRepository = bookRepository;
         this.voucherRepository = voucherRepository;
         this.accessGuard = accessGuard;
         this.notificationService = notificationService;
+        this.pointService = pointService;
     }
 
     // ---------- Người mua ----------
@@ -81,8 +84,18 @@ public class OrderServiceImpl implements OrderService {
         BigDecimal subtotal = subtotals.stream().reduce(BigDecimal.ZERO, BigDecimal::add);
 
         Voucher voucher = resolveVoucher(request.getVoucherCode(), subtotal);
-        List<BigDecimal> discounts = OrderPricing.allocate(OrderPricing.discountFor(voucher, subtotal), subtotals);
+        List<BigDecimal> discounts = new ArrayList<>(OrderPricing.allocate(OrderPricing.discountFor(voucher, subtotal), subtotals));
         boolean freeShipping = voucher != null && voucher.getDiscountType() == Voucher.DiscountType.SHIPPING;
+
+        Integer pointsToUse = request.getPointsToUse();
+        if (pointsToUse != null && pointsToUse > 0) {
+            pointService.deductPoints(buyer.getId(), pointsToUse, "ORDER_DISCOUNT", "CHECKOUT", "Dùng Điểm Bookigma giảm giá đơn hàng");
+            BigDecimal pointsDiscount = BigDecimal.valueOf(pointsToUse);
+            List<BigDecimal> extraDiscounts = OrderPricing.allocate(pointsDiscount, subtotals);
+            for (int i = 0; i < discounts.size(); i++) {
+                discounts.set(i, discounts.get(i).add(extraDiscounts.get(i)));
+            }
+        }
 
         List<Order> orders = new ArrayList<>();
         for (int i = 0; i < parcels.size(); i++) {
@@ -103,7 +116,7 @@ public class OrderServiceImpl implements OrderService {
                     .subtotal(money(subtotals.get(i)))
                     .shippingFee(money(shippingFee))
                     .discountAmount(money(discount))
-                    .totalAmount(money(subtotals.get(i).subtract(discount).add(shippingFee)))
+                    .totalAmount(money(subtotals.get(i).subtract(discount).add(shippingFee).max(BigDecimal.ZERO)))
                     .status(Order.Status.PENDING)
                     .build();
 
@@ -163,7 +176,25 @@ public class OrderServiceImpl implements OrderService {
         }
         changeStatus(order, Order.Status.COMPLETED, "Khách xác nhận đã nhận hàng");
         notifyShop(order, "Đơn " + order.getCode() + " đã hoàn thành — khách xác nhận đã nhận hàng.");
+        awardPointsForCompletedOrder(order);
         return toDto(order, Viewer.BUYER);
+    }
+
+    private void awardPointsForCompletedOrder(Order order) {
+        if (order.getTotalAmount() != null && order.getTotalAmount().compareTo(BigDecimal.ZERO) > 0) {
+            int rewardPoints = order.getTotalAmount().multiply(new BigDecimal("0.01")).intValue();
+            if (rewardPoints > 0) {
+                try {
+                    pointService.addPoints(
+                            order.getUser().getId(),
+                            rewardPoints,
+                            "ORDER_REWARD",
+                            order.getCode(),
+                            "Thưởng Điểm từ đơn hàng #" + order.getCode()
+                    );
+                } catch (Exception ignored) {}
+            }
+        }
     }
 
     @Override

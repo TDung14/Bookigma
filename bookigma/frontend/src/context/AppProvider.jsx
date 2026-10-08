@@ -77,7 +77,7 @@ const applyCatalog = (next) => (prev) => next || { ...prev, status: prev.books.l
  *   như bản demo, nên tải lại trang vẫn giữ nguyên trạng thái.
  */
 export function AppProvider({ children }) {
-  const { user } = useAuth();
+  const { user, updateUserPoints, updateUserFields } = useAuth();
   const userId = user?.id ?? null;
   const role = user?.role ?? null;
 
@@ -1105,10 +1105,16 @@ export function AppProvider({ children }) {
     [daily]
   );
 
-  const earnPoints = useCallback((uId, amount) => {
-    if (!uId || !amount) return;
-    setUsers((prev) => prev.map((u) => (u.id === uId ? { ...u, points: (u.points || 0) + amount } : u)));
-  }, []);
+  const earnPoints = useCallback(
+    (uId, amount) => {
+      if (!uId || !amount) return;
+      setUsers((prev) => prev.map((u) => (u.id === uId ? { ...u, points: (u.points || 0) + amount } : u)));
+      if (user && String(user.id) === String(uId) && updateUserFields) {
+        updateUserFields({ points: (user.points || 0) + amount });
+      }
+    },
+    [user, updateUserFields]
+  );
 
   const trackDaily = useCallback((uId, metric, amount = 1) => {
     if (!uId) return;
@@ -1150,46 +1156,78 @@ export function AppProvider({ children }) {
     );
   }, []);
 
-  const feedPet = useCallback((uId, cost) => {
-    setUsers((prev) =>
-      prev.map((u) =>
-        u.id === uId && (u.points || 0) >= cost
-          ? { ...u, points: u.points - cost, petXp: (u.petXp || 0) + FEED_XP, petLastFed: Date.now() }
-          : u
-      )
-    );
-  }, []);
+  const feedPet = useCallback(
+    (uId, cost) => {
+      const now = Date.now();
+      const newXp = (user?.petXp || 0) + FEED_XP;
+      setUsers((prev) =>
+        prev.map((u) =>
+          u.id === uId
+            ? { ...u, points: Math.max(0, (u.points || 0) - cost), petXp: (u.petXp || 0) + FEED_XP, petLastFed: now }
+            : u
+        )
+      );
+      if (user && String(user.id) === String(uId) && updateUserFields) {
+        updateUserFields({
+          points: Math.max(0, (user.points || 0) - cost),
+          petXp: newXp,
+          petLastFed: now,
+        });
+      }
+    },
+    [user, updateUserFields]
+  );
 
   const growPet = useCallback((uId, xp) => {
     setUsers((prev) => prev.map((u) => (u.id === uId ? { ...u, petXp: (u.petXp || 0) + xp } : u)));
-  }, []);
+    if (user && String(user.id) === String(uId) && updateUserFields) {
+      updateUserFields({ petXp: (user.petXp || 0) + xp });
+    }
+  }, [user, updateUserFields]);
 
   const renamePet = useCallback((uId, name) => {
     setUsers((prev) => prev.map((u) => (u.id === uId ? { ...u, petName: name } : u)));
-  }, []);
-
-  const redeemReward = useCallback((uId, reward) => {
-    let ok = false;
-    setUsers((prev) =>
-      prev.map((u) => {
-        if (u.id !== uId) return u;
-        if ((u.points || 0) < reward.cost) return u;
-        ok = true;
-        return {
-          ...u,
-          points: u.points - reward.cost,
-          ...(reward.type === 'pet' ? { petXp: (u.petXp || 0) + FEED_XP, petLastFed: Date.now() } : {}),
-        };
-      })
-    );
-    if (ok) {
-      setRedemptions((prev) => [
-        { id: uid('rd'), userId: uId, rewardId: reward.id, name: reward.name, cost: reward.cost, at: Date.now() },
-        ...prev,
-      ]);
+    if (user && String(user.id) === String(uId) && updateUserFields) {
+      updateUserFields({ petName: name });
     }
-    return ok;
-  }, []);
+  }, [user, updateUserFields]);
+
+  const redeemReward = useCallback(
+    (uId, reward, currentBalance) => {
+      let ok = false;
+      const effectivePoints = currentBalance ?? user?.points ?? 0;
+      if (effectivePoints < reward.cost) return false;
+      ok = true;
+      const now = Date.now();
+      const isPetReward = reward.type === 'pet';
+      const newPetXp = isPetReward ? (user?.petXp || 0) + FEED_XP : (user?.petXp || 0);
+
+      setUsers((prev) =>
+        prev.map((u) => {
+          if (u.id !== uId) return u;
+          return {
+            ...u,
+            points: Math.max(0, effectivePoints - reward.cost),
+            ...(isPetReward ? { petXp: (u.petXp || 0) + FEED_XP, petLastFed: now } : {}),
+          };
+        })
+      );
+      if (user && String(user.id) === String(uId) && updateUserFields) {
+        updateUserFields({
+          points: Math.max(0, effectivePoints - reward.cost),
+          ...(isPetReward ? { petXp: newPetXp, petLastFed: now } : {}),
+        });
+      }
+      if (ok) {
+        setRedemptions((prev) => [
+          { id: uid('rd'), userId: uId, rewardId: reward.id, name: reward.name, cost: reward.cost, at: Date.now() },
+          ...prev,
+        ]);
+      }
+      return ok;
+    },
+    [user, updateUserFields]
+  );
 
   // ---------- Blind Book ----------
   const matchBlindBox = useCallback((payload) => shopApi.matchBlindBox(userId, payload), [userId]);

@@ -380,6 +380,10 @@ export function AuthProvider({ children }) {
 
   }, []);
 
+  const updateUserFields = useCallback((fields) => {
+    setUser((current) => (current ? { ...current, ...fields } : current));
+  }, []);
+
   const value = useMemo(
     () => ({
       ROLES,
@@ -413,6 +417,8 @@ export function AuthProvider({ children }) {
 
       updateProfile,
 
+      updateUserFields,
+
       loginAs,
 
       logout,
@@ -423,6 +429,7 @@ export function AuthProvider({ children }) {
       login,
       register,
       updateProfile,
+      updateUserFields,
       loginAs,
       logout,
     ]

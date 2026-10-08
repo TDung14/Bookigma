@@ -1,11 +1,12 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Banknote, Check, CreditCard, MapPin, Tag, Truck, Wallet } from 'lucide-react';
+import { Banknote, Check, CreditCard, MapPin, Tag, Truck, Wallet, Zap } from 'lucide-react';
 import { useApp, useAuth, useToast } from '../hooks/useStore';
 import { currency } from '../lib/format';
 import { Field } from '../components/common/ui';
 import { POINT_RULES } from '../lib/gamification';
 import { SHIPPING_FEE, applyVoucher, cartSubtotal, countParcels, linePrice } from '../lib/cart';
+import { getPointsSummary } from '../services/pointsApi';
 
 const PAYMENTS = [
   { id: 'cod', label: 'Thanh toán khi nhận hàng (COD)', hint: 'Trả tiền mặt cho shipper', icon: Banknote },
@@ -31,13 +32,29 @@ export default function CheckoutPage() {
   const [appliedVoucher, setAppliedVoucher] = useState(null);
   const [note, setNote] = useState('');
   const [placing, setPlacing] = useState(false);
+  
+  const [pointsBalance, setPointsBalance] = useState(user.points || 0);
+  const [usePoints, setUsePoints] = useState(false);
+  const [pointsToUse, setPointsToUse] = useState(0);
+
+  useEffect(() => {
+    getPointsSummary(user.id)
+      .then((res) => {
+        if (res && res.balance !== undefined) {
+          setPointsBalance(res.balance);
+        }
+      })
+      .catch(() => {});
+  }, [user.id]);
 
   const subtotal = cartSubtotal(lines);
   const parcels = countParcels(lines);
 
   const { discount, shipping } = applyVoucher(appliedVoucher, subtotal, parcels);
 
-  const total = Math.max(0, subtotal - discount) + shipping;
+  const rawTotal = Math.max(0, subtotal - discount) + shipping;
+  const pointsDiscount = usePoints ? Math.min(pointsBalance, pointsToUse > 0 ? pointsToUse : pointsBalance) : 0;
+  const total = Math.max(0, rawTotal - pointsDiscount);
 
   const applyVoucherCode = (code) => {
     const v = vouchers.find((x) => x.code.toLowerCase() === code.trim().toLowerCase());
@@ -64,7 +81,6 @@ export default function CheckoutPage() {
 
     setPlacing(true);
     try {
-      // Server tính lại toàn bộ tiền hàng, phí ship và voucher — số hiển thị ở đây chỉ để xem trước.
       const orders = await placeOrder({
         recipientName: address.name.trim(),
         recipientPhone: address.phone.trim(),
@@ -72,12 +88,13 @@ export default function CheckoutPage() {
         paymentMethod: payment,
         voucherCode: appliedVoucher?.code || null,
         note: note.trim(),
+        pointsToUse: usePoints ? pointsDiscount : null,
       });
       earnPoints(user.id, POINT_RULES.placeOrder);
       navigate(`/order-success/${orders[0].id}`, { state: { orderIds: orders.map((o) => o.id) } });
     } catch (error) {
       toast(error.message || 'Không thể đặt hàng, vui lòng thử lại.', 'error');
-      refreshCart(); // tồn kho có thể vừa thay đổi
+      refreshCart();
       setPlacing(false);
     }
   };
@@ -226,6 +243,28 @@ export default function CheckoutPage() {
             </div>
           </div>
 
+          {/* Dùng Điểm Bookigma */}
+          <div style={{ marginTop: 12, padding: 12, borderRadius: 10, background: 'var(--bg-soft)', border: '1px solid var(--border-color)' }}>
+            <div className="row-between" style={{ marginBottom: 6 }}>
+              <span className="small strong row" style={{ gap: 6 }}>
+                <Zap size={16} color="#eab308" fill="#eab308" /> Dùng Điểm Bookigma
+              </span>
+              <span className="tiny muted">Ví có: <strong>{(pointsBalance || 0).toLocaleString('vi-VN')} Điểm</strong></span>
+            </div>
+            <label className="row" style={{ gap: 8, cursor: 'pointer', fontSize: 13, userSelect: 'none' }}>
+              <input
+                type="checkbox"
+                checked={usePoints}
+                onChange={(e) => {
+                  setUsePoints(e.target.checked);
+                  setPointsToUse(e.target.checked ? Math.min(pointsBalance, rawTotal) : 0);
+                }}
+                disabled={pointsBalance <= 0}
+              />
+              <span>Dùng {pointsBalance > 0 ? Math.min(pointsBalance, rawTotal).toLocaleString('vi-VN') : 0} Điểm (Giảm {currency(Math.min(pointsBalance, rawTotal))})</span>
+            </label>
+          </div>
+
           <hr className="divider" style={{ margin: 0 }} />
           <div className="row-between small"><span className="muted">Tạm tính</span><span>{currency(subtotal)}</span></div>
           <div className="row-between small">
@@ -235,6 +274,12 @@ export default function CheckoutPage() {
           {discount > 0 && (
             <div className="row-between small" style={{ color: 'var(--danger)' }}>
               <span>Giảm giá ({appliedVoucher.code})</span><span>-{currency(discount)}</span>
+            </div>
+          )}
+          {usePoints && pointsDiscount > 0 && (
+            <div className="row-between small" style={{ color: '#eab308' }}>
+              <span className="row" style={{ gap: 4 }}><Zap size={13} fill="#eab308" /> Trừ Điểm Bookigma</span>
+              <span>-{currency(pointsDiscount)}</span>
             </div>
           )}
           <hr className="divider" style={{ margin: 0 }} />

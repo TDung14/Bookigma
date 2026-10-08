@@ -15,6 +15,9 @@ public interface BookRepository extends JpaRepository<Book, Long> {
     List<Book> findByStatusAndForSaleTrueOrderByCreatedAtDesc(Book.Status status);
 
     @EntityGraph(attributePaths = {"author", "category", "shop"})
+    List<Book> findByStatusOrderByCreatedAtDesc(Book.Status status);
+
+    @EntityGraph(attributePaths = {"author", "category", "shop"})
     List<Book> findByStatusAndForSaleTrueAndStockQuantityGreaterThan(Book.Status status, int minStock);
 
     @EntityGraph(attributePaths = {"author", "category", "shop"})

@@ -77,7 +77,7 @@ public class BookServiceImpl implements BookService {
     @Override
     @Transactional(readOnly = true)
     public List<BookResponseDto> getActiveBooks() {
-        return bookRepository.findByStatusAndForSaleTrueOrderByCreatedAtDesc(Book.Status.ACTIVE).stream()
+        return bookRepository.findByStatusOrderByCreatedAtDesc(Book.Status.ACTIVE).stream()
                 .filter(book -> !Boolean.TRUE.equals(book.getBlindBook()))
                 .map(DtoMapper::toBookDto)
                 .toList();

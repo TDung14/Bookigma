@@ -94,7 +94,7 @@ export function getRecommendations(input, limit = 8) {
   const hasHistory = profile.signals.length > 0;
 
   const scored = books
-    .filter((b) => b.status === 'active' && !profile.interacted.has(b.id))
+    .filter((b) => b.status === 'active' && b.forSale !== false && !profile.interacted.has(b.id))
     .map((book) => {
       const reasons = [];
       let score = 0;

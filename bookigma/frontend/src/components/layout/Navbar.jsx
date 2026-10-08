@@ -198,7 +198,7 @@ export default function Navbar() {
               to="/rewards"
               className="badge badge-green hide-sm"
               style={{ gap: 5, padding: '5px 10px' }}
-              title="Điểm Gigma của bạn"
+              title="Điểm Bookigma của bạn"
             >
               <Zap size={13} /> {(user.points || 0).toLocaleString('vi-VN')}
             </Link>
