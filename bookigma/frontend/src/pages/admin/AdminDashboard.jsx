@@ -1,3 +1,4 @@
+import { avatarSrc } from '../../lib/avatar';
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
@@ -199,7 +200,7 @@ export default function AdminDashboard() {
         authorName: 'Người dùng',
         username: '',
         avatarUrl:
-          'https://i.pravatar.cc/150?img=12',
+          '/default-avatar.svg',
         text: '',
         time: null,
       };
@@ -235,7 +236,7 @@ export default function AdminDashboard() {
         comment.avatarUrl ||
         comment.author?.avatar ||
         fallbackUser?.avatar ||
-        'https://i.pravatar.cc/150?img=12',
+        '/default-avatar.svg',
 
       /*
        * Quan trọng:
@@ -1305,7 +1306,7 @@ export default function AdminDashboard() {
                     <td>
                       <div className="row">
                         <img
-                          src={u.avatar}
+                          src={avatarSrc(u.avatar)}
                           alt=""
                           className="avatar"
                           style={{
@@ -1802,7 +1803,7 @@ export default function AdminDashboard() {
                         src={
                           author?.avatar ||
                           p.avatarUrl ||
-                          'https://i.pravatar.cc/150?img=12'
+                          '/default-avatar.svg'
                         }
                         alt=""
                         className="avatar"

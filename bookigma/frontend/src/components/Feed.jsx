@@ -1,3 +1,4 @@
+import { avatarSrc } from '../lib/avatar';
 import {
   useEffect,
   useState,
@@ -210,7 +211,7 @@ export default function Feed() {
 
                 <img
                   src={
-                    post.avatarUrl
+                    avatarSrc(post.avatarUrl)
                   }
                   alt=""
                   className="avatar"

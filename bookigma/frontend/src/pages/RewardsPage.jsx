@@ -1,3 +1,4 @@
+import { avatarSrc } from '../lib/avatar';
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
@@ -132,7 +133,7 @@ export default function RewardsPage() {
       >
         <div className="row-between" style={{ flexWrap: 'wrap', gap: 16 }}>
           <div className="row" style={{ gap: 14 }}>
-            <img src={user.avatar} alt="" className="avatar" style={{ width: 58, height: 58, border: '3px solid rgba(255,255,255,.4)' }} />
+            <img src={avatarSrc(user.avatar)} alt="" className="avatar" style={{ width: 58, height: 58, border: '3px solid rgba(255,255,255,.4)' }} />
             <div>
               <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
                 <h2 style={{ margin: 0, color: '#fff', fontSize: 20 }}>{user.name}</h2>

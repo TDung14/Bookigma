@@ -1,3 +1,4 @@
+import { avatarSrc } from '../../lib/avatar';
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
@@ -208,7 +209,7 @@ export default function ShopDashboard() {
     <div className="main-layout wide">
       <div className="page-head row-between" style={{ flexWrap: 'wrap' }}>
         <div className="row" style={{ gap: 14 }}>
-          <img src={shop?.avatar} alt="" className="avatar" style={{ width: 52, height: 52 }} />
+          <img src={avatarSrc(shop?.avatar)} alt="" className="avatar" style={{ width: 52, height: 52 }} />
           <div>
             <h1 className="row" style={{ gap: 8 }}><Store size={22} color="var(--accent-green)" /> Kênh người bán</h1>
             <p>{shop?.name} · {(shop?.followers || 0).toLocaleString('vi-VN')} người theo dõi · {shop?.rating}★</p>

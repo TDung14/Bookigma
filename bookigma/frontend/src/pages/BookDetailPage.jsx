@@ -1,3 +1,4 @@
+import { avatarSrc } from '../lib/avatar';
 import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import {
@@ -115,7 +116,7 @@ export default function BookDetailPage() {
 
           <div className="card">
             <div className="row" style={{ marginBottom: 10 }}>
-              <img src={shop?.avatar} alt="" className="avatar" style={{ width: 44, height: 44 }} />
+              <img src={avatarSrc(shop?.avatar)} alt="" className="avatar" style={{ width: 44, height: 44 }} />
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div className="row" style={{ gap: 6 }}>
                   <span className="strong small truncate">{shop?.name}</span>

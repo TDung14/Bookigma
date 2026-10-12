@@ -3,8 +3,7 @@ import { AuthContext } from './contexts';
 import { load, save } from '../lib/storage';
 import * as seed from '../data/seed';
 import { apiCall } from '../services/api';
-
-const DEFAULT_AVATAR = 'https://i.pravatar.cc/150?img=12';
+import { avatarSrc, DEFAULT_AVATAR } from '../lib/avatar';
 
 const AUTH_STORAGE_KEY = 'authUser';
 
@@ -63,7 +62,7 @@ function normalizeUser(apiUser) {
 
     name: apiUser.fullName || apiUser.username,
 
-    avatar: apiUser.avatarUrl || DEFAULT_AVATAR,
+    avatar: avatarSrc(apiUser.avatarUrl),
 
     status:
       apiUser.active === false

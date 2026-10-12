@@ -15,7 +15,7 @@ export const users = [
     active: true,
     points: 820,
     createdAt: '2025-01-15T08:00:00',
-    avatarUrl: 'https://i.pravatar.cc/150?img=12',
+    avatarUrl: '/default-avatar.svg',
   },
   {
     id: 2,
@@ -26,7 +26,7 @@ export const users = [
     active: true,
     points: 0,
     createdAt: '2025-01-12T09:00:00',
-    avatarUrl: 'https://i.pravatar.cc/150?img=32',
+    avatarUrl: '/default-avatar.svg',
   },
   {
     id: 3,
@@ -37,7 +37,7 @@ export const users = [
     active: true,
     points: 0,
     createdAt: '2024-12-01T12:00:00',
-    avatarUrl: 'https://i.pravatar.cc/150?img=5',
+    avatarUrl: '/default-avatar.svg',
   },
 ];
 

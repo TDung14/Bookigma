@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">Avatar mặc định</title>
+  <desc id="desc">Biểu tượng người màu trắng trên nền xanh nhạt, theo phong cách avatar mặc định phổ biến.</desc>
+  <defs>
+    <clipPath id="circle">
+      <circle cx="256" cy="256" r="256"/>
+    </clipPath>
+  </defs>
+  <g clip-path="url(#circle)">
+    <rect width="512" height="512" fill="#E4E6EB"/>
+    <circle cx="256" cy="184" r="91" fill="#FFFFFF"/>
+    <path d="M76 512c8-112 82-181 180-181s172 69 180 181H76Z" fill="#FFFFFF"/>
+  </g>
+</svg>

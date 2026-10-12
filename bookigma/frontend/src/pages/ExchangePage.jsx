@@ -1,3 +1,4 @@
+import { avatarSrc } from '../lib/avatar';
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
@@ -200,7 +201,7 @@ export default function ExchangePage() {
                         <span className="badge badge-green" style={{ marginBottom: 6 }}>{item.condition}</span>
                         <h3 className="clamp-2" style={{ margin: '0 0 4px', fontSize: 16 }}>{item.bookTitle}</h3>
                         <div className="row tiny muted" style={{ gap: 6 }}>
-                          <img src={item.owner?.avatar} alt="" className="avatar" style={{ width: 18, height: 18 }} />
+                          <img src={avatarSrc(item.owner?.avatar)} alt="" className="avatar" style={{ width: 18, height: 18 }} />
                           <span className="truncate">{item.owner?.name} · {timeAgo(item.createdAt)}</span>
                         </div>
                       </div>
@@ -328,7 +329,7 @@ export default function ExchangePage() {
                     const ost = OFFER_STATUS[offer.status];
                     return (
                       <div key={offer.id} className="row" style={{ alignItems: 'flex-start', gap: 10, padding: '10px 0', borderTop: '1px solid var(--border-color)', flexWrap: 'wrap' }}>
-                        <img src={offer.sender?.avatar} alt="" className="avatar" style={{ width: 34, height: 34 }} />
+                        <img src={avatarSrc(offer.sender?.avatar)} alt="" className="avatar" style={{ width: 34, height: 34 }} />
                         <div style={{ flex: '1 1 220px', minWidth: 0 }}>
                           <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
                             <span className="small strong">{offer.sender?.name}</span>

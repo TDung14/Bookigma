@@ -1,3 +1,4 @@
+import { avatarSrc } from '../lib/avatar';
 import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { CheckCircle2, ChevronLeft, Circle, Gift, MapPin, MessageSquare, Receipt, Sparkles } from 'lucide-react';
@@ -216,7 +217,7 @@ export default function OrderDetailPage() {
               <>
                 <hr className="divider" />
                 <div className="row" style={{ marginBottom: 10 }}>
-                  <img src={shop.avatar} alt="" className="avatar" style={{ width: 34, height: 34 }} />
+                  <img src={avatarSrc(shop.avatar)} alt="" className="avatar" style={{ width: 34, height: 34 }} />
                   <div className="small strong truncate">{shop.name}</div>
                 </div>
                 <button className="btn btn-ghost btn-sm btn-block" onClick={chatShop}>

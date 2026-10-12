@@ -1,3 +1,4 @@
+import { avatarSrc } from '../lib/avatar';
 import { useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import {
@@ -118,7 +119,7 @@ export default function FeedPage() {
           {/* Soạn bài */}
           <form className="card" onSubmit={submitPost}>
             <div className="row" style={{ alignItems: 'flex-start' }}>
-              <img src={user?.avatar} alt="" className="avatar" style={{ width: 40, height: 40 }} />
+              <img src={avatarSrc(user?.avatar)} alt="" className="avatar" style={{ width: 40, height: 40 }} />
               <textarea
                 className="textarea"
                 style={{ minHeight: 52, borderRadius: 18 }}
@@ -166,7 +167,7 @@ export default function FeedPage() {
             const author = {
               id: post.authorId,
               name: post.authorName || post.username || localAuthor?.name || 'Người dùng',
-              avatar: post.avatarUrl || localAuthor?.avatar || 'https://i.pravatar.cc/150?img=12',
+              avatar: post.avatarUrl || localAuthor?.avatar || '/default-avatar.svg',
               role: localAuthor?.role || 'user',
             };
             const book = post.bookId ? bookById(post.bookId) : null;
@@ -177,7 +178,7 @@ export default function FeedPage() {
               <article key={post.id} className="card">
                 <div className="row-between" style={{ marginBottom: 12 }}>
                   <div className="row">
-                    <img src={author?.avatar} alt="" className="avatar" style={{ width: 42, height: 42 }} />
+                    <img src={avatarSrc(author?.avatar)} alt="" className="avatar" style={{ width: 42, height: 42 }} />
                     <div>
                       <div className="row" style={{ gap: 6 }}>
                         <h4 style={{ margin: 0, fontSize: 15 }}>{author?.name}</h4>
@@ -267,10 +268,10 @@ export default function FeedPage() {
                     {post.comments.map((c) => {
                       const cAuthor = userById(c.authorId);
                       const commentName = c.authorName || cAuthor?.name || c.username || 'Người dùng';
-                      const commentAvatar = c.avatarUrl || cAuthor?.avatar || 'https://i.pravatar.cc/150?img=12';
+                      const commentAvatar = c.avatarUrl || cAuthor?.avatar || '/default-avatar.svg';
                       return (
                         <div key={c.id} className="row" style={{ alignItems: 'flex-start', gap: 8 }}>
-                          <img src={commentAvatar} alt="" className="avatar" style={{ width: 30, height: 30 }} />
+                          <img src={avatarSrc(commentAvatar)} alt="" className="avatar" style={{ width: 30, height: 30 }} />
                           <div style={{ background: 'var(--bg-soft)', borderRadius: 12, padding: '8px 12px', flex: 1 }}>
                             <div className="tiny strong">{commentName}</div>
                             <div className="small">{c.text}</div>
@@ -281,7 +282,7 @@ export default function FeedPage() {
                     })}
 
                     <div className="row" style={{ gap: 8 }}>
-                      <img src={user?.avatar} alt="" className="avatar" style={{ width: 30, height: 30 }} />
+                      <img src={avatarSrc(user?.avatar)} alt="" className="avatar" style={{ width: 30, height: 30 }} />
                       <input
                         className="input"
                         style={{ borderRadius: 18, height: 36 }}

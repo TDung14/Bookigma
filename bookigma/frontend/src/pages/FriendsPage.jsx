@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { MessageSquare, Search, UserCheck, UserMinus, UserPlus, Users } from 'lucide-react';
 import { useApp, useAuth, useToast } from '../hooks/useStore';
 
-const DEFAULT_AVATAR = 'https://i.pravatar.cc/150?img=12';
+import { avatarSrc, DEFAULT_AVATAR } from '../lib/avatar';
 
 export default function FriendsPage() {
   const navigate = useNavigate();
@@ -37,7 +37,7 @@ export default function FriendsPage() {
 
   const personDisplayName = (person) => person?.fullName || person?.name || person?.username || 'Người dùng';
   const personUsername = (person) => person?.username || person?.email || '';
-  const personAvatar = (person) => person?.avatarUrl || person?.avatar || DEFAULT_AVATAR;
+  const personAvatar = (person) => avatarSrc(person?.avatarUrl || person?.avatar || DEFAULT_AVATAR);
 
   const friends = useMemo(() => people.filter((p) => isFriend(userId, p.id)), [people, userId, isFriend]);
   const pendingReceived = useMemo(() => people.filter((p) => hasReceivedFriendRequest(userId, p.id)), [people, userId, hasReceivedFriendRequest]);

@@ -1,5 +1,25 @@
 const API_URL = `${import.meta.env.VITE_API_URL || 'http://localhost:8080'}/api`;
 
+
+/** Upload ảnh đại diện bằng multipart/form-data, không đặt Content-Type thủ công. */
+export async function uploadAvatar(file, userId) {
+  if (!file || !userId) throw new Error('Thiếu ảnh hoặc thông tin tài khoản.');
+  const formData = new FormData();
+  formData.append('file', file);
+  const response = await fetch(`${API_URL}/users/${userId}/avatar`, {
+    method: 'POST',
+    headers: { 'X-User-Id': String(userId) },
+    body: formData,
+  });
+  const text = await response.text();
+  let data = {};
+  if (text) {
+    try { data = JSON.parse(text); } catch { data = { message: text }; }
+  }
+  if (!response.ok) throw new Error(data?.message || `Upload ảnh thất bại (HTTP ${response.status}).`);
+  return data;
+}
+
 export function getApiErrorMessage(error) {
   if (!error) {
     return 'Không thể thực hiện yêu cầu.';

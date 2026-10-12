@@ -4,7 +4,8 @@
  */
 
 export const DEFAULT_COVER = 'https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?w=400&q=80';
-export const DEFAULT_AVATAR = 'https://i.pravatar.cc/150?img=12';
+import { avatarSrc, DEFAULT_AVATAR } from '../lib/avatar';
+export { DEFAULT_AVATAR };
 
 const num = (value) => (value === null || value === undefined ? 0 : Number(value));
 const lower = (value) => (value ? String(value).toLowerCase() : null);
@@ -19,7 +20,7 @@ export function toTime(value) {
   return Number.isNaN(time) ? Date.now() : time;
 }
 
-const toUser = (dto) => (dto ? { id: dto.id, name: dto.name, avatar: dto.avatarUrl || DEFAULT_AVATAR } : null);
+const toUser = (dto) => (dto ? { id: dto.id, name: dto.name, avatar: avatarSrc(dto.avatarUrl) } : null);
 
 export function toBook(dto) {
   const book = {
@@ -56,7 +57,7 @@ export const toShop = (dto) => ({
   id: dto.id,
   name: dto.name,
   ownerId: dto.ownerId,
-  avatar: dto.avatarUrl || DEFAULT_AVATAR,
+  avatar: avatarSrc(dto.avatarUrl),
   description: dto.description || '',
   rating: num(dto.rating),
   followers: dto.followers ?? 0,

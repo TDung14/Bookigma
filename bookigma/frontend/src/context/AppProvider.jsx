@@ -1,3 +1,4 @@
+import { avatarSrc, DEFAULT_AVATAR } from '../lib/avatar';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { AppContext } from './contexts';
 import * as seed from '../data/seed';
@@ -108,7 +109,7 @@ export function AppProvider({ children }) {
     authorId: p.userId,
     authorName: p.authorName || p.username,
     username: p.username,
-    avatarUrl: p.avatarUrl || 'https://i.pravatar.cc/150?img=12',
+    avatarUrl: p.avatarUrl || DEFAULT_AVATAR,
     content: p.content,
     image: p.imageUrl || null,
     bookId: p.bookId ?? null,
@@ -118,7 +119,7 @@ export function AppProvider({ children }) {
     likedByMe: Boolean(p.likedByMe),
     comments: Array.isArray(p.comments) ? p.comments.map((c) => ({
       id: c.id, authorId: c.userId, authorName: c.authorName || c.username, username: c.username,
-      avatarUrl: c.avatarUrl || 'https://i.pravatar.cc/150?img=12', text: c.content,
+      avatarUrl: c.avatarUrl || DEFAULT_AVATAR, text: c.content,
       time: c.createdAt ? new Date(c.createdAt).getTime() : Date.now(), parentCommentId: c.parentCommentId,
     })) : [],
     hidden: false,
@@ -265,7 +266,7 @@ export function AppProvider({ children }) {
         ...u,
         id: String(u.id),
         name: u.fullName || u.username || 'Người dùng',
-        avatar: u.avatarUrl || `https://i.pravatar.cc/150?u=${encodeURIComponent(u.email || u.username || u.id)}`,
+        avatar: avatarSrc(u.avatarUrl),
         role: String(u.role || 'USER').toLowerCase(),
         status: u.active === false ? 'suspended' : 'active',
         points: 0,
@@ -364,7 +365,7 @@ export function AppProvider({ children }) {
       ...userData,
       id: String(userData.id),
       name: userData.name || userData.fullName || userData.username || 'Người dùng',
-      avatar: userData.avatar || userData.avatarUrl || 'https://i.pravatar.cc/150?img=12',
+      avatar: avatarSrc(userData.avatar || userData.avatarUrl),
       role: userData.role || 'user',
       status: userData.status || 'active',
       badge: userData.badge || 'Thành viên',
@@ -394,7 +395,7 @@ export function AppProvider({ children }) {
           ...u,
           id: String(u.id),
           name: u.fullName || u.username || 'Người dùng',
-          avatar: u.avatarUrl || `https://i.pravatar.cc/150?u=${encodeURIComponent(u.email || u.username || u.id)}`,
+          avatar: avatarSrc(u.avatarUrl),
           role: (u.role || 'user').toLowerCase(),
           status: u.active === false ? 'suspended' : 'active',
           badge: 'Thành viên',
@@ -478,7 +479,7 @@ export function AppProvider({ children }) {
             fullName: u.fullName,
             name: u.fullName || u.username || existing.name || 'Người dùng',
             avatarUrl: u.avatarUrl || existing.avatarUrl || null,
-            avatar: u.avatarUrl || existing.avatar || `https://i.pravatar.cc/150?u=${encodeURIComponent(u.username || u.id)}`,
+            avatar: avatarSrc(u.avatarUrl || existing.avatar),
             bio: u.bio || '',
             role: String(u.role || existing.role || 'USER').toLowerCase(),
           });
@@ -930,7 +931,7 @@ export function AppProvider({ children }) {
       badge: 'Thành viên mới',
       booksRead: 0,
       bio: '',
-      avatar: `https://i.pravatar.cc/150?u=${encodeURIComponent(data.email)}`,
+      avatar: DEFAULT_AVATAR,
       joinedAt: new Date().toISOString().slice(0, 10),
       ...data,
     };

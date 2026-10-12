@@ -1,3 +1,4 @@
+import { avatarSrc } from '../lib/avatar';
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Award, Flame, Star, Trophy } from 'lucide-react';
@@ -96,7 +97,7 @@ export default function LeaderboardPage() {
               >
                 {i + 1}
               </span>
-              <img src={u.avatar} alt="" className="avatar" style={{ width: 38, height: 38 }} />
+              <img src={avatarSrc(u.avatar)} alt="" className="avatar" style={{ width: 38, height: 38 }} />
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div className="small strong truncate">{u.name}</div>
                 <div className="tiny muted">{u.booksRead} cuốn đã đọc</div>
@@ -120,7 +121,7 @@ export default function LeaderboardPage() {
           {topBuyers.map(({ user: u, total }, i) => (
             <div key={u.id} className="row" style={{ padding: '10px 0', borderBottom: '1px solid var(--border-color)', gap: 12 }}>
               <span className="strong" style={{ width: 26, textAlign: 'center', color: i < 3 ? MEDALS[i] : 'var(--text-sub)' }}>{i + 1}</span>
-              <img src={u.avatar} alt="" className="avatar" style={{ width: 38, height: 38 }} />
+              <img src={avatarSrc(u.avatar)} alt="" className="avatar" style={{ width: 38, height: 38 }} />
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div className="small strong truncate">{u.name}</div>
                 <div className="tiny muted">{u.badge}</div>

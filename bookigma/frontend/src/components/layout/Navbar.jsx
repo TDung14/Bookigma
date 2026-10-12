@@ -1,3 +1,4 @@
+import { avatarSrc } from '../../lib/avatar';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, NavLink, useNavigate } from 'react-router-dom';
 import {
@@ -240,7 +241,7 @@ export default function Navbar() {
               width={250}
               button={
                 <button className="btn-icon row" style={{ gap: 6, padding: 4 }}>
-                  <img src={user.avatar} alt="" className="avatar" style={{ width: 32, height: 32 }} />
+                  <img src={avatarSrc(user.avatar)} alt="" className="avatar" style={{ width: 32, height: 32 }} />
                   <ChevronDown size={15} />
                 </button>
               }
@@ -275,7 +276,7 @@ export default function Navbar() {
         <div className="chat-mini-dock">
           <div className="chat-mini-header">
             <div className="row" style={{ gap: 8 }}>
-              <img src={activePartner?.avatar} alt="" className="avatar" style={{ width: 28, height: 28 }} />
+              <img src={avatarSrc(activePartner?.avatar)} alt="" className="avatar" style={{ width: 28, height: 28 }} />
               <div>
                 <div className="small strong" style={{ lineHeight: 1.2 }}>{activePartner?.name || 'Hội thoại'}</div>
                 <div className="tiny muted">{activeConv.messages.length} tin nhắn</div>
@@ -311,7 +312,7 @@ export default function Navbar() {
                     className={`chat-mini-item ${conv.id === activeConv.id ? 'active' : ''}`}
                     onClick={() => setChatTargetId(conv.id)}
                   >
-                    <img src={other.avatar} alt="" className="avatar" style={{ width: 24, height: 24 }} />
+                    <img src={avatarSrc(other.avatar)} alt="" className="avatar" style={{ width: 24, height: 24 }} />
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div className="tiny strong truncate">{other.name}</div>
                       <div className="tiny muted truncate">{last ? last.text : 'Bắt đầu chat'}</div>

@@ -4,7 +4,8 @@ import { BookOpen, Calendar, Clock, Flame, Package, ShoppingBag, Pencil, Save, X
 import { useApp, useAuth, useToast } from '../hooks/useStore';
 import { currency, dateOnly, duration, timeAgo } from '../lib/format';
 import { ProgressBar, StatCard } from '../components/common/ui';
-import { apiCall } from '../services/api';
+import { apiCall, uploadAvatar } from '../services/api';
+import { avatarSrc } from '../lib/avatar';
 
 export default function ProfilePage() {
   const { userId } = useParams();
@@ -15,6 +16,9 @@ export default function ProfilePage() {
   const [form, setForm] = useState({ email: '', fullName: '', bio: '', avatarUrl: '' });
   const [passwordForm, setPasswordForm] = useState({ currentPassword: '', newPassword: '', confirmPassword: '' });
   const [changingPassword, setChangingPassword] = useState(false);
+  const [avatarFile, setAvatarFile] = useState(null);
+  const [avatarPreview, setAvatarPreview] = useState('');
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
 
   const isOwnProfile = !userId || String(userId) === String(authUser?.id ?? '');
   const profileUser = useMemo(() => {
@@ -92,17 +96,48 @@ export default function ProfilePage() {
 
   const submitProfile = async (e) => {
     e.preventDefault();
-    const result = await updateProfile(form);
+    let avatarUrl = form.avatarUrl;
+    if (avatarFile) {
+      setUploadingAvatar(true);
+      try {
+        const uploaded = await uploadAvatar(avatarFile, authUser.id);
+        avatarUrl = uploaded.avatarUrl;
+      } catch (error) {
+        setUploadingAvatar(false);
+        return toast(error.message || 'Không thể tải ảnh đại diện lên.', 'error');
+      }
+      setUploadingAvatar(false);
+    }
+    const result = await updateProfile({ ...form, avatarUrl });
     if (!result.ok) return toast(result.error, 'error');
+    setAvatarFile(null);
+    setAvatarPreview('');
     setEditing(false);
     toast('Đã cập nhật thông tin cá nhân.');
+  };
+
+  const handleAvatarFile = (event) => {
+    const file = event.target.files?.[0] || null;
+    if (!file) return;
+    if (!['image/jpeg', 'image/png', 'image/webp', 'image/gif'].includes(file.type)) {
+      event.target.value = '';
+      toast('Chỉ chấp nhận ảnh JPG, PNG, WEBP hoặc GIF.', 'error');
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      event.target.value = '';
+      toast('Ảnh đại diện không được vượt quá 5 MB.', 'error');
+      return;
+    }
+    setAvatarFile(file);
+    setAvatarPreview(URL.createObjectURL(file));
   };
 
   return (
     <div className="main-layout" style={{ maxWidth: 1000 }}>
       <div className="card" style={{ marginBottom: 20 }}>
         <div className="row" style={{ gap: 18, flexWrap: 'wrap' }}>
-          <img src={profileUser.avatar} alt="" className="avatar" style={{ width: 86, height: 86 }} />
+          <img src={avatarPreview || avatarSrc(profileUser.avatar)} alt="Ảnh đại diện" className="avatar" style={{ width: 86, height: 86, objectFit: 'cover', background: '#fff' }} />
           <div style={{ flex: 1, minWidth: 220 }}>
             <h1 style={{ margin: '0 0 4px', fontSize: 23 }}>{profileUser.name}</h1>
             <p className="small muted" style={{ margin: '0 0 8px' }}>{profileUser.email || 'Thành viên Bookigma'}</p>
@@ -140,16 +175,18 @@ export default function ProfilePage() {
                 <input className="input" type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} required />
               </div>
               <div className="field">
-                <label className="label">Avatar URL</label>
-                <input className="input" value={form.avatarUrl} onChange={(e) => setForm({ ...form, avatarUrl: e.target.value })} placeholder="https://..." />
+                <label className="label">Ảnh đại diện</label>
+                <input className="input" type="file" accept="image/png,image/jpeg,image/webp,image/gif" onChange={handleAvatarFile} />
+                <p className="tiny muted" style={{ margin: '5px 0 0' }}>Chọn ảnh từ máy tính (JPG, PNG, WEBP hoặc GIF; tối đa 5 MB). Không nhập link ảnh.</p>
+                {avatarFile && <button type="button" className="btn btn-ghost btn-sm" style={{ marginTop: 6 }} onClick={() => { setAvatarFile(null); setAvatarPreview(''); }}>Hủy chọn ảnh</button>}
               </div>
             </div>
             <div className="field" style={{ marginTop: 12 }}>
               <label className="label">Giới thiệu</label>
               <textarea className="textarea" value={form.bio} onChange={(e) => setForm({ ...form, bio: e.target.value })} rows={4} />
             </div>
-            <button className="btn btn-primary" type="submit" disabled={loading} style={{ marginTop: 12 }}>
-              <Save size={15} /> {loading ? 'Đang lưu...' : 'Lưu thay đổi'}
+            <button className="btn btn-primary" type="submit" disabled={loading || uploadingAvatar} style={{ marginTop: 12 }}>
+              <Save size={15} /> {loading || uploadingAvatar ? 'Đang lưu...' : 'Lưu thay đổi'}
             </button>
             </form>
 

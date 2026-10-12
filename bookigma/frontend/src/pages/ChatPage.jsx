@@ -1,3 +1,4 @@
+import { avatarSrc } from '../lib/avatar';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { Flag, MessageSquare, Paperclip, Plus, Search, Send, Smile, X } from 'lucide-react';
@@ -64,36 +65,22 @@ export default function ChatPage() {
     if (bodyRef.current) bodyRef.current.scrollTop = bodyRef.current.scrollHeight;
   }, [activeMessageCount]);
 
-  const [sending, setSending] = useState(false);
-
-  const submit = async (e) => {
+  const submit = (e) => {
     e?.preventDefault();
     const text = draft.trim();
-    if (!text || !active || sending) return;
-
-    setSending(true);
-    try {
-      await sendMessage(active.id, user.id, text);
-      setDraft('');
-      setShowEmoji(false);
-    } catch (error) {
-      toast(error?.message || 'Không gửi được tin nhắn. Vui lòng thử lại.', 'error');
-    } finally {
-      setSending(false);
-    }
+    if (!text || !active) return;
+    sendMessage(active.id, user.id, text);
+    setDraft('');
+    setShowEmoji(false);
   };
 
   const startChat = async (otherId) => {
-    try {
-      const id = await findOrCreateConversation(user.id, otherId);
-      setShowNew(false);
-      setGroupMode(false);
-      setGroupMembers([]);
-      setGroupName('');
-      navigate(`/chat/${id}`);
-    } catch (error) {
-      toast(error?.message || 'Không thể tạo cuộc trò chuyện. Vui lòng thử lại.', 'error');
-    }
+    const id = await findOrCreateConversation(user.id, otherId);
+    setShowNew(false);
+    setGroupMode(false);
+    setGroupMembers([]);
+    setGroupName('');
+    navigate(`/chat/${id}`);
   };
 
   const friendUsers = useMemo(
@@ -174,7 +161,7 @@ export default function ChatPage() {
                   style={{ alignItems: 'flex-start', padding: 10 }}
                   onClick={() => navigate(`/chat/${c.id}`)}
                 >
-                  <img src={other?.avatar} alt="" className="avatar" style={{ width: 42, height: 42 }} />
+                  <img src={avatarSrc(other?.avatar)} alt="" className="avatar" style={{ width: 42, height: 42 }} />
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div className="row-between" style={{ gap: 6 }}>
                       <span className="small strong truncate">{other?.name}</span>
@@ -217,7 +204,7 @@ export default function ChatPage() {
                 style={{ background: 'transparent', border: 'none', padding: 0, cursor: 'pointer', textAlign: 'left' }}
                 aria-label={`Xem trang cá nhân của ${partner?.name || 'người dùng'}`}
               >
-                <img src={partner?.avatar} alt="" className="avatar" style={{ width: 40, height: 40 }} />
+                <img src={avatarSrc(partner?.avatar)} alt="" className="avatar" style={{ width: 40, height: 40 }} />
                 <div>
                   <div className="small strong">{partner?.name}</div>
                   <div className="tiny muted row" style={{ gap: 5 }}>
@@ -272,7 +259,7 @@ export default function ChatPage() {
                   value={draft}
                   onChange={(e) => setDraft(e.target.value)}
                 />
-                <button type="submit" className="btn btn-primary" style={{ borderRadius: 20 }} disabled={!draft.trim() || sending}>
+                <button type="submit" className="btn btn-primary" style={{ borderRadius: 20 }} disabled={!draft.trim()}>
                   <Send size={17} />
                 </button>
               </div>
@@ -298,7 +285,7 @@ export default function ChatPage() {
                   {friendUsers.map((u) => (
                     <label key={u.id} className="list-item" style={{ justifyContent: 'space-between', padding: '8px 10px' }}>
                       <div className="row" style={{ minWidth: 0 }}>
-                        <img src={u.avatar} alt="" className="avatar" style={{ width: 32, height: 32 }} />
+                        <img src={avatarSrc(u.avatar)} alt="" className="avatar" style={{ width: 32, height: 32 }} />
                         <div style={{ minWidth: 0 }}>
                           <div className="small strong truncate">{u.name}</div>
                           <div className="tiny muted">{u.role === 'shop' ? 'Đối tác bán hàng' : u.badge}</div>
@@ -329,7 +316,7 @@ export default function ChatPage() {
               .filter((u) => u.id !== user.id && u.role !== 'admin')
               .map((u) => (
                 <button key={u.id} className="list-item" onClick={() => startChat(u.id)}>
-                  <img src={u.avatar} alt="" className="avatar" style={{ width: 38, height: 38 }} />
+                  <img src={avatarSrc(u.avatar)} alt="" className="avatar" style={{ width: 38, height: 38 }} />
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div className="small strong truncate">{u.name}</div>
                     <div className="tiny muted">{u.role === 'shop' ? 'Đối tác bán hàng' : u.badge}</div>

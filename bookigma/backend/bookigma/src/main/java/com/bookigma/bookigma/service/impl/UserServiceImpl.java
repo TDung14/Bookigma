@@ -204,6 +204,17 @@ public class UserServiceImpl implements UserService {
 
     @Override
     @Transactional
+    public UserProfileDto updateUserAvatar(Long userId, String avatarUrl) {
+        User user = findUser(userId);
+        if (avatarUrl == null || !avatarUrl.startsWith("/uploads/avatars/")) {
+            throw new IllegalArgumentException("Đường dẫn ảnh đại diện không hợp lệ.");
+        }
+        user.setAvatarUrl(avatarUrl);
+        return toDto(userRepository.save(user));
+    }
+
+    @Override
+    @Transactional
     public void forgotPassword(String email) {
         if (email == null || email.isBlank()) {
             throw new IllegalArgumentException("Email không được để trống.");

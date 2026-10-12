@@ -12,6 +12,7 @@ public interface UserService {
     List<UserProfileDto> getAllUsers();
     UserProfileDto getUserProfile(Long userId);
     UserProfileDto updateUserProfile(Long userId, UserProfileDto dto);
+    UserProfileDto updateUserAvatar(Long userId, String avatarUrl);
 
     void forgotPassword(String email);
     void changePassword(Long userId, ChangePasswordRequest request);
