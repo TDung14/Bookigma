@@ -174,7 +174,7 @@ export default function RewardsPage() {
 
       <div className="grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', marginBottom: 20 }}>
         <StatCard icon={Zap} label="Ví Điểm Bookigma" value={(pointsData?.balance ?? user.points ?? 0).toLocaleString('vi-VN')} sub="Dùng giảm tiền đơn hàng" />
-        <StatCard icon={Flame} label="Tích lũy cả đời" value={`${(pointsData?.lifetimePoints ?? 0).toLocaleString('vi-VN')} Điểm`} sub={`Còn ${pointsData?.pointsToNextTier || 0} điểm lên hạng tiếp`} color="var(--warning)" bg="var(--warning-soft)" />
+        <StatCard icon={Flame} label="Điểm tích lũy" value={`${(pointsData?.lifetimePoints ?? 0).toLocaleString('vi-VN')} Điểm`} sub={`Còn ${pointsData?.pointsToNextTier || 0} điểm lên hạng tiếp`} color="var(--warning)" bg="var(--warning-soft)" />
         <StatCard icon={Award} label="Hạng hội viên" value={pointsData?.currentTier || 'Tập Sự'} sub={`Tiếp theo: ${pointsData?.nextTier || 'Max'}`} color="var(--info)" bg="var(--info-soft)" />
         <StatCard icon={Clock} label="Thời gian đọc" value={duration(stats.secondsRead)} sub={`${stats.booksFinished} cuốn đã xong`} color="var(--purple)" bg="var(--purple-soft)" />
       </div>
