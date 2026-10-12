@@ -23,7 +23,7 @@ const LEFT_MENU = [
 ];
 
 export default function FeedPage() {
-  const { posts, userById, toggleLike, addComment, addPost, books, getProgress, earnPoints, trackDaily } = useApp();
+  const { posts, userById, toggleLike, addComment, addPost, books, getProgress, trackDaily } = useApp();
   const { user } = useAuth();
   const toast = useToast();
   const navigate = useNavigate();
@@ -87,7 +87,6 @@ export default function FeedPage() {
     setDraftImage(null);
     setDraftBookId('');
     setImageInputKey((key) => key + 1);
-    earnPoints(user.id, POINT_RULES.createPost);
     trackDaily(user.id, 'social', 1);
     toast(`Đã đăng bài — nhận ${POINT_RULES.createPost} điểm Bookigma.`);
   };
@@ -99,7 +98,6 @@ export default function FeedPage() {
     try {
       await addComment(postId, { text });
       setCommentDraft((d) => ({ ...d, [postId]: '' }));
-      earnPoints(user.id, POINT_RULES.createComment);
       trackDaily(user.id, 'social', 1);
     } catch (error) {
       toast(error.message || 'Không thể gửi bình luận.', 'error');

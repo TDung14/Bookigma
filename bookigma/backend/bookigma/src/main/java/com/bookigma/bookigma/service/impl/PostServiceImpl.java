@@ -13,6 +13,7 @@ import com.bookigma.bookigma.repository.PostRepository;
 import com.bookigma.bookigma.repository.UserRepository;
 import com.bookigma.bookigma.service.PostService;
 import com.bookigma.bookigma.service.NotificationService;
+import com.bookigma.bookigma.service.PointService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -26,17 +27,20 @@ public class PostServiceImpl implements PostService {
     private final PostReactionRepository reactionRepository;
     private final CommentRepository commentRepository;
     private final NotificationService notificationService;
+    private final PointService pointService;
 
     public PostServiceImpl(PostRepository postRepository,
                            UserRepository userRepository,
                            PostReactionRepository reactionRepository,
                            CommentRepository commentRepository,
-                           NotificationService notificationService) {
+                           NotificationService notificationService,
+                           PointService pointService) {
         this.postRepository = postRepository;
         this.userRepository = userRepository;
         this.reactionRepository = reactionRepository;
         this.commentRepository = commentRepository;
         this.notificationService = notificationService;
+        this.pointService = pointService;
     }
 
     @Override
@@ -82,7 +86,12 @@ public class PostServiceImpl implements PostService {
                 .visibility(visibility)
                 .build();
 
-        return toDto(postRepository.save(post), currentUserId);
+        Post savedPost = postRepository.save(post);
+        // Cộng điểm ở backend để Ví Điểm Bookigma được lưu trong database,
+        // không phụ thuộc localStorage/frontend.
+        pointService.addPoints(currentUserId, 15, "CREATE_POST",
+                "POST:" + savedPost.getId(), "Đăng bài viết");
+        return toDto(savedPost, currentUserId);
     }
 
     @Override
@@ -117,6 +126,9 @@ public class PostServiceImpl implements PostService {
         Comment comment = Comment.builder().post(post).user(user).parentComment(parent)
                 .content(content.trim()).build();
         Comment saved = commentRepository.save(comment);
+        // Thưởng điểm bình luận trực tiếp trên backend.
+        pointService.addPoints(currentUserId, 5, "CREATE_COMMENT",
+                "COMMENT:" + saved.getId(), "Viết bình luận");
 
         // Người đăng bài nhận thông báo khi một user khác bình luận.
         if (!post.getUser().getId().equals(user.getId())) {
