@@ -101,6 +101,12 @@ export default function FriendsPage() {
     toast(ok ? 'Đã từ chối lời mời kết bạn.' : 'Không thể từ chối lời mời.', ok ? 'success' : 'info');
   };
 
+  const handleFollow = async (person) => {
+    const wasFollowing = isFollowing(userId, person.id);
+    const ok = await toggleFollow(userId, person.id);
+    toast(ok ? (wasFollowing ? 'Đã hủy theo dõi.' : 'Đã theo dõi người dùng.') : 'Không thể cập nhật theo dõi. Vui lòng thử lại.', ok ? 'success' : 'error');
+  };
+
   if (!user) return <div className="main-layout" style={{ padding: 20 }}><div className="card">Đang tải thông tin người dùng...</div></div>;
 
   const PersonRow = ({ person, action }) => (
@@ -202,7 +208,7 @@ export default function FriendsPage() {
                         {friend ? <UserMinus size={14} /> : <UserPlus size={14} />}
                         {friend ? 'Hủy kết bạn' : sent ? 'Hủy lời mời' : 'Kết bạn'}
                       </button>}
-                    <button className={`btn btn-sm ${follow ? 'btn-ghost' : 'btn-soft'}`} onClick={() => toggleFollow(userId, person.id)}>
+                    <button className={`btn btn-sm ${follow ? 'btn-ghost' : 'btn-soft'}`} onClick={() => handleFollow(person)}>
                       <UserCheck size={14} /> {follow ? 'Hủy theo dõi' : 'Theo dõi'}
                     </button>
                     <button className="btn btn-sm btn-ghost" onClick={() => messageUser(person.id)}><MessageSquare size={14} /> Nhắn tin</button>

@@ -12,6 +12,7 @@ import * as adminApi from '../services/adminApi';
 import * as reportApi from '../services/reportApi';
 import * as chatApi from '../lib/chatApi';
 import * as friendApi from '../services/friendApi';
+import * as followApi from '../services/followApi';
 import { useAuth } from '../hooks/useStore';
 
 /**
@@ -94,7 +95,7 @@ export function AppProvider({ children }) {
   const [redemptions, setRedemptions] = useState(() => load('redemptions', seed.redemptions));
   // Không khôi phục social/followings demo từ localStorage.
   // Xóa riêng 2 key dữ liệu ảo cũ nếu chúng còn tồn tại; các localStorage khác giữ nguyên.
-  const [social, setSocial] = useState({ friends: {}, followings: {} });
+  const [social, setSocial] = useState({ friends: {}, followings: {}, followers: {} });
 
   useEffect(() => {
     try {
@@ -427,10 +428,10 @@ export function AppProvider({ children }) {
 
   const getFollowing = useCallback((uId) => social.followings?.[uId] || [], [social]);
 
-  const getFollowers = useCallback(
-    (uId) => Object.entries(social.followings || {}).filter(([, ids]) => ids.includes(uId)).map(([id]) => id),
-    [social]
-  );
+  const getFollowers = useCallback((uId) => {
+    if (String(uId) === String(userId)) return social.followers?.[uId] || social.followers?.[String(uId)] || [];
+    return Object.entries(social.followings || {}).filter(([, ids]) => (ids || []).some((id) => String(id) === String(uId))).map(([id]) => id);
+  }, [social, userId]);
 
   const isFriend = useCallback(
     (uId, otherId) => String(uId) !== String(otherId) && getFriends(uId).some((id) => String(id) === String(otherId)),
@@ -533,19 +534,40 @@ export function AppProvider({ children }) {
     }
   }, [refreshFriendState]);
 
-  const toggleFollow = useCallback((uId, otherId) => {
-    if (!uId || !otherId || uId === otherId) return false;
-    let nextValue = false;
-    setSocial((prev) => {
-      const nextFollowing = { ...(prev.followings || {}) };
-      const mine = new Set(nextFollowing[uId] || []);
-      if (mine.has(otherId)) { mine.delete(otherId); nextValue = false; }
-      else { mine.add(otherId); nextValue = true; }
-      nextFollowing[uId] = Array.from(mine);
-      return { ...prev, followings: nextFollowing };
-    });
-    return nextValue;
-  }, []);
+  const refreshFollowState = useCallback(async () => {
+    if (!userId) {
+      setSocial((prev) => ({ ...prev, followings: {}, followers: {} }));
+      return;
+    }
+    const state = await followApi.getFollowState(userId);
+    const followingIds = (state?.followingIds || []).map(String);
+    const followerIds = (state?.followerIds || []).map(String);
+    setSocial((prev) => ({
+      ...prev,
+      followings: { ...(prev.followings || {}), [String(userId)]: followingIds },
+      followers: { ...(prev.followers || {}), [String(userId)]: followerIds },
+    }));
+
+  }, [userId]);
+
+  useEffect(() => {
+    if (!userId) return undefined;
+    refreshFollowState().catch(() => {});
+    // Cập nhật số người theo dõi khi tài khoản khác theo dõi/hủy theo dõi trong lúc trang đang mở.
+    const intervalId = window.setInterval(() => refreshFollowState().catch(() => {}), 15000);
+    return () => window.clearInterval(intervalId);
+  }, [userId, refreshFollowState]);
+
+  const toggleFollow = useCallback(async (uId, otherId) => {
+    if (!uId || !otherId || String(uId) === String(otherId) || String(uId) !== String(userId)) return false;
+    try {
+      await followApi.toggleFollowUser(uId, otherId);
+      await refreshFollowState();
+      return true;
+    } catch {
+      return false;
+    }
+  }, [userId, refreshFollowState]);
 
   const loadBook = useCallback(
     async (id) => {
@@ -1312,6 +1334,7 @@ export function AppProvider({ children }) {
       hasSentFriendRequest,
       hasReceivedFriendRequest,
       toggleFollow,
+      refreshFollowState,
       refreshCatalog,
       refreshCart,
       refreshOrders,
@@ -1414,6 +1437,7 @@ export function AppProvider({ children }) {
       hasSentFriendRequest,
       hasReceivedFriendRequest,
       toggleFollow,
+      refreshFollowState,
       refreshCatalog,
       refreshCart,
       refreshOrders,

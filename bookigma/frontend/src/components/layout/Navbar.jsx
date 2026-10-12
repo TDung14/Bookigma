@@ -201,7 +201,7 @@ export default function Navbar() {
               style={{ gap: 5, padding: '5px 10px' }}
               title="Điểm Bookigma của bạn"
             >
-              <Zap size={13} /> {(user.points || 0).toLocaleString('vi-VN')}
+              <Zap size={13} /> {(Number(user.points) || 0).toLocaleString('vi-VN')}
             </Link>
           )}
           <button className="btn-icon" style={{ position: 'relative' }} onClick={openChatDock} aria-label="Tin nhắn">
