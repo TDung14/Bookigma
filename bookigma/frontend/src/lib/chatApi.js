@@ -1,17 +1,19 @@
-const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080/api';
+const API_BASE = `${String(import.meta.env.VITE_API_URL || 'http://localhost:8080').replace(/\/+$/, '')}/api`;
 
 async function request(path, options = {}) {
   const response = await fetch(`${API_BASE}${path}`, {
+    ...options,
     headers: {
-      'Content-Type': 'application/json',
+      ...(options.body instanceof FormData ? {} : { 'Content-Type': 'application/json' }),
       ...(options.headers || {}),
     },
-    ...options,
   });
 
   if (!response.ok) {
     const text = await response.text();
-    throw new Error(text || 'Chat request failed');
+    let message = text || `Chat request failed (HTTP ${response.status})`;
+    try { const parsed = JSON.parse(text); message = parsed.message || parsed.error || message; } catch {}
+    throw new Error(message);
   }
 
   if (response.status === 204) return null;

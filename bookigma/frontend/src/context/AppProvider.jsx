@@ -1,4 +1,4 @@
-import { avatarSrc, DEFAULT_AVATAR } from '../lib/avatar';
+import { avatarSrc, mediaSrc, DEFAULT_AVATAR } from '../lib/avatar';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { AppContext } from './contexts';
 import * as seed from '../data/seed';
@@ -111,7 +111,7 @@ export function AppProvider({ children }) {
     username: p.username,
     avatarUrl: p.avatarUrl || DEFAULT_AVATAR,
     content: p.content,
-    image: p.imageUrl || null,
+    image: p.imageUrl ? mediaSrc(p.imageUrl) : null,
     bookId: p.bookId ?? null,
     time: p.createdAt ? new Date(p.createdAt).getTime() : Date.now(),
     likedBy: Array.isArray(p.likedBy) ? p.likedBy : [],

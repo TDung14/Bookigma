@@ -36,7 +36,8 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
                 "http://127.0.0.1:5173",
                 "http://localhost:3000",
                 "http://127.0.0.1:3000",
-                "https://*.vercel.app"
+                "https://*.vercel.app",
+                "https://*.netlify.app"
         };
 
         registry.addEndpoint("/ws")

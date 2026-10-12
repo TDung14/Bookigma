@@ -1,13 +1,14 @@
-import { avatarSrc } from '../lib/avatar';
-import { useMemo, useState } from 'react';
+import { avatarSrc, mediaSrc } from '../lib/avatar';
+import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import {
-  BookOpen, Bookmark, Flag, Image as ImageIcon, MessageSquare, MoreHorizontal,
+  BookOpen, Bookmark, Flag, Image as ImageIcon, X, MessageSquare, MoreHorizontal,
   Send, Share2, ThumbsUp, UserCheck, Users, Sparkles, TrendingUp, Gift, Zap,
 } from 'lucide-react';
 import { useApp, useAuth, useToast } from '../hooks/useStore';
 import { timeAgo, currency } from '../lib/format';
 import { POINT_RULES } from '../lib/gamification';
+import { uploadPostImage } from '../services/api';
 import ReportModal from '../components/common/ReportModal';
 import { ProgressBar } from '../components/common/ui';
 
@@ -22,18 +23,31 @@ const LEFT_MENU = [
 ];
 
 export default function FeedPage() {
-  const { posts, userById, bookById, toggleLike, addComment, addPost, books, getProgress, earnPoints, trackDaily } = useApp();
+  const { posts, userById, toggleLike, addComment, addPost, books, getProgress, earnPoints, trackDaily } = useApp();
   const { user } = useAuth();
   const toast = useToast();
   const navigate = useNavigate();
 
   const [draft, setDraft] = useState('');
-  const [draftImage, setDraftImage] = useState('');
+  const [draftImage, setDraftImage] = useState(null);
   const [draftBookId, setDraftBookId] = useState('');
+  const [draftImagePreview, setDraftImagePreview] = useState('');
+  const [imageInputKey, setImageInputKey] = useState(0);
+  const [posting, setPosting] = useState(false);
   const [openComments, setOpenComments] = useState({});
   const [commentDraft, setCommentDraft] = useState({});
   const [reportTarget, setReportTarget] = useState(null);
   const [menuOpen, setMenuOpen] = useState(null);
+
+  useEffect(() => {
+    if (!draftImage) {
+      setDraftImagePreview('');
+      return undefined;
+    }
+    const objectUrl = URL.createObjectURL(draftImage);
+    setDraftImagePreview(objectUrl);
+    return () => URL.revokeObjectURL(objectUrl);
+  }, [draftImage]);
 
   const visiblePosts = useMemo(() => posts.filter((p) => !p.hidden), [posts]);
   const continueReading = useMemo(
@@ -52,18 +66,27 @@ export default function FeedPage() {
     if (!user) return navigate('/login');
     if (!draft.trim()) return toast('Hãy viết gì đó trước khi đăng nhé.', 'error');
     try {
+      setPosting(true);
+      let imageUrl = null;
+      if (draftImage) {
+        const uploaded = await uploadPostImage(draftImage, user.id);
+        imageUrl = uploaded.imageUrl;
+      }
       await addPost({
         authorId: user.id,
         content: draft.trim(),
-        image: draftImage.trim() || (draftBookId ? bookById(draftBookId)?.cover : null),
+        image: imageUrl,
         bookId: draftBookId || null,
       });
     } catch (error) {
       return toast(error.message || 'Không thể đăng bài.', 'error');
+    } finally {
+      setPosting(false);
     }
     setDraft('');
-    setDraftImage('');
+    setDraftImage(null);
     setDraftBookId('');
+    setImageInputKey((key) => key + 1);
     earnPoints(user.id, POINT_RULES.createPost);
     trackDaily(user.id, 'social', 1);
     toast(`Đã đăng bài — nhận ${POINT_RULES.createPost} điểm Bookigma.`);
@@ -129,34 +152,59 @@ export default function FeedPage() {
               />
             </div>
 
-            {(draftImage || draftBookId) && (
-              <img
-                src={draftImage || bookById(draftBookId)?.cover}
-                alt=""
-                style={{ width: '100%', maxHeight: 240, objectFit: 'cover', borderRadius: 10, marginTop: 12 }}
-              />
+            {draftImage && (
+              <div style={{ position: 'relative', marginTop: 12 }}>
+                <img
+                  src={draftImagePreview}
+                  alt="Ảnh xem trước bài viết"
+                  style={{ width: '100%', maxHeight: 280, objectFit: 'contain', borderRadius: 10 }}
+                />
+                <button type="button" className="btn-icon" aria-label="Bỏ ảnh"
+                  onClick={() => { setDraftImage(null); setImageInputKey((key) => key + 1); }}
+                  style={{ position: 'absolute', top: 8, right: 8, background: 'var(--bg-card)' }}>
+                  <X size={16} />
+                </button>
+              </div>
             )}
 
             <div className="row-between" style={{ marginTop: 12, paddingTop: 10, borderTop: '1px solid var(--border-color)', flexWrap: 'wrap' }}>
               <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
-                <select className="select" style={{ width: 'auto', fontSize: 13, padding: '7px 10px' }} value={draftBookId} onChange={(e) => setDraftBookId(e.target.value)}>
+                <select
+                  className="select"
+                  style={{ width: 'auto', maxWidth: 220, fontSize: 13, padding: '7px 10px' }}
+                  value={draftBookId}
+                  onChange={(event) => setDraftBookId(event.target.value)}
+                  aria-label="Gắn sách vào bài viết"
+                >
                   <option value="">Gắn sách (tùy chọn)</option>
-                  {books.filter((b) => b.status === 'active').map((b) => (
-                    <option key={b.id} value={b.id}>{b.title}</option>
+                  {books.filter((book) => book.status === 'active').map((book) => (
+                    <option key={book.id} value={book.id}>{book.title}</option>
                   ))}
                 </select>
-                <button
-                  type="button"
-                  className="btn btn-soft btn-sm"
-                  onClick={() => {
-                    const url = window.prompt('Dán link ảnh minh họa:');
-                    if (url) setDraftImage(url);
-                  }}
-                >
-                  <ImageIcon size={16} color="#22c55e" /> Ảnh
-                </button>
+                <label className="btn btn-soft btn-sm" style={{ cursor: 'pointer' }}>
+                  <ImageIcon size={16} color="#22c55e" /> {draftImage ? 'Đổi ảnh' : 'Tải ảnh lên'}
+                  <input
+                    key={imageInputKey}
+                    type="file"
+                    accept="image/png,image/jpeg,image/webp,image/gif"
+                    hidden
+                    onChange={(event) => {
+                      const file = event.target.files?.[0];
+                      if (!file) return;
+                      if (file.size > 10 * 1024 * 1024) {
+                        toast('Ảnh bài viết không được vượt quá 10 MB.', 'error');
+                        event.target.value = '';
+                        return;
+                      }
+                      setDraftImage(file);
+                    }}
+                  />
+                </label>
+                {draftImage && <span className="tiny muted">{draftImage.name}</span>}
               </div>
-              <button type="submit" className="btn btn-primary btn-sm"><Send size={15} /> Đăng bài</button>
+              <button type="submit" disabled={posting} className="btn btn-primary btn-sm">
+                <Send size={15} /> {posting ? 'Đang đăng...' : 'Đăng bài'}
+              </button>
             </div>
           </form>
 
@@ -170,7 +218,6 @@ export default function FeedPage() {
               avatar: post.avatarUrl || localAuthor?.avatar || '/default-avatar.svg',
               role: localAuthor?.role || 'user',
             };
-            const book = post.bookId ? bookById(post.bookId) : null;
             const liked = user && post.likedByMe;
             const showComments = openComments[post.id];
 
@@ -216,20 +263,28 @@ export default function FeedPage() {
                 <p style={{ lineHeight: 1.6, margin: '0 0 12px', whiteSpace: 'pre-wrap' }}>{post.content}</p>
 
                 {post.image && (
-                  <img src={post.image} alt="" style={{ width: '100%', maxHeight: 360, objectFit: 'cover', borderRadius: 10, marginBottom: 12 }} loading="lazy" />
+                  <img src={mediaSrc(post.image)} alt="" style={{ width: '100%', maxHeight: 360, objectFit: 'cover', borderRadius: 10, marginBottom: 12 }} loading="lazy" />
                 )}
 
-                {book && (
-                  <Link to={book.forSale === false ? `/read/${book.id}` : `/book/${book.id}`} className="row card-hover" style={{ gap: 12, background: 'var(--bg-soft)', padding: 10, borderRadius: 10, marginBottom: 12 }}>
-                    <img src={book.cover} alt="" className="book-cover" style={{ width: 44, height: 60 }} />
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div className="small strong truncate">{book.title}</div>
-                      <div className="tiny muted">{book.author}</div>
-                      <div className="price small" style={{ marginTop: 3 }}>{currency(book.price)}</div>
-                    </div>
-                    <span className="btn btn-soft btn-sm">Xem sách</span>
-                  </Link>
-                )}
+                {post.bookId && (() => {
+                  const attachedBook = books.find((book) => String(book.id) === String(post.bookId));
+                  if (!attachedBook) return null;
+                  return (
+                    <Link
+                      to={attachedBook.forSale === false ? `/read/${attachedBook.id}` : `/book/${attachedBook.id}`}
+                      className="row card-hover"
+                      style={{ gap: 12, background: 'var(--bg-soft)', padding: 10, borderRadius: 10, marginBottom: 12 }}
+                    >
+                      <img src={attachedBook.cover} alt="" className="book-cover" style={{ width: 44, height: 60 }} />
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div className="small strong truncate">{attachedBook.title}</div>
+                        <div className="tiny muted">{attachedBook.author}</div>
+                        <div className="price small" style={{ marginTop: 3 }}>{currency(attachedBook.price)}</div>
+                      </div>
+                      <span className="btn btn-soft btn-sm">Xem sách</span>
+                    </Link>
+                  );
+                })()}
 
                 <div className="row-between tiny muted" style={{ paddingBottom: 8 }}>
                   <span>{post.likeCount ?? post.likedBy.length} lượt thích</span>

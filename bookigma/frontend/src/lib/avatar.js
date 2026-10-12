@@ -15,3 +15,12 @@ export function avatarSrc(value) {
   if (raw.startsWith('/uploads/avatars/')) return `${API_ORIGIN}${raw}`;
   return DEFAULT_AVATAR;
 }
+
+/** Resolve đường dẫn media do backend lưu tương đối sang URL backend đang deploy. */
+export function mediaSrc(value) {
+  const raw = typeof value === 'string' ? value.trim() : '';
+  if (!raw) return '';
+  if (/^https?:\/\//i.test(raw)) return raw;
+  if (raw.startsWith('/uploads/')) return `${API_ORIGIN}${raw}`;
+  return raw;
+}
