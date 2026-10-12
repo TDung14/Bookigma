@@ -4,6 +4,7 @@ import jakarta.persistence.*;
 import lombok.*;
 
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 
 @Entity
 @Table(name = "point_transactions")
@@ -44,7 +45,7 @@ public class PointTransaction {
     @PrePersist
     protected void onCreate() {
         if (this.createdAt == null) {
-            this.createdAt = LocalDateTime.now();
+            this.createdAt = LocalDateTime.now(ZoneId.of("Asia/Ho_Chi_Minh"));
         }
     }
 }

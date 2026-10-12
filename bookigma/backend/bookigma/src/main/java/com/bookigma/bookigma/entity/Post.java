@@ -4,6 +4,7 @@ import jakarta.persistence.*;
 import lombok.*;
 
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 
 @Entity
 @Table(name = "posts")
@@ -52,7 +53,7 @@ public class Post {
     @PrePersist
     protected void onCreate() {
         if (createdAt == null) {
-            createdAt = LocalDateTime.now();
+            createdAt = LocalDateTime.now(ZoneId.of("Asia/Ho_Chi_Minh"));
         }
         if (visibility == null) {
             visibility = Visibility.PUBLIC;

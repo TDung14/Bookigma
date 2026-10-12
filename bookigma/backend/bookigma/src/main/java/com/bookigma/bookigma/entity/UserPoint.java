@@ -4,6 +4,7 @@ import jakarta.persistence.*;
 import lombok.*;
 
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 
 @Entity
 @Table(name = "user_points")
@@ -41,7 +42,7 @@ public class UserPoint {
     @PrePersist
     @PreUpdate
     protected void onUpdate() {
-        this.lastUpdated = LocalDateTime.now();
+        this.lastUpdated = LocalDateTime.now(ZoneId.of("Asia/Ho_Chi_Minh"));
         if (this.totalPoints == null) this.totalPoints = 0;
         if (this.monthlyPoints == null) this.monthlyPoints = 0;
         if (this.currentTier == null) this.currentTier = calculateTier(this.totalPoints);

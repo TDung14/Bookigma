@@ -17,6 +17,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
+import java.time.ZoneId;
 import java.util.List;
 
 @Service
@@ -43,7 +44,7 @@ public class PointServiceImpl implements PointService {
         List<PointTransaction> recent = pointTransactionRepository.findByUser_IdOrderByCreatedAtDesc(
                 userId, PageRequest.of(0, 10));
 
-        LocalDateTime startOfDay = LocalDate.now().atStartOfDay();
+        LocalDateTime startOfDay = LocalDate.now(ZoneId.of("Asia/Ho_Chi_Minh")).atStartOfDay();
         boolean checkedInToday = pointTransactionRepository.existsByUser_IdAndTypeAndCreatedAtAfter(
                 userId, "DAILY_CHECKIN", startOfDay);
 
@@ -136,7 +137,7 @@ public class PointServiceImpl implements PointService {
     @Override
     @Transactional
     public PointTransactionDto dailyCheckIn(Long userId) {
-        LocalDateTime startOfDay = LocalDate.now().atStartOfDay();
+        LocalDateTime startOfDay = LocalDate.now(ZoneId.of("Asia/Ho_Chi_Minh")).atStartOfDay();
         boolean alreadyCheckedIn = pointTransactionRepository.existsByUser_IdAndTypeAndCreatedAtAfter(
                 userId, "DAILY_CHECKIN", startOfDay);
 
@@ -145,7 +146,7 @@ public class PointServiceImpl implements PointService {
         }
 
         int rewardPoints = 50; // 50 Điểm / ngày
-        return addPoints(userId, rewardPoints, "DAILY_CHECKIN", LocalDate.now().toString(), "Điểm danh nhận Điểm hàng ngày");
+        return addPoints(userId, rewardPoints, "DAILY_CHECKIN", LocalDate.now(ZoneId.of("Asia/Ho_Chi_Minh")).toString(), "Điểm danh nhận Điểm hàng ngày");
     }
 
     private String getNextTier(int points) {
