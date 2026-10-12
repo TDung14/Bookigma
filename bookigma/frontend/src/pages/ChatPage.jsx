@@ -64,22 +64,36 @@ export default function ChatPage() {
     if (bodyRef.current) bodyRef.current.scrollTop = bodyRef.current.scrollHeight;
   }, [activeMessageCount]);
 
-  const submit = (e) => {
+  const [sending, setSending] = useState(false);
+
+  const submit = async (e) => {
     e?.preventDefault();
     const text = draft.trim();
-    if (!text || !active) return;
-    sendMessage(active.id, user.id, text);
-    setDraft('');
-    setShowEmoji(false);
+    if (!text || !active || sending) return;
+
+    setSending(true);
+    try {
+      await sendMessage(active.id, user.id, text);
+      setDraft('');
+      setShowEmoji(false);
+    } catch (error) {
+      toast(error?.message || 'Không gửi được tin nhắn. Vui lòng thử lại.', 'error');
+    } finally {
+      setSending(false);
+    }
   };
 
   const startChat = async (otherId) => {
-    const id = await findOrCreateConversation(user.id, otherId);
-    setShowNew(false);
-    setGroupMode(false);
-    setGroupMembers([]);
-    setGroupName('');
-    navigate(`/chat/${id}`);
+    try {
+      const id = await findOrCreateConversation(user.id, otherId);
+      setShowNew(false);
+      setGroupMode(false);
+      setGroupMembers([]);
+      setGroupName('');
+      navigate(`/chat/${id}`);
+    } catch (error) {
+      toast(error?.message || 'Không thể tạo cuộc trò chuyện. Vui lòng thử lại.', 'error');
+    }
   };
 
   const friendUsers = useMemo(
@@ -258,7 +272,7 @@ export default function ChatPage() {
                   value={draft}
                   onChange={(e) => setDraft(e.target.value)}
                 />
-                <button type="submit" className="btn btn-primary" style={{ borderRadius: 20 }} disabled={!draft.trim()}>
+                <button type="submit" className="btn btn-primary" style={{ borderRadius: 20 }} disabled={!draft.trim() || sending}>
                   <Send size={17} />
                 </button>
               </div>
