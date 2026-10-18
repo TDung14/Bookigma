@@ -143,8 +143,8 @@ export default function Navbar() {
           display: 'flex', alignItems: 'center', gap: 16, padding: '0 18px', zIndex: 1100,
         }}
       >
-        <Link to="/" className="row" style={{ gap: 8, fontWeight: 800, fontSize: 20, color: 'var(--accent-green)', flexShrink: 0 }}>
-          <BookOpen size={26} />
+        <Link to="/" aria-label="Bookigma - trang chủ" className="row" style={{ gap: 8, fontWeight: 800, fontSize: 20, color: 'var(--accent-green)', flexShrink: 0 }}>
+          <img src="/logo-mark.png" alt="" width={36} height={36} style={{ borderRadius: 8, background: '#fff' }} />
           <span className="hide-sm">Bookigma</span>
         </Link>
 

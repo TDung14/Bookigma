@@ -12,5 +12,7 @@ public interface PointService {
     UserPoint getOrCreateUserPoint(Long userId);
     PointTransactionDto addPoints(Long userId, int amount, String type, String referenceId, String description);
     PointTransactionDto deductPoints(Long userId, int amount, String type, String referenceId, String description);
+    /** Trả lại điểm đã trừ (vd. đơn bị hủy): chỉ cộng vào số dư, không tính vào điểm xét hạng. */
+    PointTransactionDto refundPoints(Long userId, int amount, String type, String referenceId, String description);
     PointTransactionDto dailyCheckIn(Long userId);
 }

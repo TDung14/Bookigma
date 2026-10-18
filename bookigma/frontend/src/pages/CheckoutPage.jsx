@@ -53,7 +53,9 @@ export default function CheckoutPage() {
   const { discount, shipping } = applyVoucher(appliedVoucher, subtotal, parcels);
 
   const rawTotal = Math.max(0, subtotal - discount) + shipping;
-  const pointsDiscount = usePoints ? Math.min(pointsBalance, pointsToUse > 0 ? pointsToUse : pointsBalance) : 0;
+  // Giống backend: điểm chỉ trừ vào tiền hàng còn lại sau voucher, không trừ phí vận chuyển
+  const maxPoints = Math.min(pointsBalance, Math.max(0, subtotal - discount));
+  const pointsDiscount = usePoints ? Math.min(maxPoints, pointsToUse > 0 ? pointsToUse : maxPoints) : 0;
   const total = Math.max(0, rawTotal - pointsDiscount);
 
   const applyVoucherCode = (code) => {
@@ -257,11 +259,11 @@ export default function CheckoutPage() {
                 checked={usePoints}
                 onChange={(e) => {
                   setUsePoints(e.target.checked);
-                  setPointsToUse(e.target.checked ? Math.min(pointsBalance, rawTotal) : 0);
+                  setPointsToUse(e.target.checked ? maxPoints : 0);
                 }}
-                disabled={pointsBalance <= 0}
+                disabled={maxPoints <= 0}
               />
-              <span>Dùng {pointsBalance > 0 ? Math.min(pointsBalance, rawTotal).toLocaleString('vi-VN') : 0} Điểm (Giảm {currency(Math.min(pointsBalance, rawTotal))})</span>
+              <span>Dùng {maxPoints.toLocaleString('vi-VN')} Điểm (Giảm {currency(maxPoints)})</span>
             </label>
           </div>
 

@@ -98,6 +98,11 @@ public class Order {
     @Column(name = "discount_amount", nullable = false, precision = 10, scale = 2)
     private BigDecimal discountAmount;
 
+    /** Số Điểm Bookigma đã trừ cho đơn này (nằm trong discountAmount); hoàn lại khi đơn bị hủy. */
+    @Column(name = "points_used", nullable = false)
+    @Builder.Default
+    private Integer pointsUsed = 0;
+
     @Column(name = "total_amount", nullable = false, precision = 10, scale = 2)
     private BigDecimal totalAmount;
 

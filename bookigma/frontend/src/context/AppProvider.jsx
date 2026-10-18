@@ -579,109 +579,34 @@ export function AppProvider({ children }) {
   );
 
   // ---------- Giỏ hàng ----------
-  const persistFallbackCart = useCallback((forUser, cart) => {
-    if (!forUser) return cart;
-    const nextCart = Array.isArray(cart) ? cart : [];
-    save(`cart.${forUser}`, nextCart);
-    return nextCart;
-  }, []);
-
-  const readFallbackCart = useCallback((forUser) => {
-    if (!forUser) return [];
-    const saved = load(`cart.${forUser}`, []);
-    return Array.isArray(saved) ? saved : [];
-  }, []);
-
-  const getCart = useCallback((forUser) => {
-    if (forUser !== userId) return [];
-    const current = Array.isArray(account.cart) ? account.cart : [];
-    return current.length > 0 ? current : readFallbackCart(forUser);
-  }, [userId, account.cart, readFallbackCart]);
+  // Giỏ hàng chỉ nằm ở backend: lỗi (hết hàng, ngừng bán...) được ném ra để trang gọi hiện thông báo,
+  // không tạo dòng giỏ giả ở máy vì dòng đó không bao giờ đặt hàng được.
+  const getCart = useCallback(
+    (forUser) => (forUser === userId && Array.isArray(account.cart) ? account.cart : []),
+    [userId, account.cart]
+  );
 
   const addToCart = useCallback(
     async (forUser, bookId, qty = 1) => {
-      try {
-        const cart = await shopApi.addCartItem(forUser, { bookId: Number(bookId), quantity: qty });
-        patchAccount(forUser, { cart });
-        persistFallbackCart(forUser, cart);
-        return cart;
-      } catch {
-        const existing = Array.isArray(account.cart) ? account.cart : readFallbackCart(forUser);
-        const targetBook = books.find((b) => String(b.id) === String(bookId));
-        const nextLine = {
-          id: `local-${forUser}-${bookId}-${Date.now()}`,
-          qty,
-          available: true,
-          unavailableReason: null,
-          bookId: Number(bookId),
-          blind: null,
-          book: targetBook ? {
-            id: targetBook.id,
-            title: targetBook.title,
-            author: targetBook.author,
-            cover: targetBook.cover,
-            price: targetBook.price,
-            stock: targetBook.stock,
-            shopId: targetBook.shopId,
-            shopName: targetBook.shopName,
-          } : {
-            id: Number(bookId),
-            title: 'Sách',
-            author: 'Đang cập nhật',
-            cover: 'https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?w=400&q=80',
-            price: 0,
-            stock: 99,
-            shopId: null,
-            shopName: 'Bookigma',
-          },
-        };
-
-        const nextCart = [...existing];
-        const idx = nextCart.findIndex((line) => line.bookId === Number(bookId) && !line.blind);
-        if (idx >= 0) {
-          nextCart[idx] = { ...nextCart[idx], qty: nextCart[idx].qty + qty };
-        } else {
-          nextCart.push(nextLine);
-        }
-
-        patchAccount(forUser, { cart: nextCart });
-        persistFallbackCart(forUser, nextCart);
-        return nextCart;
-      }
+      const cart = await shopApi.addCartItem(forUser, { bookId: Number(bookId), quantity: qty });
+      patchAccount(forUser, { cart });
+      return cart;
     },
-    [account.cart, books, patchAccount, persistFallbackCart, readFallbackCart]
+    [patchAccount]
   );
 
   const updateCartQty = useCallback(
     async (itemId, qty) => {
-      try {
-        const cart = await shopApi.updateCartItem(userId, itemId, qty);
-        patchAccount(userId, { cart });
-        persistFallbackCart(userId, cart);
-      } catch {
-        const current = getCart(userId);
-        const nextCart = current.map((line) => (line.id === itemId ? { ...line, qty: Math.max(1, qty) } : line));
-        patchAccount(userId, { cart: nextCart });
-        persistFallbackCart(userId, nextCart);
-      }
+      patchAccount(userId, { cart: await shopApi.updateCartItem(userId, itemId, qty) });
     },
-    [userId, patchAccount, persistFallbackCart, getCart]
+    [userId, patchAccount]
   );
 
   const removeCartItem = useCallback(
     async (itemId) => {
-      try {
-        const cart = await shopApi.removeCartItem(userId, itemId);
-        patchAccount(userId, { cart });
-        persistFallbackCart(userId, cart);
-      } catch {
-        const current = getCart(userId);
-        const nextCart = current.filter((line) => line.id !== itemId);
-        patchAccount(userId, { cart: nextCart });
-        persistFallbackCart(userId, nextCart);
-      }
+      patchAccount(userId, { cart: await shopApi.removeCartItem(userId, itemId) });
     },
-    [userId, patchAccount, persistFallbackCart, getCart]
+    [userId, patchAccount]
   );
 
   const setCartQty = useCallback((forUser, bookId, qty) => {

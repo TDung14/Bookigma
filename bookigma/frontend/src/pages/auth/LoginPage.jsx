@@ -1,7 +1,6 @@
 import { useState } from 'react';
 
 import {
-  BookOpen,
   Eye,
   EyeOff,
   LogIn,
@@ -242,21 +241,20 @@ export default function LoginPage() {
         }}
       >
 
-        <div
-          className="row"
+        <img
+          src="/logo.png"
+          alt="Bookigma"
+          width={168}
+          height={168}
           style={{
-            gap: 12,
-            fontSize: 30,
-            fontWeight: 800,
-            marginBottom: 20,
+            alignSelf: 'flex-start',
+            borderRadius: 20,
+            background: '#fff',
+            padding: 8,
+            marginBottom: 24,
+            boxShadow: '0 12px 30px rgba(0, 0, 0, 0.18)',
           }}
-        >
-
-          <BookOpen size={38} />
-
-          Bookigma
-
-        </div>
+        />
 
         <h2
           style={{

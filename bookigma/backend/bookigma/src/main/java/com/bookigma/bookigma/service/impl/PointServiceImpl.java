@@ -136,6 +136,28 @@ public class PointServiceImpl implements PointService {
 
     @Override
     @Transactional
+    public PointTransactionDto refundPoints(Long userId, int amount, String type, String referenceId, String description) {
+        if (amount <= 0) {
+            throw ApiException.badRequest("Số điểm hoàn phải lớn hơn 0");
+        }
+        UserPoint userPoint = getOrCreateUserPoint(userId);
+        // Điểm hoàn chỉ trả lại số dư đã trừ, không phải điểm kiếm được nên không cộng vào điểm xét hạng
+        userPoint.setTotalPoints(userPoint.getTotalPoints() + amount);
+        userPointRepository.save(userPoint);
+
+        PointTransaction tx = PointTransaction.builder()
+                .user(userPoint.getUser())
+                .amount(amount)
+                .balanceAfter(userPoint.getTotalPoints())
+                .type(type)
+                .referenceId(referenceId)
+                .description(description)
+                .build();
+        return toDto(pointTransactionRepository.save(tx));
+    }
+
+    @Override
+    @Transactional
     public PointTransactionDto dailyCheckIn(Long userId) {
         LocalDateTime startOfDay = LocalDate.now(ZoneId.of("Asia/Ho_Chi_Minh")).atStartOfDay();
         boolean alreadyCheckedIn = pointTransactionRepository.existsByUser_IdAndTypeAndCreatedAtAfter(

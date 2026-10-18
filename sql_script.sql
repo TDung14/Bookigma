@@ -649,6 +649,9 @@ CREATE TABLE `orders` (
     `discount_amount` DECIMAL(10, 2)
         NOT NULL DEFAULT 0.00,
 
+    `points_used` INT
+        NOT NULL DEFAULT 0,
+
     `total_amount` DECIMAL(10, 2) NOT NULL,
 
     `status` VARCHAR(20)

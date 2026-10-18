@@ -87,13 +87,26 @@ public class OrderServiceImpl implements OrderService {
         List<BigDecimal> discounts = new ArrayList<>(OrderPricing.allocate(OrderPricing.discountFor(voucher, subtotal), subtotals));
         boolean freeShipping = voucher != null && voucher.getDiscountType() == Voucher.DiscountType.SHIPPING;
 
+        // 1 điểm = 1đ, chỉ trừ vào tiền hàng còn lại sau voucher (không trừ phí ship) và không trừ quá số đó
+        List<Integer> pointsPerOrder = new ArrayList<>(parcels.stream().map(parcel -> 0).toList());
         Integer pointsToUse = request.getPointsToUse();
         if (pointsToUse != null && pointsToUse > 0) {
-            pointService.deductPoints(buyer.getId(), pointsToUse, "ORDER_DISCOUNT", "CHECKOUT", "Dùng Điểm Bookigma giảm giá đơn hàng");
-            BigDecimal pointsDiscount = BigDecimal.valueOf(pointsToUse);
-            List<BigDecimal> extraDiscounts = OrderPricing.allocate(pointsDiscount, subtotals);
-            for (int i = 0; i < discounts.size(); i++) {
-                discounts.set(i, discounts.get(i).add(extraDiscounts.get(i)));
+            List<BigDecimal> payable = new ArrayList<>();
+            for (int i = 0; i < subtotals.size(); i++) {
+                payable.add(subtotals.get(i).subtract(discounts.get(i)).max(BigDecimal.ZERO));
+            }
+            BigDecimal payableTotal = payable.stream().reduce(BigDecimal.ZERO, BigDecimal::add);
+            BigDecimal usable = BigDecimal.valueOf(pointsToUse).min(payableTotal).setScale(0, RoundingMode.DOWN);
+            List<BigDecimal> shares = OrderPricing.allocate(usable, payable);
+            int used = 0;
+            for (int i = 0; i < shares.size(); i++) {
+                int share = shares.get(i).setScale(0, RoundingMode.DOWN).intValue();
+                pointsPerOrder.set(i, share);
+                discounts.set(i, discounts.get(i).add(BigDecimal.valueOf(share)));
+                used += share;
+            }
+            if (used > 0) {
+                pointService.deductPoints(buyer.getId(), used, "ORDER_DISCOUNT", "CHECKOUT", "Dùng Điểm Bookigma giảm giá đơn hàng");
             }
         }
 
@@ -116,6 +129,7 @@ public class OrderServiceImpl implements OrderService {
                     .subtotal(money(subtotals.get(i)))
                     .shippingFee(money(shippingFee))
                     .discountAmount(money(discount))
+                    .pointsUsed(pointsPerOrder.get(i))
                     .totalAmount(money(subtotals.get(i).subtract(discount).add(shippingFee).max(BigDecimal.ZERO)))
                     .status(Order.Status.PENDING)
                     .build();
@@ -413,6 +427,11 @@ public class OrderServiceImpl implements OrderService {
                 if (item.getBlindBox() != null) {
                     item.getBlindBox().setStatus(BlindBox.Status.CANCELLED);
                 }
+            }
+            int points = order.getPointsUsed() == null ? 0 : order.getPointsUsed();
+            if (points > 0) {
+                pointService.refundPoints(order.getUser().getId(), points, "ORDER_REFUND", order.getCode(),
+                        "Hoàn Điểm Bookigma do đơn hàng #" + order.getCode() + " bị hủy");
             }
         }
         order.setStatus(next);
