@@ -700,6 +700,15 @@ export function AppProvider({ children }) {
     [userId, patchAccount]
   );
 
+  const confirmSellerOrderPaid = useCallback(
+    async (orderId) => {
+      const order = await shopApi.confirmSellerOrderPaid(userId, orderId);
+      patchAccount(userId, (prev) => ({ sellerOrders: replaceById(prev.sellerOrders, order) }));
+      return order;
+    },
+    [userId, patchAccount]
+  );
+
   // ---------- Quản trị sản phẩm ----------
   const setBookStatus = useCallback(
     async (bookId, status) => {
@@ -1420,6 +1429,7 @@ export function AppProvider({ children }) {
       upsertBook,
       deleteSellerBook,
       updateSellerOrderStatus,
+      confirmSellerOrderPaid,
       setBookStatus,
       deleteBook,
       addExchange,
@@ -1529,6 +1539,7 @@ export function AppProvider({ children }) {
       upsertBook,
       deleteSellerBook,
       updateSellerOrderStatus,
+      confirmSellerOrderPaid,
       setBookStatus,
       deleteBook,
       addExchange,

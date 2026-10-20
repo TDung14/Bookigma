@@ -19,6 +19,8 @@ public interface OrderService {
     // Kênh người bán
     List<OrderResponseDto> getShopOrders(Long userId);
     OrderResponseDto updateShopOrderStatus(Long userId, Long orderId, StatusUpdateRequestDto request);
+    /** Shop xác nhận đã nhận tiền chuyển khoản / MoMo cho đơn. */
+    OrderResponseDto confirmShopOrderPayment(Long userId, Long orderId);
 
     // Quản trị
     List<OrderResponseDto> getAllOrders(Long adminId);

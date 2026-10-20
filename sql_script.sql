@@ -654,6 +654,8 @@ CREATE TABLE `orders` (
 
     `total_amount` DECIMAL(10, 2) NOT NULL,
 
+    `paid_at` DATETIME(6) NULL,
+
     `status` VARCHAR(20)
         NOT NULL DEFAULT 'PENDING',
 

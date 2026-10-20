@@ -47,6 +47,9 @@ export const deleteSellerBook = (userId, bookId) => apiCall(`/seller/books/${boo
 export const fetchSellerOrders = async (userId) => (await apiCall('/seller/orders', 'GET', null, as(userId))).map(toOrder);
 export const updateSellerOrderStatus = async (userId, orderId, status, note) =>
   toOrder(await apiCall(`/seller/orders/${orderId}/status`, 'PATCH', { status, note: note || null }, as(userId)));
+/** Shop xác nhận đã nhận tiền cho đơn chuyển khoản / MoMo. */
+export const confirmSellerOrderPaid = async (userId, orderId) =>
+  toOrder(await apiCall(`/seller/orders/${orderId}/paid`, 'PATCH', null, as(userId)));
 
 // ---------- Quản trị ----------
 export const fetchAdminBooks = async (userId) => (await apiCall('/admin/books', 'GET', null, as(userId))).map(toBook);

@@ -4,6 +4,8 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { CheckCircle2, ChevronLeft, Circle, Gift, MapPin, MessageSquare, Receipt, Sparkles } from 'lucide-react';
 import { useApp, useAuth, useToast } from '../hooks/useStore';
 import { currency, dateTime, ORDER_FLOW, ORDER_STATUS, PAYMENT_LABEL } from '../lib/format';
+import { isPrepaid } from '../lib/payment';
+import PaymentQr, { PaymentBadge } from '../components/common/PaymentQr';
 
 export default function OrderDetailPage() {
   const { id } = useParams();
@@ -213,7 +215,18 @@ export default function OrderDetailPage() {
               <Receipt size={17} color="var(--accent-green)" />
               <h3 style={{ margin: 0, fontSize: 15 }}>Thanh toán</h3>
             </div>
-            <div className="small">{PAYMENT_LABEL[order.payment]}</div>
+            <div className="row-between small" style={{ flexWrap: 'wrap', gap: 6 }}>
+              <span>{PAYMENT_LABEL[order.payment]}</span>
+              <PaymentBadge order={order} />
+            </div>
+            {order.paidAt && (
+              <div className="tiny muted" style={{ marginTop: 4 }}>Shop đã nhận tiền lúc {dateTime(order.paidAt)}</div>
+            )}
+            {isPrepaid(order.payment) && !order.paidAt && !cancelled && (
+              <div style={{ marginTop: 12 }}>
+                <PaymentQr order={order} />
+              </div>
+            )}
             {shop && (
               <>
                 <hr className="divider" />
@@ -235,7 +248,10 @@ export default function OrderDetailPage() {
                 style={{ color: 'var(--danger)' }}
                 disabled={busy}
                 onClick={() => {
-                  if (!window.confirm(`Hủy đơn hàng ${order.code}?`)) return;
+                  const question = order.paidAt
+                    ? `Đơn ${order.code} đã thanh toán. Hủy đơn thì shop sẽ liên hệ hoàn tiền cho bạn. Tiếp tục hủy?`
+                    : `Hủy đơn hàng ${order.code}?`;
+                  if (!window.confirm(question)) return;
                   run(() => cancelOrder(order.id), 'Đã hủy đơn hàng.', 'info');
                 }}
               >

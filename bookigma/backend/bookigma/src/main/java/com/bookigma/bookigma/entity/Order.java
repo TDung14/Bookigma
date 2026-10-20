@@ -51,7 +51,12 @@ public class Order {
     }
 
     public enum PaymentMethod {
-        COD, BANK, MOMO
+        COD, BANK, MOMO;
+
+        /** Chuyển khoản và MoMo (quét mã VietQR) phải trả tiền trước khi shop giao hàng. */
+        public boolean isPrepaid() {
+            return this != COD;
+        }
     }
 
     @Id
@@ -105,6 +110,10 @@ public class Order {
 
     @Column(name = "total_amount", nullable = false, precision = 10, scale = 2)
     private BigDecimal totalAmount;
+
+    /** Lúc shop xác nhận đã nhận tiền (đơn chuyển khoản / MoMo). Null = chưa thanh toán; đơn COD không dùng. */
+    @Column(name = "paid_at")
+    private LocalDateTime paidAt;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "status", nullable = false, length = 20)

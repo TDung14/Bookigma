@@ -4,6 +4,7 @@ import { Package, Search, Store } from 'lucide-react';
 import { useApp, useAuth, useToast } from '../hooks/useStore';
 import { currency, dateTime, ORDER_STATUS } from '../lib/format';
 import { EmptyState } from '../components/common/ui';
+import { PaymentBadge } from '../components/common/PaymentQr';
 
 const TABS = [
   { id: 'all', label: 'Tất cả' },
@@ -61,7 +62,10 @@ export default function OrdersPage() {
   };
 
   const cancel = (order) => {
-    if (!window.confirm(`Hủy đơn hàng ${order.code}?`)) return;
+    const question = order.paidAt
+      ? `Đơn ${order.code} đã thanh toán. Hủy đơn thì shop sẽ liên hệ hoàn tiền cho bạn. Tiếp tục hủy?`
+      : `Hủy đơn hàng ${order.code}?`;
+    if (!window.confirm(question)) return;
     run(order, () => cancelOrder(order.id), 'Đã hủy đơn hàng.', 'info');
   };
 
@@ -122,7 +126,10 @@ export default function OrdersPage() {
                     {order.shopName && <span className="row tiny muted" style={{ gap: 4 }}><Store size={13} /> {order.shopName}</span>}
                     <span className="tiny muted">{dateTime(order.createdAt)}</span>
                   </div>
-                  <span className={`badge ${st.badge}`}>{st.label}</span>
+                  <div className="row" style={{ gap: 6 }}>
+                    <PaymentBadge order={order} />
+                    <span className={`badge ${st.badge}`}>{st.label}</span>
+                  </div>
                 </div>
 
                 {order.items.map((it) => {

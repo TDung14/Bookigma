@@ -45,8 +45,8 @@ export const ORDER_FLOW = ['pending', 'confirmed', 'shipping', 'delivered', 'com
 
 export const PAYMENT_LABEL = {
   cod: 'Thanh toán khi nhận hàng (COD)',
-  bank: 'Chuyển khoản ngân hàng',
-  momo: 'Ví MoMo',
+  bank: 'Chuyển khoản ngân hàng (quét mã QR)',
+  momo: 'Ví MoMo (quét mã QR)',
 };
 
 /** Trạng thái tin trên sàn trao đổi. */

@@ -9,8 +9,10 @@ import {
   AlertTriangle, DollarSign, Edit3, Gift, Package, Plus, ShoppingBag, Store, Trash2, TrendingUp,
 } from 'lucide-react';
 import { useApp, useAuth, useToast } from '../../hooks/useStore';
-import { compactNumber, currency, dateTime, ORDER_STATUS } from '../../lib/format';
+import { compactNumber, currency, dateTime, ORDER_STATUS, PAYMENT_LABEL } from '../../lib/format';
+import { isPrepaid } from '../../lib/payment';
 import { EmptyState, Field, StatCard } from '../../components/common/ui';
+import { PaymentBadge } from '../../components/common/PaymentQr';
 import Modal from '../../components/common/Modal';
 
 const TABS = [
@@ -44,7 +46,7 @@ export default function ShopDashboard() {
   const { user } = useAuth();
   const {
     shops, sellerBooks, sellerOrders, refreshSellerData, refreshCatalog, accountReady,
-    saveSellerBook, deleteSellerBook, updateSellerOrderStatus,
+    saveSellerBook, deleteSellerBook, updateSellerOrderStatus, confirmSellerOrderPaid,
   } = useApp();
   const toast = useToast();
 
@@ -186,6 +188,19 @@ export default function ShopDashboard() {
       toast(`Đơn ${order.code} → ${ORDER_STATUS[next].label}`);
     } catch (error) {
       toast(error.message || 'Không thể cập nhật đơn hàng.', 'error');
+    } finally {
+      setBusyOrder(null);
+    }
+  };
+
+  const confirmPaid = async (order) => {
+    if (!window.confirm(`Bạn đã kiểm tra tài khoản nhận được ${currency(order.total)} với nội dung "${order.code}"?`)) return;
+    setBusyOrder(order.id);
+    try {
+      await confirmSellerOrderPaid(order.id);
+      toast(`Đơn ${order.code}: đã xác nhận nhận tiền`);
+    } catch (error) {
+      toast(error.message || 'Không thể xác nhận thanh toán.', 'error');
     } finally {
       setBusyOrder(null);
     }
@@ -397,6 +412,8 @@ export default function ShopDashboard() {
           {myOrders.map((o) => {
             const st = ORDER_STATUS[o.status];
             const total = o.items.reduce((s, i) => s + i.price * i.qty, 0);
+            // Đơn quét mã QR (chuyển khoản / MoMo) chỉ được giao sau khi shop xác nhận đã nhận tiền
+            const awaitingPayment = isPrepaid(o.payment) && !o.paidAt && o.status !== 'cancelled';
             return (
               <div key={o.id} className="card">
                 <div className="row-between" style={{ paddingBottom: 12, borderBottom: '1px solid var(--border-color)', flexWrap: 'wrap', gap: 8 }}>
@@ -404,7 +421,10 @@ export default function ShopDashboard() {
                     <span className="strong">{o.code}</span>
                     <span className="tiny muted" style={{ marginLeft: 10 }}>{dateTime(o.createdAt)}</span>
                   </div>
-                  <span className={`badge ${st.badge}`}>{st.label}</span>
+                  <div className="row" style={{ gap: 6 }}>
+                    <PaymentBadge order={o} />
+                    <span className={`badge ${st.badge}`}>{st.label}</span>
+                  </div>
                 </div>
 
                 <div className="row" style={{ padding: '12px 0', gap: 20, flexWrap: 'wrap', alignItems: 'flex-start' }}>
@@ -432,8 +452,17 @@ export default function ShopDashboard() {
                 </div>
 
                 <div className="row-between" style={{ paddingTop: 12, borderTop: '1px solid var(--border-color)', flexWrap: 'wrap', gap: 10 }}>
-                  <span className="small">Giá trị đơn: <span className="price">{currency(total)}</span></span>
+                  <div className="small stack" style={{ gap: 2 }}>
+                    <span>Giá trị đơn: <span className="price">{currency(total)}</span></span>
+                    <span className="tiny muted">
+                      {PAYMENT_LABEL[o.payment]}
+                      {awaitingPayment && ` · Khách cần chuyển ${currency(o.total)}, nội dung "${o.code}"`}
+                    </span>
+                  </div>
                   <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
+                    {awaitingPayment && (
+                      <button className="btn btn-soft btn-sm" disabled={busyOrder === o.id} onClick={() => confirmPaid(o)}>Đã nhận tiền</button>
+                    )}
                     {o.status === 'pending' && (
                       <>
                         <button className="btn btn-primary btn-sm" disabled={busyOrder === o.id} onClick={() => advanceOrder(o, 'confirmed')}>Xác nhận đơn</button>
@@ -441,7 +470,14 @@ export default function ShopDashboard() {
                       </>
                     )}
                     {o.status === 'confirmed' && (
-                      <button className="btn btn-primary btn-sm" disabled={busyOrder === o.id} onClick={() => advanceOrder(o, 'shipping')}>Bàn giao vận chuyển</button>
+                      <button
+                        className="btn btn-primary btn-sm"
+                        disabled={busyOrder === o.id || awaitingPayment}
+                        title={awaitingPayment ? 'Chờ khách thanh toán trước khi giao hàng' : undefined}
+                        onClick={() => advanceOrder(o, 'shipping')}
+                      >
+                        Bàn giao vận chuyển
+                      </button>
                     )}
                     {o.status === 'shipping' && (
                       <button className="btn btn-primary btn-sm" disabled={busyOrder === o.id} onClick={() => advanceOrder(o, 'delivered')}>Đánh dấu đã giao</button>

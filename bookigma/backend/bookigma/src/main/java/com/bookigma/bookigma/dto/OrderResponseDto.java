@@ -29,6 +29,8 @@ public class OrderResponseDto {
     private BigDecimal shippingFee;
     private BigDecimal discount;
     private BigDecimal total;
+    /** Lúc shop xác nhận đã nhận tiền; null khi chưa thanh toán hoặc đơn COD. */
+    private LocalDateTime paidAt;
     private LocalDateTime createdAt;
     private List<OrderItemResponseDto> items;
     private List<OrderTimelineDto> timeline;

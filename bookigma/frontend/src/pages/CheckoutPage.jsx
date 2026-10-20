@@ -1,17 +1,18 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Banknote, Check, CreditCard, MapPin, Tag, Truck, Wallet, Zap } from 'lucide-react';
+import { Banknote, Check, CreditCard, MapPin, QrCode, Tag, Truck, Wallet, Zap } from 'lucide-react';
 import { useApp, useAuth, useToast } from '../hooks/useStore';
 import { currency } from '../lib/format';
 import { Field } from '../components/common/ui';
 import { POINT_RULES } from '../lib/gamification';
 import { SHIPPING_FEE, applyVoucher, cartSubtotal, countParcels, linePrice } from '../lib/cart';
 import { getPointsSummary } from '../services/pointsApi';
+import { isPrepaid } from '../lib/payment';
 
 const PAYMENTS = [
   { id: 'cod', label: 'Thanh toán khi nhận hàng (COD)', hint: 'Trả tiền mặt cho shipper', icon: Banknote },
-  { id: 'bank', label: 'Chuyển khoản ngân hàng', hint: 'Quét mã VietQR, xác nhận tự động', icon: CreditCard },
-  { id: 'momo', label: 'Ví MoMo', hint: 'Thanh toán qua ứng dụng MoMo', icon: Wallet },
+  { id: 'bank', label: 'Chuyển khoản ngân hàng', hint: 'Quét mã VietQR bằng app ngân hàng bất kỳ', icon: QrCode },
+  { id: 'momo', label: 'Ví MoMo', hint: 'Quét mã VietQR bằng app MoMo', icon: Wallet },
 ];
 
 export default function CheckoutPage() {
@@ -201,13 +202,14 @@ export default function CheckoutPage() {
               ))}
             </div>
 
-            {payment === 'bank' && (
+            {isPrepaid(payment) && (
               <div style={{ marginTop: 14, padding: 14, background: 'var(--bg-soft)', borderRadius: 10 }} className="small">
-                <div className="strong" style={{ marginBottom: 6 }}>Thông tin chuyển khoản</div>
-                <div className="muted">Ngân hàng: Vietcombank — CN Hà Nội</div>
-                <div className="muted">Số tài khoản: 0123 4567 8910</div>
-                <div className="muted">Chủ tài khoản: CONG TY BOOKIGMA</div>
-                <div className="muted">Nội dung: {user.name} thanh toan Bookigma</div>
+                <div className="strong" style={{ marginBottom: 6 }}>Thanh toán bằng mã QR</div>
+                <div className="muted">
+                  Sau khi bấm Đặt hàng, mã QR sẽ hiện kèm đúng số tiền và nội dung chuyển khoản là mã đơn.
+                  {payment === 'momo' ? ' Mở app MoMo, chọn Quét mã để thanh toán.' : ' Quét bằng app ngân hàng bất kỳ.'}
+                </div>
+                <div className="muted" style={{ marginTop: 4 }}>Shop sẽ giao hàng sau khi nhận được tiền.</div>
               </div>
             )}
           </div>

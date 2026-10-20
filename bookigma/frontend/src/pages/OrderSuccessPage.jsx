@@ -1,7 +1,9 @@
 import { Link, useLocation, useParams } from 'react-router-dom';
-import { CheckCircle2, Package, Store, Truck } from 'lucide-react';
+import { CheckCircle2, Package, QrCode, Store, Truck } from 'lucide-react';
 import { useApp } from '../hooks/useStore';
 import { currency, dateTime, PAYMENT_LABEL } from '../lib/format';
+import { isPrepaid } from '../lib/payment';
+import PaymentQr from '../components/common/PaymentQr';
 
 export default function OrderSuccessPage() {
   const { id } = useParams();
@@ -27,6 +29,7 @@ export default function OrderSuccessPage() {
 
   const first = placed[0];
   const grandTotal = placed.reduce((sum, o) => sum + o.total, 0);
+  const prepaid = isPrepaid(first.payment);
 
   return (
     <div className="main-layout" style={{ maxWidth: 680 }}>
@@ -34,7 +37,9 @@ export default function OrderSuccessPage() {
         <CheckCircle2 size={62} color="var(--accent-green)" style={{ marginBottom: 14 }} />
         <h1 style={{ margin: '0 0 8px', fontSize: 25 }}>Đặt hàng thành công!</h1>
         <p className="muted" style={{ margin: '0 0 6px' }}>
-          Cảm ơn bạn đã mua sách tại Bookigma. Shop sẽ xác nhận đơn trong vòng 24 giờ.
+          {prepaid
+            ? 'Quét mã QR bên dưới để thanh toán. Shop sẽ giao hàng sau khi nhận được tiền.'
+            : 'Cảm ơn bạn đã mua sách tại Bookigma. Shop sẽ xác nhận đơn trong vòng 24 giờ.'}
         </p>
         {placed.length > 1 && (
           <p className="small muted" style={{ margin: '0 0 6px' }}>
@@ -77,6 +82,25 @@ export default function OrderSuccessPage() {
             <span className="price" style={{ fontSize: 20 }}>{currency(grandTotal)}</span>
           </div>
         </div>
+
+        {prepaid && (
+          <div style={{ textAlign: 'left', border: '1px solid var(--accent-green)', borderRadius: 10, padding: 16, marginTop: 18 }} className="stack">
+            <div className="row strong" style={{ gap: 8 }}>
+              <QrCode size={18} color="var(--accent-green)" /> Quét mã để thanh toán
+            </div>
+            {placed.length > 1 && (
+              <p className="tiny muted" style={{ margin: 0 }}>
+                Mỗi đơn có một mã QR riêng, hãy thanh toán lần lượt từng mã.
+              </p>
+            )}
+            {placed.map((order) => (
+              <div key={order.id} className="stack" style={{ gap: 8 }}>
+                {placed.length > 1 && <div className="small strong">Đơn {order.code}</div>}
+                <PaymentQr order={order} />
+              </div>
+            ))}
+          </div>
+        )}
 
         <div className="row" style={{ justifyContent: 'center', gap: 10, marginTop: 24, flexWrap: 'wrap' }}>
           <Link to={`/orders/${first.id}`} className="btn btn-primary"><Truck size={16} /> Theo dõi đơn hàng</Link>

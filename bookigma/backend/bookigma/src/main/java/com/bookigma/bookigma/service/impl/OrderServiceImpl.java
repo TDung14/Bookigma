@@ -177,7 +177,8 @@ public class OrderServiceImpl implements OrderService {
         String cleanReason = InputUtils.blankToNull(reason);
         changeStatus(order, Order.Status.CANCELLED,
                 cleanReason == null ? "Khách hàng hủy đơn" : "Khách hàng hủy đơn: " + cleanReason);
-        notifyShop(order, "Khách hàng đã hủy đơn " + order.getCode() + ".");
+        notifyShop(order, "Khách hàng đã hủy đơn " + order.getCode() + "."
+                + (order.getPaidAt() != null ? " Đơn đã thanh toán, hãy hoàn tiền cho khách." : ""));
         return toDto(order, Viewer.BUYER);
     }
 
@@ -246,12 +247,7 @@ public class OrderServiceImpl implements OrderService {
     @Override
     @Transactional
     public OrderResponseDto updateShopOrderStatus(Long userId, Long orderId, StatusUpdateRequestDto request) {
-        Shop shop = accessGuard.requireOwnShop(userId);
-        Order order = orderRepository.findWithDetailsById(orderId)
-                .orElseThrow(() -> ApiException.notFound("Không tìm thấy đơn hàng."));
-        if (order.getShop() == null || !order.getShop().getId().equals(shop.getId())) {
-            throw ApiException.notFound("Không tìm thấy đơn hàng.");
-        }
+        Order order = findShopOrder(userId, orderId);
 
         Order.Status next = InputUtils.parseEnum(Order.Status.class, request.getStatus(),
                 "Trạng thái đơn hàng không hợp lệ.");
@@ -265,11 +261,37 @@ public class OrderServiceImpl implements OrderService {
             throw ApiException.conflict("Không thể chuyển đơn từ \"" + order.getStatus().getLabel()
                     + "\" sang \"" + next.getLabel() + "\".");
         }
+        if (next == Order.Status.SHIPPING && order.getPaymentMethod().isPrepaid() && order.getPaidAt() == null) {
+            throw ApiException.conflict("Đơn " + order.getCode()
+                    + " thanh toán bằng mã QR nhưng chưa xác nhận nhận tiền, chưa thể giao hàng.");
+        }
 
         String note = InputUtils.blankToNull(request.getNote());
         changeStatus(order, next, note == null ? defaultShopNote(order, next) : note);
         notificationService.createNotification(order.getUser().getId(),
                 buyerMessage(order, next, note), "/orders/" + order.getId());
+        return toDto(order, Viewer.STAFF);
+    }
+
+    @Override
+    @Transactional
+    public OrderResponseDto confirmShopOrderPayment(Long userId, Long orderId) {
+        Order order = findShopOrder(userId, orderId);
+        if (!order.getPaymentMethod().isPrepaid()) {
+            throw ApiException.badRequest("Đơn COD được thanh toán khi giao hàng, không cần xác nhận nhận tiền.");
+        }
+        if (order.getStatus() == Order.Status.CANCELLED) {
+            throw ApiException.conflict("Đơn đã hủy, không thể xác nhận thanh toán.");
+        }
+        if (order.getPaidAt() != null) {
+            throw ApiException.conflict("Đơn " + order.getCode() + " đã được xác nhận thanh toán.");
+        }
+
+        order.setPaidAt(LocalDateTime.now());
+        order.addHistory(order.getStatus(), "Shop xác nhận đã nhận "
+                + DtoMapper.formatVnd(order.getTotalAmount()) + " qua mã QR");
+        notificationService.createNotification(order.getUser().getId(),
+                "Shop đã nhận được thanh toán cho đơn " + order.getCode() + ".", "/orders/" + order.getId());
         return toDto(order, Viewer.STAFF);
     }
 
@@ -405,6 +427,16 @@ public class OrderServiceImpl implements OrderService {
 
     // ---------- Trạng thái đơn ----------
 
+    private Order findShopOrder(Long userId, Long orderId) {
+        Shop shop = accessGuard.requireOwnShop(userId);
+        Order order = orderRepository.findWithDetailsById(orderId)
+                .orElseThrow(() -> ApiException.notFound("Không tìm thấy đơn hàng."));
+        if (order.getShop() == null || !order.getShop().getId().equals(shop.getId())) {
+            throw ApiException.notFound("Không tìm thấy đơn hàng.");
+        }
+        return order;
+    }
+
     private Order findBuyerOrder(Long userId, Long orderId) {
         accessGuard.requireUser(userId);
         Order order = orderRepository.findWithDetailsById(orderId)
@@ -462,7 +494,8 @@ public class OrderServiceImpl implements OrderService {
             case DELIVERED -> hasBlindBox(order)
                     ? "Đơn hàng " + code + " đã giao thành công. Mở hộp Blind Book xem bên trong có gì nhé!"
                     : "Đơn hàng " + code + " đã giao thành công. Hãy xác nhận khi bạn nhận được hàng.";
-            case CANCELLED -> "Đơn hàng " + code + " đã bị shop từ chối" + (note == null ? "." : ": " + note);
+            case CANCELLED -> "Đơn hàng " + code + " đã bị shop từ chối" + (note == null ? "." : ": " + note)
+                    + (order.getPaidAt() != null ? " Shop sẽ hoàn lại tiền bạn đã thanh toán." : "");
             default -> "Đơn hàng " + code + ": " + next.getLabel().toLowerCase() + ".";
         };
     }
@@ -495,6 +528,7 @@ public class OrderServiceImpl implements OrderService {
                 .shippingFee(order.getShippingFee())
                 .discount(order.getDiscountAmount())
                 .total(order.getTotalAmount())
+                .paidAt(order.getPaidAt())
                 .createdAt(order.getCreatedAt())
                 .items(order.getItems().stream().map(item -> toItemDto(item, viewer)).toList())
                 .timeline(order.getHistory().stream()

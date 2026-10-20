@@ -62,4 +62,10 @@ public class SellerController {
                                                               @Valid @RequestBody StatusUpdateRequestDto request) {
         return ResponseEntity.ok(orderService.updateShopOrderStatus(userId, id, request));
     }
+
+    /** Xác nhận đã nhận tiền cho đơn chuyển khoản / MoMo. */
+    @PatchMapping("/orders/{id}/paid")
+    public ResponseEntity<OrderResponseDto> confirmOrderPayment(@CurrentUserId Long userId, @PathVariable Long id) {
+        return ResponseEntity.ok(orderService.confirmShopOrderPayment(userId, id));
+    }
 }
