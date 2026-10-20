@@ -1,7 +1,7 @@
 import { avatarSrc } from '../lib/avatar';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { Flag, MessageSquare, Paperclip, Plus, Search, Send, Smile, X } from 'lucide-react';
+import { Flag, MessageSquare, Paperclip, Plus, Search, Send, Smile, X, Phone, Video, ThumbsUp, Minimize2 } from 'lucide-react';
 import { useApp, useAuth, useToast } from '../hooks/useStore';
 import { clockTime, timeAgo } from '../lib/format';
 import { EmptyState } from '../components/common/ui';
@@ -19,9 +19,10 @@ export default function ChatPage() {
   const { user } = useAuth();
   const {
     conversations, users, userById, sendMessage, markConversationRead, findOrCreateConversation,
-    createGroupConversation, isFriend,
+    createGroupConversation, isFriend, openFloatingChat, addMessageReaction,
   } = useApp();
 
+  const [hoveredMessageId, setHoveredMessageId] = useState(null);
   const [query, setQuery] = useState('');
   const [draft, setDraft] = useState('');
   const [showNew, setShowNew] = useState(false);
@@ -213,9 +214,43 @@ export default function ChatPage() {
                   </div>
                 </div>
               </button>
-              <button className="btn-icon" onClick={() => setReporting(true)} aria-label="Báo cáo người dùng">
-                <Flag size={17} />
-              </button>
+              <div className="row" style={{ gap: 6 }}>
+                <button
+                  type="button"
+                  className="btn-icon"
+                  onClick={() => toast(`Đang kết nối cuộc gọi thoại với ${partner?.name}... (Demo)`, 'info')}
+                  title="Gọi thoại"
+                  aria-label="Gọi thoại"
+                >
+                  <Phone size={17} color="#0084ff" />
+                </button>
+                <button
+                  type="button"
+                  className="btn-icon"
+                  onClick={() => toast(`Đang kết nối cuộc gọi video với ${partner?.name}... (Demo)`, 'info')}
+                  title="Gọi video"
+                  aria-label="Gọi video"
+                >
+                  <Video size={18} color="#0084ff" />
+                </button>
+                <button
+                  type="button"
+                  className="btn-icon"
+                  onClick={() => {
+                    if (active?.id) {
+                      openFloatingChat(active.id);
+                      navigate('/');
+                    }
+                  }}
+                  title="Thu nhỏ vào góc màn hình (Floating Dock)"
+                  aria-label="Thu nhỏ vào góc"
+                >
+                  <Minimize2 size={17} color="#0084ff" />
+                </button>
+                <button className="btn-icon" onClick={() => setReporting(true)} aria-label="Báo cáo người dùng">
+                  <Flag size={17} />
+                </button>
+              </div>
             </div>
 
             <div ref={bodyRef} className="scroll-y" style={{ flex: 1, minHeight: 0, padding: 16, display: 'flex', flexDirection: 'column', gap: 8, background: 'var(--bg-primary)', overflowY: 'auto' }}>
@@ -225,12 +260,48 @@ export default function ChatPage() {
               {active.messages.map((m, i) => {
                 const mine = normalizeId(m.senderId) === normalizeId(user.id);
                 const showTime = i === 0 || m.at - active.messages[i - 1].at > 10 * 60 * 1000;
+                const isHovered = hoveredMessageId === m.id;
+                const reactions = m.reactions || {};
+                const reactionEntries = Object.entries(reactions).filter(([, count]) => count > 0);
+
                 return (
-                  <div key={m.id} style={{ display: 'flex', flexDirection: 'column', alignItems: mine ? 'flex-end' : 'flex-start' }}>
+                  <div
+                    key={m.id}
+                    style={{ display: 'flex', flexDirection: 'column', alignItems: mine ? 'flex-end' : 'flex-start', position: 'relative' }}
+                    onMouseEnter={() => setHoveredMessageId(m.id)}
+                    onMouseLeave={() => setHoveredMessageId(null)}
+                  >
                     {showTime && (
                       <div className="tiny muted" style={{ alignSelf: 'center', margin: '8px 0' }}>{clockTime(m.at)}</div>
                     )}
+
+                    {isHovered && (
+                      <div className={`fb-reaction-bar ${mine ? 'mine' : 'other'}`}>
+                        {['👍', '❤️', '😂', '😮', '😢', '😡'].map((emoji) => (
+                          <button
+                            key={emoji}
+                            type="button"
+                            className="fb-reaction-quick-btn"
+                            onClick={() => addMessageReaction(active.id, m.id, emoji)}
+                            title={`Bày tỏ cảm xúc ${emoji}`}
+                          >
+                            {emoji}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+
                     <div className={`bubble ${mine ? 'bubble-me' : 'bubble-them'}`}>{m.text}</div>
+
+                    {reactionEntries.length > 0 && (
+                      <div className={`fb-msg-reactions ${mine ? 'mine' : 'other'}`}>
+                        {reactionEntries.map(([em, cnt]) => (
+                          <span key={em} className="fb-reaction-pill">
+                            {em} {cnt > 1 ? cnt : ''}
+                          </span>
+                        ))}
+                      </div>
+                    )}
                     <span className="tiny muted" style={{ marginTop: 2 }}>{clockTime(m.at)}</span>
                   </div>
                 );
@@ -259,9 +330,25 @@ export default function ChatPage() {
                   value={draft}
                   onChange={(e) => setDraft(e.target.value)}
                 />
-                <button type="submit" className="btn btn-primary" style={{ borderRadius: 20 }} disabled={!draft.trim()}>
-                  <Send size={17} />
-                </button>
+                {draft.trim() ? (
+                  <button type="submit" className="btn btn-primary" style={{ borderRadius: 20 }}>
+                    <Send size={17} />
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    className="btn-icon"
+                    style={{ color: '#0084ff', width: 38, height: 38 }}
+                    onClick={() => {
+                      if (!active) return;
+                      sendMessage(active.id, user.id, '👍');
+                    }}
+                    title="Gửi biểu tượng thích 👍"
+                    aria-label="Thích"
+                  >
+                    <ThumbsUp size={20} />
+                  </button>
+                )}
               </div>
             </form>
           </div>

@@ -18,6 +18,7 @@ export default function BookDetailPage() {
   const { user } = useAuth();
   const {
     bookById, shopById, books, addToCart, getProgress, findOrCreateConversation, userById, trackDaily, catalogStatus,
+    openFloatingChat,
   } = useApp();
 
   const [qty, setQty] = useState(1);
@@ -98,7 +99,7 @@ export default function BookDetailPage() {
     const ownerId = shop?.ownerId;
     if (!ownerId || ownerId === user.id) return toast('Đây là shop của bạn.', 'info');
     const convId = await findOrCreateConversation(user.id, ownerId);
-    navigate(`/chat/${convId}`);
+    openFloatingChat(convId);
   };
 
   return (

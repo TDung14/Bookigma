@@ -9,6 +9,7 @@ import {
 import { useApp, useAuth, useTheme } from '../../hooks/useStore';
 import { timeAgo } from '../../lib/format';
 import { resetAll } from '../../lib/storage';
+import MessengerDropdown from '../chat/MessengerDropdown';
 
 const NAV_ITEMS = [
   { to: '/', label: 'Bảng tin', icon: Home, end: true },
@@ -58,13 +59,10 @@ export default function Navbar() {
   const { user, logout, isAdmin, isSeller } = useAuth();
   const {
     getCart, unreadCount, notifications, markNotificationsRead, books,
-    conversations, userById, sendMessage, markConversationRead, findOrCreateConversation,
   } = useApp();
   const navigate = useNavigate();
   const [query, setQuery] = useState('');
-  const [chatDockOpen, setChatDockOpen] = useState(false);
-  const [chatDraft, setChatDraft] = useState('');
-  const [chatTargetId, setChatTargetId] = useState(null);
+  const [messengerOpen, setMessengerOpen] = useState(false);
 
   const cartCount = user ? getCart(user.id).reduce((s, c) => s + c.qty, 0) : 0;
   const chatUnread = user ? unreadCount(user.id) : 0;
@@ -73,19 +71,6 @@ export default function Navbar() {
     [notifications, user]
   );
   const notifUnread = myNotifs.filter((n) => !n.read).length;
-  const myConvs = useMemo(() => {
-    if (!user) return [];
-    const currentId = String(user.id ?? '');
-    return conversations
-      .filter((c) => c.participants.map((p) => String(p ?? '')).includes(currentId))
-      .sort((a, b) => b.updatedAt - a.updatedAt);
-  }, [conversations, user]);
-  const activeConv = useMemo(() => {
-    if (!user) return null;
-    const match = chatTargetId ? myConvs.find((c) => c.id === chatTargetId) : null;
-    return match || myConvs[0] || null;
-  }, [chatTargetId, myConvs, user]);
-  const activePartner = activeConv ? userById(activeConv.participants.find((p) => String(p ?? '') !== String(user.id ?? ''))) : null;
 
   const suggestions = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -101,31 +86,6 @@ export default function Navbar() {
     navigate(`/shop?q=${encodeURIComponent(query.trim())}`);
     setQuery('');
   };
-
-  const openChatDock = () => {
-    if (!user) return navigate('/login');
-    setChatTargetId((prev) => prev || myConvs[0]?.id || null);
-    setChatDockOpen((v) => !v);
-  };
-
-  const openFullChat = (convId) => {
-    const id = convId || activeConv?.id || null;
-    setChatDockOpen(false);
-    if (id) navigate(`/chat/${id}`);
-    else navigate('/chat');
-  };
-
-  const submitMiniChat = (e) => {
-    e.preventDefault();
-    const text = chatDraft.trim();
-    if (!text || !user || !activeConv) return;
-    sendMessage(activeConv.id, user.id, text);
-    setChatDraft('');
-  };
-
-  useEffect(() => {
-    if (chatDockOpen && activeConv && user) markConversationRead(activeConv.id, user.id);
-  }, [activeConv, chatDockOpen, markConversationRead, user]);
 
   const hardReset = () => {
     if (window.confirm('Xóa toàn bộ dữ liệu demo và quay lại trạng thái ban đầu?')) {
@@ -204,10 +164,26 @@ export default function Navbar() {
               <Zap size={13} /> {(Number(user.points) || 0).toLocaleString('vi-VN')}
             </Link>
           )}
-          <button className="btn-icon" style={{ position: 'relative' }} onClick={openChatDock} aria-label="Tin nhắn">
-            <MessageSquare size={20} />
-            {chatUnread > 0 && <Badge count={chatUnread} />}
-          </button>
+          <div style={{ position: 'relative' }}>
+            <button
+              id="navbar-chat-toggle-btn"
+              className={`btn-icon ${messengerOpen ? 'active' : ''}`}
+              style={{ position: 'relative' }}
+              onClick={() => {
+                if (!user) return navigate('/login');
+                setMessengerOpen((v) => !v);
+              }}
+              aria-label="Đoạn chat (Messenger)"
+            >
+              <MessageSquare size={20} />
+              {chatUnread > 0 && <Badge count={chatUnread} />}
+            </button>
+
+            <MessengerDropdown
+              isOpen={messengerOpen}
+              onClose={() => setMessengerOpen(false)}
+            />
+          </div>
           <IconWithBadge to="/cart" icon={ShoppingCart} count={cartCount} label="Giỏ hàng" />
 
           <Dropdown
@@ -272,78 +248,6 @@ export default function Navbar() {
         </div>
       </nav>
 
-      {user && chatDockOpen && activeConv && (
-        <div className="chat-mini-dock">
-          <div className="chat-mini-header">
-            <div className="row" style={{ gap: 8 }}>
-              <img src={avatarSrc(activePartner?.avatar)} alt="" className="avatar" style={{ width: 28, height: 28 }} />
-              <div>
-                <div className="small strong" style={{ lineHeight: 1.2 }}>{activePartner?.name || 'Hội thoại'}</div>
-                <div className="tiny muted">{activeConv.messages.length} tin nhắn</div>
-              </div>
-            </div>
-            <div className="row" style={{ gap: 4 }}>
-              <button className="btn-icon" onClick={() => openFullChat(activeConv.id)} aria-label="Mở rộng hội thoại">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M8 3H3v5" />
-                  <path d="M3 8l6 6" />
-                  <path d="M16 21h5v-5" />
-                  <path d="M21 16l-6-6" />
-                </svg>
-              </button>
-              <button className="btn-icon" onClick={() => setChatDockOpen(false)} aria-label="Đóng hội thoại">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M18 6L6 18" />
-                  <path d="M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
-          </div>
-
-          {myConvs.length > 1 && (
-            <div className="chat-mini-list">
-              {myConvs.slice(0, 4).map((conv) => {
-                const other = userById(conv.participants.find((p) => String(p ?? '') !== String(user.id ?? '')));
-                const last = conv.messages[conv.messages.length - 1];
-                if (!other) return null;
-                return (
-                  <button
-                    key={conv.id}
-                    className={`chat-mini-item ${conv.id === activeConv.id ? 'active' : ''}`}
-                    onClick={() => setChatTargetId(conv.id)}
-                  >
-                    <img src={avatarSrc(other.avatar)} alt="" className="avatar" style={{ width: 24, height: 24 }} />
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div className="tiny strong truncate">{other.name}</div>
-                      <div className="tiny muted truncate">{last ? last.text : 'Bắt đầu chat'}</div>
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-          )}
-
-          <div className="chat-mini-body">
-            {activeConv.messages.slice(-4).map((m) => (
-              <div key={m.id} className={`chat-mini-bubble ${String(m.senderId ?? '') === String(user.id ?? '') ? 'mine' : 'other'}`}>
-                {m.text}
-              </div>
-            ))}
-          </div>
-
-          <form className="chat-mini-form" onSubmit={submitMiniChat}>
-            <input
-              className="input"
-              value={chatDraft}
-              onChange={(e) => setChatDraft(e.target.value)}
-              placeholder="Nhắn tin..."
-            />
-            <button type="submit" className="btn btn-primary btn-sm" disabled={!chatDraft.trim()}>
-              Gửi
-            </button>
-          </form>
-        </div>
-      )}
     </>
   );
 }

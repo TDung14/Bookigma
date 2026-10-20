@@ -9,6 +9,7 @@ import { ToastProvider } from './context/ToastProvider';
 import { useAuth } from './hooks/useStore';
 
 import Navbar, { MobileNav } from './components/layout/Navbar';
+import FloatingChatContainer from './components/chat/FloatingChatContainer';
 
 import FeedPage from './pages/FeedPage';
 import ShopPage from './pages/ShopPage';
@@ -126,6 +127,7 @@ function Shell() {
 
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
+      <FloatingChatContainer />
       <MobileNav />
     </div>
   );

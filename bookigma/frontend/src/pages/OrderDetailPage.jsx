@@ -12,6 +12,7 @@ export default function OrderDetailPage() {
   const { user } = useAuth();
   const {
     orders, cancelOrder, completeOrder, revealBlindBox, refreshOrders, accountReady, shopById, findOrCreateConversation,
+    openFloatingChat,
   } = useApp();
   const [busy, setBusy] = useState(false);
 
@@ -53,7 +54,7 @@ export default function OrderDetailPage() {
   const chatShop = async () => {
     if (!shop?.ownerId || shop.ownerId === user.id) return;
     const convId = await findOrCreateConversation(user.id, shop.ownerId);
-    navigate(`/chat/${convId}`);
+    openFloatingChat(convId);
   };
 
   return (

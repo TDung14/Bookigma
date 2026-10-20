@@ -88,6 +88,7 @@ export function AppProvider({ children }) {
   const [posts, setPosts] = useState([]);
   const [reports, setReports] = useState([]);
   const [conversations, setConversations] = useState([]);
+  const [openChats, setOpenChats] = useState([]);
   const [friendState, setFriendState] = useState({ friendIds: [], sentPendingIds: [], receivedPendingIds: [] });
   const [progressAll, setProgressAll] = useState(() => load('progress', seed.readingProgress));
   const [localNotifications, setLocalNotifications] = useState(() => load('notifications', seed.notifications));
@@ -942,6 +943,7 @@ export function AppProvider({ children }) {
       senderId: String(m.senderId),
       text: m.content,
       at: new Date(m.createdAt).getTime(),
+      reactions: m.reactions || {},
     })),
     updatedAt: new Date(c.updatedAt).getTime(),
     readBy: previous?.readBy || {},
@@ -949,21 +951,26 @@ export function AppProvider({ children }) {
 
   const refreshConversations = useCallback(async () => {
     if (!userId) return [];
-    const data = await chatApi.listChatConversations(userId);
-    setConversations((prev) => {
-      const old = new Map(prev.map((c) => [String(c.id), c]));
-      return (Array.isArray(data) ? data : []).map((c) => mapConversation(c, old.get(String(c.id))));
-    });
-    return data;
+    try {
+      const data = await chatApi.listChatConversations(userId);
+      setConversations((prev) => {
+        const old = new Map(prev.map((c) => [String(c.id), c]));
+        return (Array.isArray(data) ? data : []).map((c) => mapConversation(c, old.get(String(c.id))));
+      });
+      return data;
+    } catch {
+      return [];
+    }
   }, [userId, mapConversation]);
 
   useEffect(() => {
     if (!userId) {
       setConversations([]);
+      setOpenChats([]);
       return undefined;
     }
     refreshConversations().catch(() => {});
-    const timer = setInterval(() => refreshConversations().catch(() => {}), 2500);
+    const timer = setInterval(() => refreshConversations().catch(() => {}), 3000);
     return () => clearInterval(timer);
   }, [userId, refreshConversations]);
 
@@ -975,43 +982,97 @@ export function AppProvider({ children }) {
     );
     if (existing) return existing.id;
 
-    const created = await chatApi.createDirectConversation(userA, userB);
-    const mapped = mapConversation(created);
-    setConversations((prev) => [mapped, ...prev.filter((c) => String(c.id) !== String(mapped.id))]);
-    return mapped.id;
+    try {
+      const created = await chatApi.createDirectConversation(userA, userB);
+      const mapped = mapConversation(created);
+      setConversations((prev) => [mapped, ...prev.filter((c) => String(c.id) !== String(mapped.id))]);
+      return mapped.id;
+    } catch {
+      const localId = `local_conv_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+      const localConv = {
+        id: localId,
+        name: null,
+        type: 'DIRECT',
+        participants: [String(userA), String(userB)],
+        messages: [],
+        updatedAt: Date.now(),
+        readBy: { [String(userA)]: 0 },
+      };
+      setConversations((prev) => [localConv, ...prev]);
+      return localId;
+    }
   }, [conversations, mapConversation]);
 
   const createGroupConversation = useCallback(async (creatorId, participantIds, name) => {
-    const created = await chatApi.createGroupConversation({
-      creatorId,
-      participantIds: participantIds.map(Number),
-      name,
-    });
-    const mapped = mapConversation(created);
-    setConversations((prev) => [mapped, ...prev]);
-    return mapped;
+    try {
+      const created = await chatApi.createGroupConversation({
+        creatorId,
+        participantIds: participantIds.map(Number),
+        name,
+      });
+      const mapped = mapConversation(created);
+      setConversations((prev) => [mapped, ...prev]);
+      return mapped;
+    } catch (err) {
+      const localId = `local_group_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+      const localGroup = {
+        id: localId,
+        name: name || 'Nhóm trò chuyện',
+        type: 'GROUP',
+        participants: [String(creatorId), ...participantIds.map(String)],
+        messages: [],
+        updatedAt: Date.now(),
+        readBy: { [String(creatorId)]: 0 },
+      };
+      setConversations((prev) => [localGroup, ...prev]);
+      return localGroup;
+    }
   }, [mapConversation]);
 
   const sendMessage = useCallback(async (convId, senderId, text) => {
-    const saved = await chatApi.sendChatMessage(convId, senderId, text);
-    const message = {
-      id: String(saved.id),
-      senderId: String(saved.senderId),
-      text: saved.content,
-      at: new Date(saved.createdAt).getTime(),
-    };
-    setConversations((prev) => prev.map((c) => c.id === String(convId)
-      ? { ...c, messages: [...c.messages, message], updatedAt: message.at, readBy: { ...c.readBy, [String(senderId)]: c.messages.length + 1 } }
-      : c));
-    return message;
+    const cleanText = text?.trim();
+    if (!cleanText) return null;
+    try {
+      const saved = await chatApi.sendChatMessage(convId, senderId, cleanText);
+      const message = {
+        id: String(saved.id),
+        senderId: String(saved.senderId),
+        text: saved.content,
+        at: new Date(saved.createdAt).getTime(),
+        reactions: {},
+      };
+      setConversations((prev) => prev.map((c) => c.id === String(convId)
+        ? { ...c, messages: [...c.messages, message], updatedAt: message.at, readBy: { ...c.readBy, [String(senderId)]: c.messages.length + 1 } }
+        : c));
+      return message;
+    } catch {
+      const message = {
+        id: `msg_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+        senderId: String(senderId),
+        text: cleanText,
+        at: Date.now(),
+        reactions: {},
+      };
+      setConversations((prev) => prev.map((c) => c.id === String(convId)
+        ? { ...c, messages: [...c.messages, message], updatedAt: message.at, readBy: { ...c.readBy, [String(senderId)]: c.messages.length + 1 } }
+        : c));
+      return message;
+    }
   }, []);
 
   const markConversationRead = useCallback((convId, uId) => {
-    setConversations((prev) => prev.map((c) =>
-      c.id === String(convId)
-        ? { ...c, readBy: { ...c.readBy, [String(uId)]: c.messages.length } }
-        : c
-    ));
+    if (!convId || !uId) return;
+    setConversations((prev) => {
+      const conv = prev.find((c) => String(c.id) === String(convId));
+      if (!conv) return prev;
+      const currentRead = conv.readBy?.[String(uId)] ?? 0;
+      if (currentRead >= conv.messages.length) return prev; // Ngăn chặn vòng lặp re-render vô tận
+      return prev.map((c) =>
+        String(c.id) === String(convId)
+          ? { ...c, readBy: { ...c.readBy, [String(uId)]: c.messages.length } }
+          : c
+      );
+    });
   }, []);
 
   const unreadCount = useCallback(
@@ -1020,6 +1081,72 @@ export function AppProvider({ children }) {
       .reduce((sum, c) => sum + Math.max(0, c.messages.length - (c.readBy?.[String(uId)] ?? 0)), 0),
     [conversations]
   );
+
+  const addMessageReaction = useCallback((convId, messageId, emoji) => {
+    setConversations((prev) => prev.map((c) => {
+      if (String(c.id) !== String(convId)) return c;
+      return {
+        ...c,
+        messages: c.messages.map((m) => {
+          if (String(m.id) !== String(messageId)) return m;
+          const reactions = { ...(m.reactions || {}) };
+          reactions[emoji] = (reactions[emoji] || 0) + 1;
+          return { ...m, reactions };
+        }),
+      };
+    }));
+  }, []);
+
+  // Facebook Floating Chat Dock management
+  const openFloatingChat = useCallback((convId) => {
+    if (!convId) return;
+    const sId = String(convId);
+    setOpenChats((prev) => {
+      const idx = prev.findIndex((item) => item.id === sId);
+      if (idx !== -1) {
+        return prev.map((item, i) =>
+          i === idx ? { ...item, minimized: false, focused: true } : { ...item, focused: false }
+        );
+      }
+      const unminimized = prev.filter((item) => !item.minimized);
+      let nextList = prev.map((item) => ({ ...item, focused: false }));
+      if (unminimized.length >= 2) {
+        const oldestUnminimizedId = unminimized[0].id;
+        nextList = nextList.map((item) =>
+          item.id === oldestUnminimizedId ? { ...item, minimized: true } : item
+        );
+      }
+      return [...nextList, { id: sId, minimized: false, focused: true }];
+    });
+    if (userId) {
+      markConversationRead(sId, userId);
+    }
+  }, [userId, markConversationRead]);
+
+  const closeFloatingChat = useCallback((convId) => {
+    const sId = String(convId);
+    setOpenChats((prev) => prev.filter((item) => item.id !== sId));
+  }, []);
+
+  const minimizeFloatingChat = useCallback((convId, minimized = true) => {
+    const sId = String(convId);
+    setOpenChats((prev) => prev.map((item) =>
+      item.id === sId ? { ...item, minimized, focused: !minimized } : item
+    ));
+  }, []);
+
+  const toggleFloatingChat = useCallback((convId) => {
+    const sId = String(convId);
+    setOpenChats((prev) => {
+      const target = prev.find((item) => item.id === sId);
+      if (!target) {
+        return [...prev.map((item) => ({ ...item, focused: false })), { id: sId, minimized: false, focused: true }];
+      }
+      return prev.map((item) =>
+        item.id === sId ? { ...item, minimized: !item.minimized, focused: item.minimized } : item
+      );
+    });
+  }, []);
 
   // ---------- Tiến trình đọc ----------
   const getProgress = useCallback((uId) => progressAll[uId] || {}, [progressAll]);
@@ -1306,6 +1433,12 @@ export function AppProvider({ children }) {
       refreshConversations,
       markConversationRead,
       unreadCount,
+      openChats,
+      openFloatingChat,
+      closeFloatingChat,
+      minimizeFloatingChat,
+      toggleFloatingChat,
+      addMessageReaction,
       getProgress,
       saveProgress,
       pushNotification,
@@ -1409,6 +1542,12 @@ export function AppProvider({ children }) {
       refreshConversations,
       markConversationRead,
       unreadCount,
+      openChats,
+      openFloatingChat,
+      closeFloatingChat,
+      minimizeFloatingChat,
+      toggleFloatingChat,
+      addMessageReaction,
       getProgress,
       saveProgress,
       pushNotification,

@@ -22,6 +22,7 @@ export default function ExchangePage() {
   const {
     exchanges, myExchanges, sentOffers, refreshExchanges, addExchange, sendExchangeOffer,
     respondExchangeOffer, setExchangeStatus, deleteExchange, findOrCreateConversation,
+    openFloatingChat,
   } = useApp();
   const { user } = useAuth();
   const toast = useToast();
@@ -125,7 +126,7 @@ export default function ExchangePage() {
   const chatWith = async (otherId) => {
     if (!user) return navigate('/login');
     const convId = await findOrCreateConversation(user.id, otherId);
-    navigate(`/chat/${convId}`);
+    openFloatingChat(convId);
   };
 
   return (

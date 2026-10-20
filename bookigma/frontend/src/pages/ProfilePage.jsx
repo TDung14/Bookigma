@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
-import { BookOpen, Calendar, Clock, Flame, Package, ShoppingBag, Pencil, Save, X, KeyRound } from 'lucide-react';
+import { Link, useNavigate, useParams } from 'react-router-dom';
+import { BookOpen, Calendar, Clock, Flame, Package, ShoppingBag, Pencil, Save, X, KeyRound, MessageSquare } from 'lucide-react';
 import { useApp, useAuth, useToast } from '../hooks/useStore';
 import { currency, dateOnly, duration, timeAgo } from '../lib/format';
 import { ProgressBar, StatCard } from '../components/common/ui';
@@ -9,8 +9,9 @@ import { avatarSrc } from '../lib/avatar';
 
 export default function ProfilePage() {
   const { userId } = useParams();
+  const navigate = useNavigate();
   const { user: authUser, updateProfile, loading } = useAuth();
-  const { users, orders, posts, getProgress, books } = useApp();
+  const { users, orders, posts, getProgress, books, findOrCreateConversation, openFloatingChat } = useApp();
   const toast = useToast();
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState({ email: '', fullName: '', bio: '', avatarUrl: '' });
@@ -157,7 +158,18 @@ export default function ProfilePage() {
               <Link to="/library" className="btn btn-primary btn-sm"><BookOpen size={15} /> Tủ sách</Link>
             </div>
           ) : (
-            <Link to={`/chat`} className="btn btn-primary btn-sm">Nhắn tin</Link>
+            <button
+              type="button"
+              className="btn btn-primary btn-sm"
+              onClick={async () => {
+                if (!authUser) return navigate('/login');
+                if (!profileUser?.id) return;
+                const convId = await findOrCreateConversation(authUser.id, profileUser.id);
+                openFloatingChat(convId);
+              }}
+            >
+              <MessageSquare size={15} /> Nhắn tin
+            </button>
           )}
         </div>
 

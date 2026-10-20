@@ -65,7 +65,13 @@ export default function FriendsPage() {
     if (!findOrCreateConversation || !userId) return;
     try {
       const convId = await findOrCreateConversation(userId, otherId);
-      if (convId) navigate(`/chat/${convId}`);
+      if (convId) {
+        if (app.openFloatingChat) {
+          app.openFloatingChat(convId);
+        } else {
+          navigate(`/chat/${convId}`);
+        }
+      }
     } catch (e) {
       toast(e?.message || 'Không thể mở cuộc trò chuyện.', 'info');
     }
