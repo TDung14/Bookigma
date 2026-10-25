@@ -229,8 +229,8 @@ function startLofiChords(ctx, masterGain) {
 
 export const AMBIENT_SOUNDS = [
   { id: 'rain', name: 'Mưa rả rích', icon: '🌧️', desc: 'Tiếng mưa rơi nhẹ bên khung cửa kính' },
-  { id: 'lofi', name: 'Lofi Piano Chill', icon: '☕', desc: 'Hợp âm Rhodes ấm áp cho không gian đọc' },
-  { id: 'fireplace', name: 'Lò sưởi thư viện', icon: '🔥', desc: 'Than hồng nổ tí tách ấm cúng' },
+  { id: 'lofi', name: 'Lofi Piano Chill', icon: '☕', desc: 'Hợp âm Rhodes ấm áp cho không gian đọc', premium: true },
+  { id: 'fireplace', name: 'Lò sưởi thư viện', icon: '🔥', desc: 'Than hồng nổ tí tách ấm cúng', premium: true },
   { id: 'waves', name: 'Sóng biển đêm', icon: '🌊', desc: 'Nhịp sóng vỗ bờ êm dịu, tĩnh tâm' },
 ];
 

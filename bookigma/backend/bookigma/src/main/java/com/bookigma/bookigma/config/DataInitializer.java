@@ -281,6 +281,7 @@ public class DataInitializer {
                 .fullName(fullName)
                 .role(role)
                 .active(true)
+                .emailVerified(true)
                 .build();
 
         userRepository.save(user);

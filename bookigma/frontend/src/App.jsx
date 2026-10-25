@@ -30,7 +30,10 @@ import LeaderboardPage from './pages/LeaderboardPage';
 import FriendsPage from './pages/FriendsPage';
 import ChatPage from './pages/ChatPage';
 import ProfilePage from './pages/ProfilePage';
+import SettingsPage from './pages/SettingsPage';
+import UpgradePage from './pages/UpgradePage';
 import LoginPage from './pages/auth/LoginPage';
+import VerifyEmailPage from './pages/auth/VerifyEmailPage';
 import AdminDashboard from './pages/admin/AdminDashboard';
 import ShopDashboard from './pages/shop/ShopDashboard';
 
@@ -73,6 +76,12 @@ function Shell() {
   const location = useLocation();
   const { user } = useAuth();
   const isLogin = location.pathname === '/login';
+  const isVerifyEmail = location.pathname === '/verify-email';
+
+  // Trang xác thực email phải mở được cả khi chưa đăng nhập.
+  if (isVerifyEmail) {
+    return <VerifyEmailPage />;
+  }
 
   // Đăng nhập/đăng ký xong: đợi user có trong context rồi mới rời /login.
   // Tránh điều hướng sớm sang `/` khi user còn null (bị đá lại trang login).
@@ -114,6 +123,8 @@ function Shell() {
         <Route path="/chat/:convId" element={<RequireAuth><ChatPage /></RequireAuth>} />
         <Route path="/profile" element={<RequireAuth><ProfilePage /></RequireAuth>} />
         <Route path="/profile/:userId" element={<RequireAuth><ProfilePage /></RequireAuth>} />
+        <Route path="/settings" element={<RequireAuth><SettingsPage /></RequireAuth>} />
+        <Route path="/upgrade" element={<RequireAuth><UpgradePage /></RequireAuth>} />
 
         <Route
           path="/shop-admin/*"

@@ -4,6 +4,7 @@ import {
   Eye,
   EyeOff,
   LogIn,
+  MailCheck,
   UserPlus,
 } from 'lucide-react';
 
@@ -12,11 +13,13 @@ import {
   useToast,
 } from '../../hooks/useStore';
 import { apiCall } from '../../services/api';
+import GoogleLoginButton from '../../components/auth/GoogleLoginButton';
 
 export default function LoginPage() {
 
   const {
     login,
+    loginWithGoogle,
     register,
     loading,
   } = useAuth();
@@ -50,6 +53,9 @@ export default function LoginPage() {
   const [forgotEmail, setForgotEmail] =
     useState('');
 
+  const [resetLoading, setResetLoading] =
+    useState(false);
+
   const [showLoginPassword, setShowLoginPassword] =
     useState(false);
 
@@ -62,11 +68,24 @@ export default function LoginPage() {
   const [error, setError] =
     useState('');
 
+  const [registered, setRegistered] =
+    useState(null);
+
+  const [resendEmail, setResendEmail] =
+    useState('');
+
+  const [resendLoading, setResendLoading] =
+    useState(false);
+
   const switchMode = (nextMode) => {
 
     setMode(nextMode);
 
     setError('');
+
+    if (nextMode === 'register') {
+      setRegistered(null);
+    }
   };
 
   const handleLoginSubmit =
@@ -119,6 +138,28 @@ export default function LoginPage() {
       // ngược về /login — trông như đăng nhập thất bại sau khi đăng xuất.
     };
 
+  const handleGoogleCredential = async (credential) => {
+    if (loading) {
+      return;
+    }
+
+    setError('');
+
+    const result = await loginWithGoogle(credential);
+
+    if (!result.ok) {
+      setError(result.error);
+      return;
+    }
+
+    toast(
+      `Xin chào ${
+        result.user.fullName ||
+        result.user.username
+      }!`
+    );
+  };
+
   const handleRegisterSubmit =
     async (event) => {
 
@@ -147,6 +188,17 @@ export default function LoginPage() {
 
         setError(
           'Mật khẩu phải có ít nhất 6 ký tự.'
+        );
+
+        return;
+      }
+
+      if (
+        new TextEncoder().encode(regPassword).length > 72
+      ) {
+
+        setError(
+          'Mật khẩu quá dài, vui lòng rút ngắn lại!'
         );
 
         return;
@@ -186,13 +238,62 @@ export default function LoginPage() {
         return;
       }
 
+      setRegistered({
+        email: result.data?.email || regEmail.trim(),
+        emailSent: result.data?.emailSent !== false,
+      });
+
+      setRegPassword('');
+      setRegConfirmPassword('');
+
       toast(
-        'Đăng ký tài khoản thành công!'
+        'Đăng ký tài khoản thành công! Hãy kiểm tra email để xác thực.'
       );
     };
 
+  const sendVerificationAgain = async (email) => {
+    setError('');
+
+    try {
+      setResendLoading(true);
+      await apiCall('/auth/resend-verification', 'POST', {
+        email: String(email || '').trim(),
+      });
+      toast('Email xác thực đã được gửi lại. Hãy kiểm tra hộp thư.');
+      return true;
+    } catch (err) {
+      setError(err.message || 'Không thể gửi lại email xác thực.');
+      return false;
+    } finally {
+      setResendLoading(false);
+    }
+  };
+
+  const handleResendSubmit = async (event) => {
+    event.preventDefault();
+
+    if (resendLoading) {
+      return;
+    }
+
+    if (!resendEmail.trim()) {
+      setError('Vui lòng nhập email đã đăng ký.');
+      return;
+    }
+
+    const sent = await sendVerificationAgain(resendEmail);
+    if (sent) {
+      setMode('login');
+    }
+  };
+
   const handleForgotSubmit = async (event) => {
     event.preventDefault();
+
+    if (resetLoading) {
+      return;
+    }
+
     setError('');
 
     if (!forgotEmail.trim()) {
@@ -201,12 +302,15 @@ export default function LoginPage() {
     }
 
     try {
+      setResetLoading(true);
       await apiCall('/auth/forgot-password', 'POST', { email: forgotEmail.trim() });
       toast('Mật khẩu mới đã được gửi tới email của bạn.', 'success');
       setForgotEmail('');
       setMode('login');
     } catch (err) {
       setError(err.message || 'Không thể xử lý yêu cầu.');
+    } finally {
+      setResetLoading(false);
     }
   };
 
@@ -450,6 +554,7 @@ export default function LoginPage() {
                       )
                     }
                     autoComplete="current-password"
+                    maxLength={72}
                     required
                     style={{ paddingRight: 42 }}
                   />
@@ -490,6 +595,8 @@ export default function LoginPage() {
                   : 'Đăng nhập'}
               </button>
 
+              <GoogleLoginButton onCredential={handleGoogleCredential} />
+
               <button
                 type="button"
                 className="btn btn-ghost btn-block"
@@ -499,9 +606,83 @@ export default function LoginPage() {
                 Quên mật khẩu?
               </button>
 
+              <button
+                type="button"
+                className="btn btn-ghost btn-block"
+                onClick={() => {
+                  setResendEmail(
+                    loginUsername.includes('@') ? loginUsername.trim() : ''
+                  );
+                  setMode('resend');
+                  setError('');
+                }}
+              >
+                Gửi lại email xác thực
+              </button>
+
             </form>
 
           ) : mode === 'register' ? (
+            registered ? (
+
+              <div className="card" style={{ padding: 20 }}>
+                <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 12 }}>
+                  <MailCheck size={44} color="#16a34a" />
+                </div>
+
+                <h2 style={{ margin: '0 0 8px', textAlign: 'center' }}>
+                  Kiểm tra email của bạn
+                </h2>
+
+                <p className="small muted" style={{ margin: '0 0 12px', lineHeight: 1.6 }}>
+                  Tài khoản <strong>{registered.email}</strong> đã được tạo nhưng
+                  <strong> chưa được kích hoạt</strong>. Hãy mở email đăng ký và
+                  bấm vào link xác thực để có thể đăng nhập.
+                </p>
+
+                <p className="small muted" style={{ margin: '0 0 12px' }}>
+                  Không thấy email? Hãy kiểm tra mục Spam/Quảng cáo, hoặc gửi lại
+                  email xác thực bên dưới.
+                </p>
+
+                {!registered.emailSent && (
+                  <div className="badge badge-amber" style={{ marginBottom: 12, padding: 8 }}>
+                    Backend chưa cấu hình SMTP: link xác thực đã được ghi trong
+                    log của backend (chế độ dev).
+                  </div>
+                )}
+
+                {error && (
+                  <div className="badge badge-red" style={{ marginBottom: 12, padding: 8 }}>
+                    {error}
+                  </div>
+                )}
+
+                <button
+                  type="button"
+                  className="btn btn-primary btn-block btn-lg"
+                  disabled={resendLoading}
+                  onClick={() => sendVerificationAgain(registered.email)}
+                >
+                  {resendLoading ? 'Đang gửi...' : 'Gửi lại email xác thực'}
+                </button>
+
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-block"
+                  style={{ marginTop: 8 }}
+                  onClick={() => {
+                    setLoginUsername(registered.email);
+                    setRegistered(null);
+                    setMode('login');
+                    setError('');
+                  }}
+                >
+                  Đã xác thực, quay lại đăng nhập
+                </button>
+              </div>
+
+            ) : (
 
             <form
               onSubmit={
@@ -544,6 +725,7 @@ export default function LoginPage() {
                       event.target.value
                     )
                   }
+                  maxLength={100}
                   required
                 />
 
@@ -572,6 +754,7 @@ export default function LoginPage() {
                     )
                   }
                   autoComplete="username"
+                  maxLength={50}
                   required
                 />
 
@@ -600,6 +783,7 @@ export default function LoginPage() {
                     )
                   }
                   autoComplete="email"
+                  maxLength={100}
                   required
                 />
 
@@ -630,6 +814,7 @@ export default function LoginPage() {
                     }
                     autoComplete="new-password"
                     minLength={6}
+                    maxLength={72}
                     required
                     style={{ paddingRight: 42 }}
                   />
@@ -671,6 +856,7 @@ export default function LoginPage() {
                     }
                     autoComplete="new-password"
                     minLength={6}
+                    maxLength={72}
                     required
                     style={{ paddingRight: 42 }}
                   />
@@ -713,8 +899,11 @@ export default function LoginPage() {
 
               </button>
 
+              <GoogleLoginButton onCredential={handleGoogleCredential} />
+
             </form>
-          ) : (
+            )
+          ) : mode === 'forgot' ? (
             <form onSubmit={handleForgotSubmit} className="card" style={{ padding: 20 }}>
               <h2 style={{ margin: '0 0 8px' }}>Quên mật khẩu</h2>
               <p className="small muted" style={{ margin: '0 0 16px' }}>
@@ -729,6 +918,7 @@ export default function LoginPage() {
                   value={forgotEmail}
                   onChange={(event) => setForgotEmail(event.target.value)}
                   autoComplete="email"
+                  maxLength={100}
                   required
                 />
               </div>
@@ -739,8 +929,56 @@ export default function LoginPage() {
                 </div>
               )}
 
-              <button type="submit" className="btn btn-primary btn-block btn-lg">
-                Gửi mật khẩu mới
+              <button
+                type="submit"
+                className="btn btn-primary btn-block btn-lg"
+                disabled={resetLoading}
+              >
+                {resetLoading ? 'Đang gửi...' : 'Gửi mật khẩu mới'}
+              </button>
+
+              <button
+                type="button"
+                className="btn btn-ghost btn-block"
+                style={{ marginTop: 8 }}
+                onClick={() => { setMode('login'); setError(''); }}
+              >
+                Quay lại đăng nhập
+              </button>
+            </form>
+          ) : (
+            <form onSubmit={handleResendSubmit} className="card" style={{ padding: 20 }}>
+              <h2 style={{ margin: '0 0 8px' }}>Gửi lại email xác thực</h2>
+              <p className="small muted" style={{ margin: '0 0 16px' }}>
+                Nhập email đã dùng để đăng ký. Bookigma sẽ gửi lại link kích hoạt
+                tài khoản (link cũ sẽ hết hiệu lực).
+              </p>
+
+              <div className="field" style={{ marginBottom: 12 }}>
+                <label className="label">Email đã đăng ký</label>
+                <input
+                  className="input"
+                  type="email"
+                  value={resendEmail}
+                  onChange={(event) => setResendEmail(event.target.value)}
+                  autoComplete="email"
+                  maxLength={100}
+                  required
+                />
+              </div>
+
+              {error && (
+                <div className="badge badge-red" style={{ marginBottom: 12, padding: 8 }}>
+                  {error}
+                </div>
+              )}
+
+              <button
+                type="submit"
+                className="btn btn-primary btn-block btn-lg"
+                disabled={resendLoading}
+              >
+                {resendLoading ? 'Đang gửi...' : 'Gửi lại email xác thực'}
               </button>
 
               <button

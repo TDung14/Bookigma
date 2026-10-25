@@ -7,6 +7,7 @@ import com.bookigma.bookigma.chat.entity.ChatType;
 import com.bookigma.bookigma.chat.entity.MessageType;
 import com.bookigma.bookigma.chat.repository.ChatConversationRepository;
 import com.bookigma.bookigma.chat.repository.ChatMessageRepository;
+import com.bookigma.bookigma.exception.ApiException;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -43,7 +44,10 @@ public class ChatService {
     }
 
     @Transactional(readOnly = true)
-    public List<ChatDtos.ChatMessageResponse> getMessages(Long conversationId) {
+    public List<ChatDtos.ChatMessageResponse> getMessages(Long conversationId, Long userId) {
+        ChatConversation conversation = conversationRepository.findById(conversationId)
+                .orElseThrow(() -> ApiException.notFound("Không tìm thấy cuộc trò chuyện."));
+        requireParticipant(conversation, userId);
         return messageRepository.findByConversationIdOrderByCreatedAtAsc(conversationId).stream()
                 .map(ChatDtos.ChatMessageResponse::from)
                 .toList();
@@ -125,11 +129,9 @@ public class ChatService {
         }
 
         ChatConversation conversation = conversationRepository.findById(conversationId)
-                .orElseThrow(() -> new IllegalArgumentException("Conversation not found: " + conversationId));
+                .orElseThrow(() -> ApiException.notFound("Không tìm thấy cuộc trò chuyện."));
 
-        if (!conversation.getParticipantIds().contains(senderId)) {
-            throw new IllegalArgumentException("Sender is not a participant in this conversation.");
-        }
+        requireParticipant(conversation, senderId);
 
         ChatMessage message = new ChatMessage();
         message.setConversation(conversation);
@@ -149,6 +151,12 @@ public class ChatService {
         }
 
         return response;
+    }
+
+    private void requireParticipant(ChatConversation conversation, Long userId) {
+        if (userId == null || !conversation.getParticipantIds().contains(userId)) {
+            throw ApiException.forbidden("Bạn không thuộc cuộc trò chuyện này.");
+        }
     }
 
     private ChatDtos.ChatConversationResponse toConversationResponse(ChatConversation conversation) {

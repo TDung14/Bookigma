@@ -29,3 +29,17 @@ export const fetchComments = (adminId, postId) =>
 
 export const deleteComment = (adminId, commentId) =>
   apiCall(`/admin/comments/${commentId}`, 'DELETE', null, { userId: adminId });
+
+export const fetchVipPurchases = (adminId, status = null) =>
+  apiCall(
+    `/admin/vip/purchases${status ? `?status=${encodeURIComponent(status)}` : ''}`,
+    'GET',
+    null,
+    { userId: adminId }
+  );
+
+export const approveVipPurchase = (adminId, purchaseId, body = {}) =>
+  apiCall(`/admin/vip/purchases/${purchaseId}/approve`, 'PATCH', body, { userId: adminId });
+
+export const rejectVipPurchase = (adminId, purchaseId, body = {}) =>
+  apiCall(`/admin/vip/purchases/${purchaseId}/reject`, 'PATCH', body, { userId: adminId });

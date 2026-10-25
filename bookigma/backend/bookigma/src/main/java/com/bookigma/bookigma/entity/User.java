@@ -51,6 +51,21 @@ public class User {
     @Builder.Default
     private Boolean active = true;
 
+    // Tài khoản tạo trước khi có tính năng xác thực được coi là đã xác thực.
+    @Column(name = "email_verified", nullable = false, columnDefinition = "boolean default true")
+    @Builder.Default
+    private Boolean emailVerified = false;
+
+    @JsonIgnore
+    @Column(name = "verification_token_hash", length = 64)
+    private String verificationTokenHash;
+
+    @Column(name = "verification_expires_at")
+    private LocalDateTime verificationExpiresAt;
+
+    @Column(name = "verification_sent_at")
+    private LocalDateTime verificationSentAt;
+
     @Column(name = "created_at", nullable = false)
     private LocalDateTime createdAt;
 
@@ -64,6 +79,9 @@ public class User {
         }
         if (active == null) {
             active = true;
+        }
+        if (emailVerified == null) {
+            emailVerified = false;
         }
     }
 }

@@ -2,13 +2,13 @@ import { avatarSrc } from '../../lib/avatar';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, NavLink, useNavigate } from 'react-router-dom';
 import {
-  Bell, BookOpen, ChevronDown, Home, LogOut, Moon, MessageSquare,
-  Gift, Repeat, Search, Settings, ShieldCheck, ShoppingBag, ShoppingCart, Sparkles, Store,
+  Bell, BookOpen, ChevronDown, Crown, Home, LogOut, Moon, MessageSquare,
+  Repeat, Search, Settings, ShieldCheck, ShoppingBag, ShoppingCart, Sparkles, Store,
   Sun, Trophy, User, Package, Zap,
 } from 'lucide-react';
 import { useApp, useAuth, useTheme } from '../../hooks/useStore';
+import { useVip } from '../../hooks/useVip';
 import { timeAgo } from '../../lib/format';
-import { resetAll } from '../../lib/storage';
 import MessengerDropdown from '../chat/MessengerDropdown';
 
 const NAV_ITEMS = [
@@ -24,7 +24,7 @@ const NAV_ITEMS = [
 /** Thanh dưới trên điện thoại chỉ đủ chỗ cho 5 mục quan trọng nhất. */
 const MOBILE_NAV_ITEMS = ['/', '/shop', '/rewards', '/library', '/recommend'];
 
-function Dropdown({ button, children, width = 300, align = 'right' }) {
+function Dropdown({ button, children, width = 300, align = 'right', maxHeight = 420 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
 
@@ -44,7 +44,7 @@ function Dropdown({ button, children, width = 300, align = 'right' }) {
           className="card"
           style={{
             position: 'absolute', top: 'calc(100% + 10px)', [align]: 0, width,
-            boxShadow: 'var(--shadow-lg)', padding: 8, zIndex: 1200, maxHeight: 420, overflowY: 'auto',
+            boxShadow: 'var(--shadow-lg)', padding: 8, zIndex: 1200, maxHeight, overflowY: 'auto',
           }}
         >
           {children}
@@ -63,6 +63,7 @@ export default function Navbar() {
   const navigate = useNavigate();
   const [query, setQuery] = useState('');
   const [messengerOpen, setMessengerOpen] = useState(false);
+  const { isVip, plan, daysLeft } = useVip(user?.id);
 
   const cartCount = user ? getCart(user.id).reduce((s, c) => s + c.qty, 0) : 0;
   const chatUnread = user ? unreadCount(user.id) : 0;
@@ -85,13 +86,6 @@ export default function Navbar() {
     if (!query.trim()) return;
     navigate(`/shop?q=${encodeURIComponent(query.trim())}`);
     setQuery('');
-  };
-
-  const hardReset = () => {
-    if (window.confirm('Xóa toàn bộ dữ liệu demo và quay lại trạng thái ban đầu?')) {
-      resetAll();
-      window.location.reload();
-    }
   };
 
   return (
@@ -214,7 +208,8 @@ export default function Navbar() {
 
           {user ? (
             <Dropdown
-              width={250}
+              width={262}
+              maxHeight={520}
               button={
                 <button className="btn-icon row" style={{ gap: 6, padding: 4 }}>
                   <img src={avatarSrc(user.avatar)} alt="" className="avatar" style={{ width: 32, height: 32 }} />
@@ -225,7 +220,18 @@ export default function Navbar() {
               <div style={{ padding: '8px 10px' }}>
                 <div className="strong small">{user.name}</div>
                 <div className="tiny muted">{user.email}</div>
-                <div className="badge badge-green" style={{ marginTop: 6 }}>{user.badge}</div>
+                <div className="row" style={{ gap: 6, marginTop: 6, flexWrap: 'wrap' }}>
+                  <span className="badge badge-green">{user.badge}</span>
+                  {isVip && (
+                    <span
+                      className="badge"
+                      title={plan ? `${plan.name} • còn ${daysLeft} ngày` : 'Thành viên VIP'}
+                      style={{ background: 'linear-gradient(135deg, #f59e0b, #b45309)', color: '#fff' }}
+                    >
+                      <Crown size={11} /> VIP
+                    </span>
+                  )}
+                </div>
               </div>
               <hr className="divider" style={{ margin: '6px 0' }} />
               <MenuLink to="/profile" icon={User}>Trang cá nhân</MenuLink>
@@ -235,9 +241,8 @@ export default function Navbar() {
               {isSeller && <MenuLink to="/shop-admin" icon={Store}>Kênh người bán</MenuLink>}
               {isAdmin && <MenuLink to="/admin" icon={ShieldCheck}>Quản trị hệ thống</MenuLink>}
               <hr className="divider" style={{ margin: '6px 0' }} />
-              <button className="list-item small" onClick={hardReset}>
-                <Settings size={16} /> Đặt lại dữ liệu demo
-              </button>
+              <MenuLink to="/settings" icon={Settings}>Cài đặt</MenuLink>
+              <MenuLink to="/upgrade" icon={Crown}>Nâng cấp VIP</MenuLink>
               <button className="list-item small" style={{ color: 'var(--danger)' }} onClick={() => { logout(); navigate('/login'); }}>
                 <LogOut size={16} /> Đăng xuất
               </button>

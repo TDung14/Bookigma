@@ -11,19 +11,16 @@ public final class ChatDtos {
     private ChatDtos() {
     }
 
-    public record DirectChatRequest(Long userId, Long otherUserId) {
+    public record DirectChatRequest(Long otherUserId) {
     }
 
-    public record GroupChatRequest(Long creatorId, List<Long> participantIds, String name) {
+    public record GroupChatRequest(List<Long> participantIds, String name) {
     }
 
-    public record StrangersRequest(Long userId, String name) {
+    public record SendChatMessageRequest(String content) {
     }
 
-    public record SendChatMessageRequest(Long senderId, String content) {
-    }
-
-    public record SocketChatMessageRequest(Long conversationId, Long senderId, String content) {
+    public record SocketChatMessageRequest(Long conversationId, String content) {
     }
 
     public record ChatConversationResponse(Long id, String name, String type, List<Long> participantIds,

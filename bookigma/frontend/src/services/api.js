@@ -1,17 +1,32 @@
+import { clearAuthToken, getAuthToken, notifyAuthExpired } from '../lib/authToken';
+
 const API_URL = `${import.meta.env.VITE_API_URL || 'http://localhost:8080'}/api`;
 
+function authHeaders() {
+  const token = getAuthToken();
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
 
+/** Phiên đã dùng token mà bị 401 nghĩa là token hết hạn/thu hồi — đăng xuất phía client. */
+function handleUnauthorized(response, hadToken) {
+  if (response.status === 401 && hadToken) {
+    clearAuthToken();
+    notifyAuthExpired();
+  }
+}
 
 /** Upload ảnh bài viết từ máy người dùng lên backend. */
-export async function uploadPostImage(file, userId) {
-  if (!file || !userId) throw new Error('Thiếu ảnh hoặc thông tin tài khoản.');
+export async function uploadPostImage(file) {
+  if (!file) throw new Error('Thiếu ảnh cần tải lên.');
   const formData = new FormData();
   formData.append('file', file);
+  const hadToken = Boolean(getAuthToken());
   const response = await fetch(`${API_URL}/posts/image`, {
     method: 'POST',
-    headers: { 'X-User-Id': String(userId) },
+    headers: authHeaders(),
     body: formData,
   });
+  handleUnauthorized(response, hadToken);
   const text = await response.text();
   let data = {};
   if (text) {
@@ -26,11 +41,13 @@ export async function uploadAvatar(file, userId) {
   if (!file || !userId) throw new Error('Thiếu ảnh hoặc thông tin tài khoản.');
   const formData = new FormData();
   formData.append('file', file);
+  const hadToken = Boolean(getAuthToken());
   const response = await fetch(`${API_URL}/users/${userId}/avatar`, {
     method: 'POST',
-    headers: { 'X-User-Id': String(userId) },
+    headers: authHeaders(),
     body: formData,
   });
+  handleUnauthorized(response, hadToken);
   const text = await response.text();
   let data = {};
   if (text) {
@@ -60,27 +77,22 @@ export function getApiErrorMessage(error) {
 /**
  * Gọi API backend.
  *
- * Dự án hiện chưa sử dụng JWT.
- * Với các API cần xác định người dùng đang đăng nhập,
- * frontend gửi userId qua header X-User-Id.
+ * Danh tính người dùng được gửi kèm bằng Bearer token; backend tự xác định
+ * người đang đăng nhập, không nhận id do client cung cấp.
  */
 export async function apiCall(
   endpoint,
   method = 'GET',
-  body = null,
-  { userId } = {}
+  body = null
 ) {
+  const token = getAuthToken();
   const config = {
     method,
     headers: {
       'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
     },
   };
-
-  // Gửi ID người dùng nếu API cần xác định người đang đăng nhập
-  if (userId !== null && userId !== undefined) {
-    config.headers['X-User-Id'] = String(userId);
-  }
 
   // Có body thì gửi JSON
   if (body !== null && body !== undefined) {
@@ -89,6 +101,8 @@ export async function apiCall(
 
   try {
     const response = await fetch(`${API_URL}${endpoint}`, config);
+
+    handleUnauthorized(response, Boolean(token));
 
     const text = await response.text();
 

@@ -42,11 +42,9 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
 
         registry.addEndpoint("/ws")
                 .setAllowedOriginPatterns(allowedOrigins)
-                .setHandshakeHandler(new UserPrincipalHandshakeHandler())
                 .withSockJS();
 
         registry.addEndpoint("/ws-native")
-                .setAllowedOriginPatterns(allowedOrigins)
-                .setHandshakeHandler(new UserPrincipalHandshakeHandler());
+                .setAllowedOriginPatterns(allowedOrigins);
     }
 }

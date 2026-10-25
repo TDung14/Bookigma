@@ -1,5 +1,5 @@
 import { avatarSrc } from '../../lib/avatar';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   Area,
@@ -22,6 +22,7 @@ import {
   CheckCircle2,
   ChevronDown,
   ChevronUp,
+  Crown,
   DollarSign,
   Eye,
   EyeOff,
@@ -65,7 +66,15 @@ const TABS = [
   { id: 'books', label: 'Sản phẩm' },
   { id: 'posts', label: 'Bài đăng' },
   { id: 'orders', label: 'Đơn hàng' },
+  { id: 'vip', label: 'Thanh toán VIP' },
 ];
+
+const VIP_STATUS = {
+  PENDING: { label: 'Chờ xác nhận', badge: 'badge-amber' },
+  PAID: { label: 'Đã kích hoạt', badge: 'badge-green' },
+  CANCELLED: { label: 'Đã từ chối', badge: 'badge-red' },
+  EXPIRED: { label: 'Hết hạn', badge: 'badge-blue' },
+};
 
 const CHART_COLORS = [
   '#16a34a',
@@ -126,6 +135,7 @@ export default function AdminDashboard() {
   } = useApp();
 
   const toast = useToast();
+  const adminId = user?.id ?? null;
 
   const [tab, setTab] = useState('overview');
 
@@ -135,6 +145,22 @@ export default function AdminDashboard() {
 
   const [reportFilter, setReportFilter] =
     useState('pending');
+
+  const [vipPurchases, setVipPurchases] = useState([]);
+
+  const [vipFilter, setVipFilter] = useState('PENDING');
+
+  const [vipLoading, setVipLoading] = useState(false);
+
+  const [vipLoadedAt, setVipLoadedAt] = useState(0);
+
+  const [vipAction, setVipAction] = useState(null);
+
+  const [vipNote, setVipNote] = useState('');
+
+  const [vipReference, setVipReference] = useState('');
+
+  const [vipHandling, setVipHandling] = useState(false);
 
   /*
    * Lưu trạng thái mở/đóng comment của từng bài đăng.
@@ -590,6 +616,73 @@ export default function AdminDashboard() {
         ...prev,
         [postId]: false,
       }));
+    }
+  };
+
+  // ============================================================
+  // DUYỆT THANH TOÁN VIP
+  // ============================================================
+
+  const loadVipPurchases = useCallback(async () => {
+    if (!adminId) return;
+    setVipLoading(true);
+    try {
+      const data = await adminApi.fetchVipPurchases(
+        adminId,
+        vipFilter === 'ALL' ? null : vipFilter
+      );
+      setVipPurchases(Array.isArray(data) ? data : []);
+      setVipLoadedAt(Date.now());
+    } catch (error) {
+      toast(
+        error.message || 'Không tải được danh sách đơn VIP.',
+        'error'
+      );
+    } finally {
+      setVipLoading(false);
+    }
+  }, [adminId, vipFilter, toast]);
+
+  useEffect(() => {
+    if (tab !== 'vip') return undefined;
+    const timer = setTimeout(() => loadVipPurchases(), 0);
+    return () => clearTimeout(timer);
+  }, [tab, loadVipPurchases]);
+
+  const openVipAction = (purchase, type) => {
+    setVipAction({ purchase, type });
+    setVipNote('');
+    setVipReference('');
+  };
+
+  const submitVipAction = async () => {
+    if (!vipAction || vipHandling) return;
+    setVipHandling(true);
+    try {
+      const { purchase, type } = vipAction;
+      if (type === 'approve') {
+        await adminApi.approveVipPurchase(adminId, purchase.id, {
+          note: vipNote.trim(),
+          reference: vipReference.trim(),
+        });
+        toast(
+          `Đã xác nhận thanh toán và kích hoạt ${purchase.planName} cho ${purchase.fullName || purchase.username}.`
+        );
+      } else {
+        await adminApi.rejectVipPurchase(adminId, purchase.id, {
+          note: vipNote.trim(),
+        });
+        toast('Đã từ chối đơn VIP.', 'info');
+      }
+      setVipAction(null);
+      await loadVipPurchases();
+    } catch (error) {
+      toast(
+        error.message || 'Không xử lý được đơn VIP.',
+        'error'
+      );
+    } finally {
+      setVipHandling(false);
     }
   };
 
@@ -2416,6 +2509,169 @@ export default function AdminDashboard() {
       )}
 
       {/* ======================================================
+          THANH TOÁN VIP
+          ====================================================== */}
+
+      {tab === 'vip' && (
+        <div className="stack">
+          <div className="card">
+            <div
+              className="row"
+              style={{
+                justifyContent: 'space-between',
+                alignItems: 'flex-start',
+                gap: 12,
+                flexWrap: 'wrap',
+                marginBottom: 14,
+              }}
+            >
+              <div>
+                <h3
+                  className="row"
+                  style={{ margin: 0, fontSize: 16, gap: 8 }}
+                >
+                  <Crown size={17} /> Đơn nâng cấp VIP
+                </h3>
+                <p className="small muted" style={{ margin: '5px 0 0' }}>
+                  Đơn chỉ được kích hoạt khi ngân hàng báo tiền về hoặc quản trị viên đối chiếu sao kê.
+                </p>
+              </div>
+              <button
+                type="button"
+                className="btn btn-soft btn-sm"
+                onClick={loadVipPurchases}
+                disabled={vipLoading}
+              >
+                {vipLoading ? 'Đang tải...' : 'Làm mới'}
+              </button>
+            </div>
+
+            <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
+              {['PENDING', 'PAID', 'CANCELLED', 'EXPIRED', 'ALL'].map((status) => (
+                <button
+                  key={status}
+                  type="button"
+                  className={`btn btn-sm ${vipFilter === status ? 'btn-primary' : 'btn-ghost'}`}
+                  onClick={() => setVipFilter(status)}
+                >
+                  {status === 'ALL' ? 'Tất cả' : VIP_STATUS[status].label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="card table-wrap">
+            {vipPurchases.length === 0 ? (
+              <div className="small muted" style={{ padding: 18 }}>
+                {vipLoading ? 'Đang tải danh sách đơn VIP...' : 'Không có đơn VIP ở trạng thái này.'}
+              </div>
+            ) : (
+              <table className="table">
+                <thead>
+                  <tr>
+                    <th>Mã đơn</th>
+                    <th>Khách hàng</th>
+                    <th>Gói</th>
+                    <th>Số tiền</th>
+                    <th>Thực nhận</th>
+                    <th>Trạng thái</th>
+                    <th>Tạo lúc</th>
+                    <th>Thao tác</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {vipPurchases.map((p) => {
+                    const meta = VIP_STATUS[p.status] || {
+                      label: p.status,
+                      badge: 'badge-blue',
+                    };
+                    const overdue = p.status === 'PENDING'
+                      && vipLoadedAt > 0
+                      && new Date(p.expiresAt).getTime() < vipLoadedAt;
+                    const received = p.receivedAmount;
+                    const shortPaid = received != null && Number(received) < Number(p.amount);
+
+                    return (
+                      <tr key={p.id}>
+                        <td>
+                          <div className="small strong">{p.transferCode}</div>
+                          <div className="tiny muted">#{p.id}</div>
+                        </td>
+                        <td>
+                          <div className="small strong">
+                            {p.fullName || p.username}
+                          </div>
+                          <div className="tiny muted">{p.email}</div>
+                        </td>
+                        <td className="small">
+                          {p.planName}
+                          <div className="tiny muted">
+                            {p.durationDays} ngày · +{p.points} điểm · +{p.extraShelves} tủ
+                          </div>
+                        </td>
+                        <td className="small price">{currency(p.amount)}</td>
+                        <td className="small">
+                          {received != null ? currency(received) : '—'}
+                          {shortPaid && (
+                            <div className="tiny" style={{ color: 'var(--danger)' }}>
+                              Thiếu tiền
+                            </div>
+                          )}
+                        </td>
+                        <td>
+                          <span className={`badge ${meta.badge}`}>{meta.label}</span>
+                          {overdue && <div className="tiny muted">Quá hạn</div>}
+                          {p.note && (
+                            <div
+                              className="tiny muted truncate"
+                              style={{ maxWidth: 190, marginTop: 4 }}
+                              title={p.note}
+                            >
+                              {p.note}
+                            </div>
+                          )}
+                        </td>
+                        <td className="tiny muted">
+                          {dateTime(p.createdAt)}
+                          {p.paidAt && (
+                            <div>Duyệt: {dateTime(p.paidAt)}</div>
+                          )}
+                        </td>
+                        <td>
+                          {p.status === 'PAID' || p.status === 'CANCELLED' ? (
+                            <span className="tiny muted">
+                              {p.status === 'PAID' ? 'Đã cộng quyền lợi' : 'Đã từ chối'}
+                            </span>
+                          ) : (
+                            <div className="row" style={{ gap: 6, flexWrap: 'wrap' }}>
+                              <button
+                                type="button"
+                                className="btn btn-primary btn-sm"
+                                onClick={() => openVipAction(p, 'approve')}
+                              >
+                                <CheckCircle2 size={14} /> Duyệt
+                              </button>
+                              <button
+                                type="button"
+                                className="btn btn-ghost btn-sm"
+                                onClick={() => openVipAction(p, 'reject')}
+                              >
+                                <XCircle size={14} /> Từ chối
+                              </button>
+                            </div>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ======================================================
           MODAL KẾT LUẬN BÁO CÁO
           ====================================================== */}
 
@@ -2511,6 +2767,134 @@ export default function AdminDashboard() {
             />
           )}
         </Field>
+      </Modal>
+
+      {/* ======================================================
+          MODAL DUYỆT THANH TOÁN VIP
+          ====================================================== */}
+
+      <Modal
+        open={!!vipAction}
+        onClose={() => {
+          if (!vipHandling) setVipAction(null);
+        }}
+        title={
+          vipAction?.type === 'approve'
+            ? 'Xác nhận thanh toán VIP'
+            : 'Từ chối đơn VIP'
+        }
+        footer={
+          <>
+            <button
+              type="button"
+              className="btn btn-ghost"
+              onClick={() => setVipAction(null)}
+              disabled={vipHandling}
+            >
+              Hủy
+            </button>
+            <button
+              type="button"
+              className={`btn ${vipAction?.type === 'approve' ? 'btn-primary' : 'btn-danger'}`}
+              onClick={submitVipAction}
+              disabled={vipHandling}
+            >
+              {vipHandling
+                ? 'Đang xử lý...'
+                : vipAction?.type === 'approve'
+                  ? 'Xác nhận & kích hoạt VIP'
+                  : 'Từ chối đơn'}
+            </button>
+          </>
+        }
+      >
+        {vipAction && (
+          <div className="stack" style={{ gap: 14 }}>
+            <div
+              className="small"
+              style={{
+                background: 'var(--bg-soft)',
+                padding: 12,
+                borderRadius: 9,
+              }}
+            >
+              <div className="strong">
+                {vipAction.purchase.transferCode} · {vipAction.purchase.planName}
+              </div>
+              <div className="muted" style={{ marginTop: 4 }}>
+                {vipAction.purchase.fullName || vipAction.purchase.username}
+                {' · '}
+                {vipAction.purchase.email}
+              </div>
+              <div className="muted" style={{ marginTop: 4 }}>
+                Cần thu: {currency(vipAction.purchase.amount)}
+                {' · '}
+                Thực nhận:{' '}
+                {vipAction.purchase.receivedAmount != null
+                  ? currency(vipAction.purchase.receivedAmount)
+                  : 'chưa có dữ liệu webhook'}
+              </div>
+              {vipAction.purchase.note && (
+                <div className="muted tiny" style={{ marginTop: 6 }}>
+                  Ghi chú hệ thống: {vipAction.purchase.note}
+                </div>
+              )}
+            </div>
+
+            {vipAction.type === 'approve' && (
+              <Field label="Mã giao dịch ngân hàng (nếu có)">
+                {(id) => (
+                  <input
+                    id={id}
+                    className="input"
+                    value={vipReference}
+                    onChange={(event) => setVipReference(event.target.value)}
+                    placeholder="Ví dụ: FT26102512345"
+                    autoComplete="off"
+                  />
+                )}
+              </Field>
+            )}
+
+            <Field
+              label={
+                vipAction.type === 'approve'
+                  ? 'Ghi chú xác nhận (tuỳ chọn)'
+                  : 'Lý do từ chối (tuỳ chọn)'
+              }
+              style={{ marginBottom: 0 }}
+            >
+              {(id) => (
+                <textarea
+                  id={id}
+                  className="textarea"
+                  value={vipNote}
+                  onChange={(event) => setVipNote(event.target.value)}
+                  placeholder={
+                    vipAction.type === 'approve'
+                      ? 'Ví dụ: Đã đối chiếu sao kê, nhận đủ tiền.'
+                      : 'Ví dụ: Không thấy giao dịch trong sao kê.'
+                  }
+                />
+              )}
+            </Field>
+
+            <p
+              className="tiny"
+              style={{
+                margin: 0,
+                color:
+                  vipAction.type === 'approve'
+                    ? 'var(--text-sub)'
+                    : 'var(--danger)',
+              }}
+            >
+              {vipAction.type === 'approve'
+                ? 'Chỉ xác nhận sau khi bạn đã kiểm tra tiền vào tài khoản nhận. Hệ thống sẽ cộng thời gian VIP và điểm đúng một lần.'
+                : 'Đơn sẽ bị đánh dấu từ chối và không kích hoạt VIP.'}
+            </p>
+          </div>
+        )}
       </Modal>
     </div>
   );

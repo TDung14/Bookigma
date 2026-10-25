@@ -16,4 +16,13 @@ public class AuthRequest {
     private String password;
 
     private String fullName;
+
+    // Trim trước khi Bean Validation chạy để email dán kèm khoảng trắng vẫn hợp lệ.
+    public void setUsername(String username) {
+        this.username = username == null ? null : username.trim();
+    }
+
+    public void setEmail(String email) {
+        this.email = email == null ? null : email.trim();
+    }
 }

@@ -1,10 +1,12 @@
 package com.bookigma.bookigma.controller;
 
+import com.bookigma.bookigma.config.CurrentUserId;
 import com.bookigma.bookigma.dto.NotificationResponseDto;
 import com.bookigma.bookigma.service.NotificationService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+
 import java.util.List;
 
 @RestController
@@ -14,13 +16,13 @@ public class NotificationController {
     @Autowired
     private NotificationService notificationService;
 
-    @GetMapping("/{userId}")
-    public ResponseEntity<List<NotificationResponseDto>> getNotifications(@PathVariable Long userId) {
+    @GetMapping
+    public ResponseEntity<List<NotificationResponseDto>> getNotifications(@CurrentUserId Long userId) {
         return ResponseEntity.ok(notificationService.getUserNotifications(userId));
     }
 
-    @PatchMapping("/{userId}/read")
-    public ResponseEntity<Void> markAllAsRead(@PathVariable Long userId) {
+    @PatchMapping("/read")
+    public ResponseEntity<Void> markAllAsRead(@CurrentUserId Long userId) {
         notificationService.markAllAsRead(userId);
         return ResponseEntity.noContent().build();
     }

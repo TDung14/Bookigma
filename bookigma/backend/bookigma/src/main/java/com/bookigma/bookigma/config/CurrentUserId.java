@@ -8,9 +8,7 @@ import java.lang.annotation.Target;
 
 /**
  * Đánh dấu tham số controller nhận id của người dùng đang đăng nhập.
- *
- * Hiện dự án chưa có JWT nên frontend gửi id qua header X-User-Id. Khi thêm JWT, chỉ cần sửa
- * CurrentUserIdArgumentResolver để lấy id từ token — các controller không phải đổi gì.
+ * Id được lấy từ JWT đã xác thực trong SecurityContext, không lấy từ dữ liệu client gửi.
  */
 @Target(ElementType.PARAMETER)
 @Retention(RetentionPolicy.RUNTIME)

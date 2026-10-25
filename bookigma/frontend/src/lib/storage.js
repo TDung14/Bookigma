@@ -18,6 +18,14 @@ export function save(key, value) {
   }
 }
 
+export function remove(key) {
+  try {
+    localStorage.removeItem(PREFIX + key);
+  } catch {
+    /* bỏ qua */
+  }
+}
+
 /** Xoá toàn bộ dữ liệu demo để quay lại trạng thái gốc. */
 export function resetAll() {
   try {

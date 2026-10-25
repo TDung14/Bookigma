@@ -1,7 +1,11 @@
 package com.bookigma.bookigma.config;
 
 import com.bookigma.bookigma.exception.ApiException;
+import com.bookigma.bookigma.security.AuthPrincipal;
 import org.springframework.core.MethodParameter;
+import org.springframework.security.authentication.AnonymousAuthenticationToken;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.support.WebDataBinderFactory;
 import org.springframework.web.context.request.NativeWebRequest;
 import org.springframework.web.method.support.HandlerMethodArgumentResolver;
@@ -9,9 +13,9 @@ import org.springframework.web.method.support.ModelAndViewContainer;
 
 /**
  * Lấy id người dùng hiện tại cho các tham số gắn @CurrentUserId.
+ * Danh tính đến từ SecurityContext đã được JwtAuthenticationFilter xác thực.
  */
 public class CurrentUserIdArgumentResolver implements HandlerMethodArgumentResolver {
-    public static final String HEADER = "X-User-Id";
 
     @Override
     public boolean supportsParameter(MethodParameter parameter) {
@@ -26,19 +30,18 @@ public class CurrentUserIdArgumentResolver implements HandlerMethodArgumentResol
                                   WebDataBinderFactory binderFactory) {
         CurrentUserId annotation = parameter.getParameterAnnotation(CurrentUserId.class);
         boolean required = annotation == null || annotation.required();
-        String raw = webRequest.getHeader(HEADER);
 
-        if (raw == null || raw.isBlank()) {
-            if (!required) {
-                return null;
-            }
-            throw ApiException.unauthorized("Bạn cần đăng nhập để thực hiện thao tác này.");
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication != null
+                && authentication.isAuthenticated()
+                && !(authentication instanceof AnonymousAuthenticationToken)
+                && authentication.getPrincipal() instanceof AuthPrincipal principal) {
+            return principal.userId();
         }
 
-        try {
-            return Long.valueOf(raw.trim());
-        } catch (NumberFormatException ex) {
-            throw ApiException.unauthorized("Phiên đăng nhập không hợp lệ, vui lòng đăng nhập lại.");
+        if (!required) {
+            return null;
         }
+        throw ApiException.unauthorized("Bạn cần đăng nhập để thực hiện thao tác này.");
     }
 }

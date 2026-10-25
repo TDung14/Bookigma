@@ -52,8 +52,21 @@ export default function RewardsPage() {
     try {
       const res = await dailyCheckIn(user.id);
       const added = res.amount || 50;
-      toast(`Điểm danh thành công! +${added} Điểm Bookigma`, 'success');
-      earnPoints(user.id, added);
+      const credited = earnPoints(user.id, added);
+      const vipBonus = Math.max(0, credited - added);
+      if (vipBonus > 0) {
+        try {
+          await addPointsApi(user.id, vipBonus, 'VIP_BONUS', 'Ưu đãi điểm thành viên VIP');
+        } catch {
+          // Điểm VIP vẫn được cộng cục bộ nếu backend tạm thời không phản hồi.
+        }
+      }
+      toast(
+        vipBonus > 0
+          ? `Điểm danh thành công! +${credited} Điểm Bookigma (gồm +${vipBonus} điểm VIP)`
+          : `Điểm danh thành công! +${credited} Điểm Bookigma`,
+        'success'
+      );
       fetchPoints();
     } catch (err) {
       toast(err.message || 'Không thể điểm danh', 'error');
@@ -80,14 +93,14 @@ export default function RewardsPage() {
   const handleClaim = async (task) => {
     const granted = claimTask(user.id, task.id);
     if (!granted) return toast('Nhiệm vụ chưa hoàn thành.', 'error');
-    earnPoints(user.id, granted);
+    const credited = earnPoints(user.id, granted);
     try {
-      await addPointsApi(user.id, granted, 'TASK_REWARD', `Hoàn thành nhiệm vụ: ${task.label}`);
+      await addPointsApi(user.id, credited, 'TASK_REWARD', `Hoàn thành nhiệm vụ: ${task.label}`);
       fetchPoints();
     } catch (err) {
       // Local fallback granted points via earnPoints
     }
-    toast(`Hoàn thành "${task.label}" — nhận ${granted} điểm!`);
+    toast(`Hoàn thành "${task.label}" — nhận ${credited} điểm!`);
   };
 
   const handleFeed = async () => {

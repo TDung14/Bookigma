@@ -4,6 +4,7 @@ import { AppContext } from './contexts';
 import * as seed from '../data/seed';
 import { load, save, uid } from '../lib/storage';
 import { DAILY_TASKS, FEED_XP, POINT_RULES, todayKey } from '../lib/gamification';
+import { vipPointBonusPercent } from '../lib/vip';
 import { apiCall } from '../services/api';
 import * as shopApi from '../services/shopApi';
 import * as exchangeApi from '../services/exchangeApi';
@@ -186,7 +187,7 @@ export function AppProvider({ children }) {
         userId ? shopApi.fetchMyOrders(userId) : [],
         userId ? exchangeApi.fetchMyListings(userId) : [],
         userId ? exchangeApi.fetchSentOffers(userId) : [],
-        userId ? notificationApi.fetchNotifications(userId) : [],
+        userId ? notificationApi.fetchNotifications() : [],
         (role === 'shop' || role === 'moderator') ? shopApi.fetchSellerBooks(userId) : [],
         (role === 'shop' || role === 'moderator') ? shopApi.fetchSellerOrders(userId) : [],
         role === 'admin' ? shopApi.fetchAdminBooks(userId) : [],
@@ -310,7 +311,7 @@ export function AppProvider({ children }) {
   const refreshNotifications = useCallback(async () => {
     if (!userId) return;
     try {
-      patchAccount(userId, { notifications: await notificationApi.fetchNotifications(userId) });
+      patchAccount(userId, { notifications: await notificationApi.fetchNotifications() });
     } catch {}
   }, [userId, patchAccount]);
 
@@ -961,7 +962,7 @@ export function AppProvider({ children }) {
   const refreshConversations = useCallback(async () => {
     if (!userId) return [];
     try {
-      const data = await chatApi.listChatConversations(userId);
+      const data = await chatApi.listChatConversations();
       setConversations((prev) => {
         const old = new Map(prev.map((c) => [String(c.id), c]));
         return (Array.isArray(data) ? data : []).map((c) => mapConversation(c, old.get(String(c.id))));
@@ -984,15 +985,20 @@ export function AppProvider({ children }) {
   }, [userId, refreshConversations]);
 
   const findOrCreateConversation = useCallback(async (userA, userB) => {
+    if (!userId) return null;
+
+    const currentUserId = String(userId);
+    const otherUserId = String(userA) === currentUserId ? userB : userA;
+
     const existing = conversations.find((c) =>
       c.type === 'DIRECT' &&
-      c.participants.some((p) => String(p) === String(userA)) &&
-      c.participants.some((p) => String(p) === String(userB))
+      c.participants.some((p) => String(p) === currentUserId) &&
+      c.participants.some((p) => String(p) === String(otherUserId))
     );
     if (existing) return existing.id;
 
     try {
-      const created = await chatApi.createDirectConversation(userA, userB);
+      const created = await chatApi.createDirectConversation(otherUserId);
       const mapped = mapConversation(created);
       setConversations((prev) => [mapped, ...prev.filter((c) => String(c.id) !== String(mapped.id))]);
       return mapped.id;
@@ -1002,20 +1008,21 @@ export function AppProvider({ children }) {
         id: localId,
         name: null,
         type: 'DIRECT',
-        participants: [String(userA), String(userB)],
+        participants: [currentUserId, String(otherUserId)],
         messages: [],
         updatedAt: Date.now(),
-        readBy: { [String(userA)]: 0 },
+        readBy: { [currentUserId]: 0 },
       };
       setConversations((prev) => [localConv, ...prev]);
       return localId;
     }
-  }, [conversations, mapConversation]);
+  }, [userId, conversations, mapConversation]);
 
-  const createGroupConversation = useCallback(async (creatorId, participantIds, name) => {
+  const createGroupConversation = useCallback(async (participantIds, name) => {
+    if (!userId) return null;
+
     try {
       const created = await chatApi.createGroupConversation({
-        creatorId,
         participantIds: participantIds.map(Number),
         name,
       });
@@ -1028,21 +1035,21 @@ export function AppProvider({ children }) {
         id: localId,
         name: name || 'Nhóm trò chuyện',
         type: 'GROUP',
-        participants: [String(creatorId), ...participantIds.map(String)],
+        participants: [String(userId), ...participantIds.map(String)],
         messages: [],
         updatedAt: Date.now(),
-        readBy: { [String(creatorId)]: 0 },
+        readBy: { [String(userId)]: 0 },
       };
       setConversations((prev) => [localGroup, ...prev]);
       return localGroup;
     }
-  }, [mapConversation]);
+  }, [userId, mapConversation]);
 
-  const sendMessage = useCallback(async (convId, senderId, text) => {
+  const sendMessage = useCallback(async (convId, text) => {
     const cleanText = text?.trim();
-    if (!cleanText) return null;
+    if (!cleanText || !userId) return null;
     try {
-      const saved = await chatApi.sendChatMessage(convId, senderId, cleanText);
+      const saved = await chatApi.sendChatMessage(convId, cleanText);
       const message = {
         id: String(saved.id),
         senderId: String(saved.senderId),
@@ -1051,23 +1058,23 @@ export function AppProvider({ children }) {
         reactions: {},
       };
       setConversations((prev) => prev.map((c) => c.id === String(convId)
-        ? { ...c, messages: [...c.messages, message], updatedAt: message.at, readBy: { ...c.readBy, [String(senderId)]: c.messages.length + 1 } }
+        ? { ...c, messages: [...c.messages, message], updatedAt: message.at, readBy: { ...c.readBy, [String(userId)]: c.messages.length + 1 } }
         : c));
       return message;
     } catch {
       const message = {
         id: `msg_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
-        senderId: String(senderId),
+        senderId: String(userId),
         text: cleanText,
         at: Date.now(),
         reactions: {},
       };
       setConversations((prev) => prev.map((c) => c.id === String(convId)
-        ? { ...c, messages: [...c.messages, message], updatedAt: message.at, readBy: { ...c.readBy, [String(senderId)]: c.messages.length + 1 } }
+        ? { ...c, messages: [...c.messages, message], updatedAt: message.at, readBy: { ...c.readBy, [String(userId)]: c.messages.length + 1 } }
         : c));
       return message;
     }
-  }, []);
+  }, [userId]);
 
   const markConversationRead = useCallback((convId, uId) => {
     if (!convId || !uId) return;
@@ -1191,11 +1198,17 @@ export function AppProvider({ children }) {
 
   const earnPoints = useCallback(
     (uId, amount) => {
-      if (!uId || !amount) return;
-      setUsers((prev) => prev.map((u) => (u.id === uId ? { ...u, points: (u.points || 0) + amount } : u)));
+      if (!uId || !amount) return 0;
+      // Thành viên VIP nhận thêm phần trăm điểm trên mọi khoản thưởng.
+      const bonusPercent = vipPointBonusPercent(uId);
+      const credited = bonusPercent > 0
+        ? Math.round(amount * (1 + bonusPercent / 100))
+        : amount;
+      setUsers((prev) => prev.map((u) => (u.id === uId ? { ...u, points: (u.points || 0) + credited } : u)));
       if (user && String(user.id) === String(uId) && updateUserFields) {
-        updateUserFields({ points: (user.points || 0) + amount });
+        updateUserFields({ points: (user.points || 0) + credited });
       }
+      return credited;
     },
     [user, updateUserFields]
   );
@@ -1351,7 +1364,7 @@ export function AppProvider({ children }) {
       setLocalNotifications((prev) => prev.map((n) => (n.userId === forUser ? { ...n, read: true } : n)));
       if (forUser && forUser === userId && account.notifications.some((n) => !n.read)) {
         patchAccount(forUser, (prev) => ({ notifications: prev.notifications.map((n) => ({ ...n, read: true })) }));
-        notificationApi.markAllNotificationsRead(forUser).catch(() => {});
+        notificationApi.markAllNotificationsRead().catch(() => {});
       }
     },
     [userId, account.notifications, patchAccount]

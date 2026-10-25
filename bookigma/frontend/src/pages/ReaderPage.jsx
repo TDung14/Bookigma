@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import {
-  Bookmark, CheckCircle, ChevronLeft, ChevronRight, Headphones, HelpCircle,
-  Languages, List, Minus, Music, Palette, Pause, Play, Plus, RotateCcw,
-  Sparkles, Timer, Type, Volume2, XCircle,
+  Bookmark, CheckCircle, ChevronLeft, ChevronRight, Crown, Headphones, HelpCircle,
+  List, Lock, Minus, Music, Pause, Play, Plus, RotateCcw,
+  Sparkles, Type, Volume2, XCircle,
 } from 'lucide-react';
 import { useApp, useAuth, useToast } from '../hooks/useStore';
+import { useVip } from '../hooks/useVip';
 import { duration } from '../lib/format';
+import { load, save } from '../lib/storage';
 import { POINT_RULES } from '../lib/gamification';
 import { ProgressBar } from '../components/common/ui';
 import {
@@ -28,6 +30,21 @@ const SPINE_COLORS = [
 ];
 
 const PARAGRAPHS_PER_PAGE = 3; // Mỗi trang sách hiển thị 3 đoạn văn vừa mắt
+
+const READER_THEMES = ['bookshelf', 'sepia', 'midnight', 'clean'];
+const FONT_MIN = 14;
+const FONT_MAX = 26;
+const FONT_STEP = 2;
+
+const initialFontSize = () => {
+  const value = Number(load('readerFontSize', 18));
+  return Number.isFinite(value) ? Math.min(FONT_MAX, Math.max(FONT_MIN, value)) : 18;
+};
+
+const initialReaderTheme = () => {
+  const value = load('readerTheme', 'bookshelf');
+  return READER_THEMES.includes(value) ? value : 'bookshelf';
+};
 
 /**
  * Trình đọc sách Góc Đọc Bookigma.
@@ -60,6 +77,7 @@ function ReaderContent() {
   const navigate = useNavigate();
   const toast = useToast();
   const { user } = useAuth();
+  const { isVip } = useVip(user.id);
   const { bookById, getProgress, saveProgress, earnPoints, trackDaily, growPet, touchStreak } = useApp();
 
   const book = bookById(bookId);
@@ -68,7 +86,7 @@ function ReaderContent() {
   // Trạng thái chương và trang
   const [chapterIndex, setChapterIndex] = useState(saved?.chapterIndex ?? 0);
   const [pageIndex, setPageIndex] = useState(0);
-  const [fontSize, setFontSize] = useState(18);
+  const [fontSize, setFontSize] = useState(initialFontSize);
   const [language, setLanguage] = useState('vi');
   const [showToc, setShowToc] = useState(false);
   const [showAi, setShowAi] = useState(true);
@@ -76,7 +94,7 @@ function ReaderContent() {
   const [speaking, setSpeaking] = useState(false);
 
   // Theme giao diện tủ sách
-  const [readerTheme, setReaderTheme] = useState('bookshelf'); // 'bookshelf' | 'sepia' | 'midnight' | 'clean'
+  const [readerTheme, setReaderTheme] = useState(initialReaderTheme);
   const [showShelf, setShowShelf] = useState(true);
 
   // Âm thanh chill chill
@@ -175,8 +193,27 @@ function ReaderContent() {
     };
   }, []);
 
+  const changeFontSize = (delta) => {
+    const next = Math.min(FONT_MAX, Math.max(FONT_MIN, fontSize + delta));
+    if (next === fontSize) return;
+    setFontSize(next);
+    save('readerFontSize', next);
+  };
+
+  const changeReaderTheme = (themeId) => {
+    setReaderTheme(themeId);
+    save('readerTheme', themeId);
+  };
+
+  const isSoundLocked = (sound) => Boolean(sound?.premium && !isVip);
+
   // Bật/tắt âm thanh chill
   const toggleAmbientSound = () => {
+    const found = AMBIENT_SOUNDS.find((s) => s.id === ambientType);
+    if (isSoundLocked(found)) {
+      toast('Âm thanh này dành cho thành viên VIP. Nâng cấp để mở khoá toàn bộ nhạc trong Góc đọc.', 'error');
+      return;
+    }
     if (ambientPlaying) {
       stopAmbient();
       setAmbientPlaying(false);
@@ -184,12 +221,16 @@ function ReaderContent() {
     } else {
       playAmbient(ambientType, ambientVol / 100);
       setAmbientPlaying(true);
-      const found = AMBIENT_SOUNDS.find((s) => s.id === ambientType);
       toast(`Đang phát: ${found?.name || 'Âm thanh chill'}`);
     }
   };
 
   const changeAmbientSound = (soundId) => {
+    const found = AMBIENT_SOUNDS.find((s) => s.id === soundId);
+    if (isSoundLocked(found)) {
+      toast('Âm thanh này dành cho thành viên VIP. Nâng cấp để mở khoá toàn bộ nhạc trong Góc đọc.', 'error');
+      return;
+    }
     setAmbientType(soundId);
     if (ambientPlaying) {
       playAmbient(soundId, ambientVol / 100);
@@ -473,9 +514,9 @@ function ReaderContent() {
               <div className="row" style={{ gap: 6 }}>
                 {/* Đổi cỡ chữ */}
                 <div className="row" style={{ gap: 0, border: '1px solid rgba(0,0,0,0.12)', borderRadius: 8, background: 'rgba(255,255,255,0.4)' }}>
-                  <button className="btn-icon" style={{ padding: 5 }} onClick={() => setFontSize((f) => Math.max(14, f - 2))} title="Giảm cỡ chữ"><Minus size={13} /></button>
+                  <button className="btn-icon" style={{ padding: 5 }} onClick={() => changeFontSize(-FONT_STEP)} title="Giảm cỡ chữ"><Minus size={13} /></button>
                   <span className="tiny row" style={{ gap: 2, padding: '0 6px' }}><Type size={12} /> {fontSize}</span>
-                  <button className="btn-icon" style={{ padding: 5 }} onClick={() => setFontSize((f) => Math.min(26, f + 2))} title="Tăng cỡ chữ"><Plus size={13} /></button>
+                  <button className="btn-icon" style={{ padding: 5 }} onClick={() => changeFontSize(FONT_STEP)} title="Tăng cỡ chữ"><Plus size={13} /></button>
                 </div>
 
                 {/* Chọn Theme đọc sách */}
@@ -483,7 +524,7 @@ function ReaderContent() {
                   className="select"
                   style={{ width: 'auto', padding: '4px 8px', fontSize: 12, background: 'rgba(255,255,255,0.5)' }}
                   value={readerTheme}
-                  onChange={(e) => setReaderTheme(e.target.value)}
+                  onChange={(e) => changeReaderTheme(e.target.value)}
                   title="Chọn phong cách tủ sách"
                 >
                   <option value="bookshelf">🪵 Tủ sách gỗ</option>
@@ -576,7 +617,9 @@ function ReaderContent() {
                   onChange={(e) => changeAmbientSound(e.target.value)}
                 >
                   {AMBIENT_SOUNDS.map((s) => (
-                    <option key={s.id} value={s.id}>{s.icon} {s.name}</option>
+                    <option key={s.id} value={s.id} disabled={isSoundLocked(s)}>
+                      {s.icon} {s.name}{isSoundLocked(s) ? ' · VIP' : ''}
+                    </option>
                   ))}
                 </select>
               </div>
@@ -592,6 +635,18 @@ function ReaderContent() {
                 title={`Âm lượng: ${ambientVol}%`}
               />
             </div>
+
+            {isVip ? (
+              <div className="ambient-vip-note is-unlocked">
+                <Crown size={13} /> VIP đã mở khoá toàn bộ âm thanh trong Góc đọc.
+              </div>
+            ) : (
+              <div className="ambient-vip-note">
+                <Lock size={13} />
+                <span><b>Lofi Piano</b> và <b>Lò sưởi</b> dành cho VIP.</span>
+                <Link to="/upgrade" className="link">Nâng cấp</Link>
+              </div>
+            )}
           </div>
 
           {/* 2. BỘ ĐẾM THỜI GIAN ĐỌC SÁCH */}

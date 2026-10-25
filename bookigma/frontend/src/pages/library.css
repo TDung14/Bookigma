@@ -1,0 +1,939 @@
+/* ============================================================
+   GÓC ĐỌC — PHÒNG ĐỌC & TỦ SÁCH
+   ============================================================ */
+
+.reading-hero {
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  flex-wrap: wrap;
+  padding: 26px 30px;
+  margin-bottom: 22px;
+  border: 1px solid var(--border-color);
+  border-radius: 20px;
+  background:
+    radial-gradient(520px 240px at 88% -20%, rgba(250, 204, 21, 0.12), transparent 70%),
+    radial-gradient(460px 260px at 2% 120%, rgba(22, 163, 74, 0.1), transparent 70%),
+    var(--bg-card);
+  box-shadow: var(--shadow-sm);
+}
+
+.reading-hero::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image: radial-gradient(circle, rgba(22, 163, 74, 0.18) 1px, transparent 1.5px);
+  background-size: 17px 17px;
+  -webkit-mask-image: linear-gradient(90deg, transparent 40%, #000 100%);
+  mask-image: linear-gradient(90deg, transparent 40%, #000 100%);
+  opacity: 0.55;
+  pointer-events: none;
+}
+
+.reading-hero-copy {
+  position: relative;
+  z-index: 1;
+  min-width: 0;
+}
+
+.reading-hero-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 1.4px;
+  text-transform: uppercase;
+  color: var(--accent-green);
+}
+
+.reading-hero h1 {
+  margin: 9px 0 7px;
+  font-size: clamp(29px, 4vw, 38px);
+  line-height: 1.08;
+  letter-spacing: -0.7px;
+  color: var(--text-main);
+}
+
+.reading-hero p {
+  margin: 0;
+  max-width: 580px;
+  color: var(--text-sub);
+  font-size: 14px;
+  line-height: 1.65;
+}
+
+.reading-hero-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.reading-hero-meta span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border-color);
+  background: var(--bg-soft);
+  color: var(--text-sub);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.reading-hero-meta svg {
+  color: var(--accent-green);
+}
+
+.reading-hero-art {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-shrink: 0;
+  color: var(--accent-green);
+  opacity: 0.16;
+  transform: rotate(-4deg);
+}
+
+/* ---------- Bố cục 2 cột ---------- */
+.library-dashboard {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr);
+  gap: 24px;
+  align-items: start;
+}
+
+.library-history {
+  grid-column: 1;
+  grid-row: 1;
+  min-width: 0;
+}
+
+/* ---------- Khung phòng đọc ---------- */
+.library-room {
+  grid-column: 2;
+  grid-row: 1;
+  min-width: 0;
+  padding: 20px;
+  border: 1px solid var(--border-color);
+  border-radius: 20px;
+  background:
+    radial-gradient(900px 240px at 50% -20%, rgba(250, 204, 21, 0.08), transparent 70%),
+    var(--bg-card);
+  box-shadow: var(--shadow-md);
+}
+
+.library-room-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+.library-room-head h2 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 4px;
+  font-size: 19px;
+}
+
+.library-room-head h2 svg {
+  color: var(--accent-green);
+}
+
+.library-room-head p {
+  margin: 0;
+  color: var(--text-sub);
+  font-size: 13px;
+}
+
+.library-room-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.library-capacity {
+  padding: 6px 10px;
+  border: 1px solid var(--border-color);
+  border-radius: 999px;
+  background: var(--bg-soft);
+  color: var(--text-sub);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.library-vip-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(245, 158, 11, .38);
+  background: var(--warning-soft);
+  color: var(--warning);
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.library-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  margin-bottom: 18px;
+  padding: 9px 12px;
+  border: 1px dashed var(--border-color);
+  border-radius: 10px;
+  background: var(--bg-soft);
+  color: var(--text-sub);
+  font-size: 12px;
+}
+
+.library-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.library-legend svg {
+  color: var(--accent-green);
+  flex-shrink: 0;
+}
+
+.shelf-cabinet-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+/* ---------- Tủ gỗ ---------- */
+.shelf-cabinet {
+  position: relative;
+  padding: 12px 16px 23px;
+  border: 1px solid #7c5234;
+  border-radius: 16px 16px 12px 12px;
+  background:
+    linear-gradient(90deg, rgba(0, 0, 0, 0.28), transparent 6%, transparent 94%, rgba(0, 0, 0, 0.28)),
+    repeating-linear-gradient(92deg, rgba(255, 255, 255, 0.03) 0 2px, transparent 2px 14px),
+    linear-gradient(180deg, #5f3a22 0%, #4a2a17 55%, #361b0d 100%);
+  box-shadow:
+    0 28px 55px -30px rgba(20, 10, 3, 0.9),
+    inset 0 1px 0 rgba(255, 255, 255, 0.16);
+}
+
+.shelf-cabinet::before {
+  content: '';
+  position: absolute;
+  top: -8px;
+  left: -4px;
+  right: -4px;
+  height: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px 8px 4px 4px;
+  background: linear-gradient(180deg, #8b5a36, #6b4225 60%, #4a2a16);
+  box-shadow:
+    0 6px 14px rgba(0, 0, 0, 0.35),
+    inset 0 1px 0 rgba(255, 255, 255, 0.22);
+}
+
+.shelf-cabinet::after {
+  content: '';
+  position: absolute;
+  left: -5px;
+  right: -5px;
+  bottom: -8px;
+  height: 14px;
+  border-radius: 4px 4px 8px 8px;
+  background: linear-gradient(180deg, #6a4126, #462713 60%, #2b160a);
+  box-shadow: 0 12px 22px rgba(0, 0, 0, 0.4);
+}
+
+.shelf-cabinet-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 9px 4px 12px;
+}
+
+.shelf-plaque {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 11px;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 6px;
+  background: linear-gradient(180deg, #d3a552, #a87a2e);
+  color: #2c1707;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.45),
+    0 2px 4px rgba(0, 0, 0, 0.35);
+}
+
+.shelf-cabinet-status {
+  padding: 4px 9px;
+  border: 1px solid rgba(250, 204, 21, 0.38);
+  border-radius: 999px;
+  background: rgba(250, 204, 21, 0.14);
+  color: #fde68a;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+}
+
+.shelf-row {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+  padding: 8px 10px 16px;
+  border-radius: 8px 8px 6px 6px;
+  background:
+    radial-gradient(120% 100% at 50% 100%, rgba(0, 0, 0, 0.55), transparent 70%),
+    linear-gradient(180deg, #261409 0%, #1a0d06 100%);
+  box-shadow:
+    inset 0 7px 14px rgba(0, 0, 0, 0.6),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.06);
+}
+
+.shelf-row + .shelf-row {
+  margin-top: 20px;
+}
+
+.shelf-row::after {
+  content: '';
+  position: absolute;
+  left: -10px;
+  right: -10px;
+  bottom: -10px;
+  height: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 3px;
+  background: linear-gradient(180deg, #8a5735 0%, #6b4124 45%, #432613 100%);
+  box-shadow:
+    0 9px 16px rgba(0, 0, 0, 0.45),
+    inset 0 1px 0 rgba(255, 255, 255, 0.2);
+}
+
+.shelf-slot {
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  min-width: 0;
+  height: 178px;
+  border-radius: 6px;
+  transition: background 0.15s ease, box-shadow 0.15s ease;
+}
+
+.shelf-slot.is-drop-target {
+  background: rgba(250, 204, 21, 0.12);
+  box-shadow: inset 0 0 0 2px rgba(250, 204, 21, 0.55);
+}
+
+/* ---------- Sách trên kệ ---------- */
+.shelf-book {
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.shelf-book::after {
+  content: '';
+  position: absolute;
+  bottom: -2px;
+  left: 50%;
+  width: 70%;
+  height: 10px;
+  transform: translateX(-50%);
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.52);
+  filter: blur(4px);
+  z-index: 0;
+}
+
+.shelf-book.is-dragging {
+  opacity: 0.25;
+  filter: grayscale(0.35);
+}
+
+.shelf-book.is-dragging .shelf-book-tip {
+  display: none;
+}
+
+body.shelf-dragging .shelf-book-tip {
+  display: none !important;
+}
+
+.shelf-book-cover-wrap {
+  position: relative;
+  z-index: 1;
+  display: block;
+  height: 144px;
+  aspect-ratio: 0.68;
+  transform: perspective(700px) rotateY(-8deg) translateZ(0);
+  transform-origin: left bottom;
+  transition: transform 0.22s cubic-bezier(0.2, 0.8, 0.2, 1), filter 0.22s ease;
+  filter: drop-shadow(-4px 8px 10px rgba(0, 0, 0, 0.45));
+}
+
+.shelf-book:hover .shelf-book-cover-wrap,
+.shelf-book:focus-visible .shelf-book-cover-wrap {
+  transform: perspective(700px) rotateY(-2deg) translateY(-9px);
+}
+
+.shelf-book-cover-wrap::before {
+  content: '';
+  position: absolute;
+  top: 3px;
+  right: -5px;
+  bottom: 2px;
+  width: 6px;
+  border-radius: 0 3px 3px 0;
+  background: repeating-linear-gradient(90deg, #f7f1e3 0 1px, #ded4c2 1px 2px);
+  box-shadow: 2px 2px 4px rgba(0, 0, 0, 0.35);
+}
+
+.shelf-book-cover-wrap::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 2;
+  width: 9px;
+  border-radius: 3px 0 0 3px;
+  background: linear-gradient(90deg, rgba(0, 0, 0, 0.42), rgba(0, 0, 0, 0.08) 55%, transparent);
+}
+
+.shelf-book-cover {
+  position: relative;
+  z-index: 1;
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: 3px 6px 6px 3px;
+  object-fit: cover;
+  background: #d6c9b4;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.15);
+  user-select: none;
+}
+
+.shelf-book-tip {
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 8px);
+  z-index: 40;
+  width: max-content;
+  max-width: 225px;
+  padding: 9px 11px;
+  border: 1px solid rgba(250, 204, 21, 0.24);
+  border-radius: 9px;
+  background: rgba(17, 24, 39, 0.96);
+  color: #f8fafc;
+  text-align: left;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transform: translate(-50%, 4px);
+  transition: opacity 0.15s ease, transform 0.15s ease, visibility 0.15s;
+  box-shadow: 0 14px 30px rgba(0, 0, 0, 0.45);
+}
+
+.shelf-book:hover .shelf-book-tip,
+.shelf-book:focus-visible .shelf-book-tip {
+  opacity: 1;
+  visibility: visible;
+  transform: translate(-50%, 0);
+}
+
+.shelf-slot:nth-child(-n+2) .shelf-book-tip {
+  left: 0;
+  transform: translate(0, 4px);
+}
+
+.shelf-slot:nth-child(-n+2) .shelf-book:hover .shelf-book-tip,
+.shelf-slot:nth-child(-n+2) .shelf-book:focus-visible .shelf-book-tip {
+  transform: translate(0, 0);
+}
+
+.shelf-slot:nth-child(n+4) .shelf-book-tip {
+  right: 0;
+  left: auto;
+  transform: translate(0, 4px);
+}
+
+.shelf-slot:nth-child(n+4) .shelf-book:hover .shelf-book-tip,
+.shelf-slot:nth-child(n+4) .shelf-book:focus-visible .shelf-book-tip {
+  transform: translate(0, 0);
+}
+
+.shelf-tip-name {
+  display: block;
+  font-size: 12.5px;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+.shelf-tip-author {
+  display: block;
+  margin-top: 2px;
+  color: #cbd5e1;
+  font-size: 11px;
+}
+
+.shelf-tip-progress {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 6px;
+  color: #fde68a;
+  font-size: 10.5px;
+  font-weight: 700;
+}
+
+.shelf-tip-hint {
+  display: block;
+  margin-top: 7px;
+  padding-top: 6px;
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+  color: #94a3b8;
+  font-size: 10px;
+  line-height: 1.5;
+}
+
+/* ---------- Ô trống ---------- */
+.shelf-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: min(76%, 94px);
+  height: 142px;
+  margin-bottom: 2px;
+  padding: 0;
+  border: 1.5px dashed rgba(253, 230, 138, 0.22);
+  border-radius: 5px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.02), rgba(0, 0, 0, 0.08));
+  color: rgba(253, 230, 138, 0.32);
+  font-family: inherit;
+  cursor: pointer;
+  transition: border-color 0.15s ease, color 0.15s ease, background 0.15s ease, transform 0.15s ease;
+}
+
+.shelf-empty:hover {
+  transform: translateY(-3px);
+  border-color: rgba(250, 204, 21, 0.62);
+  background: rgba(250, 204, 21, 0.06);
+  color: rgba(253, 230, 138, 0.9);
+}
+
+.shelf-empty span:last-child {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+}
+
+/* ---------- Kéo sách ---------- */
+.shelf-drag-ghost {
+  position: fixed;
+  z-index: 4500;
+  overflow: hidden;
+  border-radius: 4px 7px 7px 4px;
+  pointer-events: none;
+  opacity: 0.96;
+  transform: rotate(-3deg);
+  box-shadow:
+    0 22px 38px rgba(0, 0, 0, 0.55),
+    0 0 0 2px rgba(250, 204, 21, 0.5);
+}
+
+.shelf-drag-ghost img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+body.shelf-dragging,
+body.shelf-dragging * {
+  cursor: grabbing !important;
+  user-select: none !important;
+}
+
+/* ---------- Menu chuột trái ---------- */
+.shelf-menu {
+  position: fixed;
+  z-index: 4200;
+  width: 214px;
+  padding: 6px;
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  background: var(--bg-card);
+  animation: pop 0.14s ease;
+  box-shadow: var(--shadow-lg);
+}
+
+.shelf-menu-head {
+  margin-bottom: 4px;
+  padding: 8px 9px 7px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.shelf-menu-head span {
+  display: block;
+  color: var(--text-sub);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+}
+
+.shelf-menu-head strong {
+  display: block;
+  margin-top: 2px;
+  overflow: hidden;
+  color: var(--text-main);
+  font-size: 12.5px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.shelf-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 9px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-main);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+
+.shelf-menu-item:hover {
+  background: var(--bg-hover);
+}
+
+.shelf-menu-item.danger {
+  color: var(--danger);
+}
+
+.shelf-menu-item.danger:hover {
+  background: var(--danger-soft);
+}
+
+/* ---------- Modal thêm sách ---------- */
+.shelf-add-toolbar {
+  position: relative;
+  margin-bottom: 14px;
+}
+
+.shelf-add-toolbar svg {
+  position: absolute;
+  top: 50%;
+  left: 11px;
+  transform: translateY(-50%);
+  color: var(--text-sub);
+  pointer-events: none;
+}
+
+.shelf-add-toolbar input {
+  width: 100%;
+  padding: 10px 12px 10px 34px;
+  border: 1px solid var(--border-color);
+  border-radius: 9px;
+  background: var(--bg-soft);
+  color: var(--text-main);
+  font-family: inherit;
+  font-size: 13.5px;
+}
+
+.shelf-add-toolbar input:focus {
+  outline: none;
+  border-color: var(--accent-green);
+  box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.15);
+}
+
+.shelf-add-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  max-height: 44vh;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+
+.shelf-add-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px;
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  background: var(--bg-soft);
+}
+
+.shelf-add-cover {
+  flex-shrink: 0;
+  width: 42px;
+  height: 58px;
+  border-radius: 4px;
+  object-fit: cover;
+  background: var(--bg-hover);
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
+}
+
+.shelf-add-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.shelf-add-info strong,
+.shelf-add-info span {
+  display: block;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.shelf-add-info strong {
+  color: var(--text-main);
+  font-size: 12.5px;
+}
+
+.shelf-add-info span {
+  color: var(--text-sub);
+  font-size: 11px;
+}
+
+.shelf-add-btn {
+  flex-shrink: 0;
+  padding: 5px 9px;
+  border-radius: 7px;
+  font-size: 12px;
+}
+
+/* ---------- Nhật ký đọc ---------- */
+.library-history-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.library-history-head h2 {
+  margin: 0 0 4px;
+  font-size: 19px;
+}
+
+.library-history-head p {
+  margin: 0;
+  color: var(--text-sub);
+  font-size: 13px;
+}
+
+.library-stats {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 18px;
+}
+
+.library-stats .card {
+  padding: 12px;
+}
+
+.library-stats .stat-icon {
+  width: 34px;
+  height: 34px;
+  border-radius: 9px;
+}
+
+.library-stats .stat-label {
+  font-size: 12px;
+}
+
+.library-stats .stat-value {
+  font-size: 21px;
+}
+
+.library-stats > :last-child:nth-child(odd) {
+  grid-column: 1 / -1;
+}
+
+.library-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 16px;
+}
+
+.library-tabs .tab {
+  margin-bottom: 0;
+  padding: 7px 12px;
+  border: 1px solid var(--border-color);
+  border-radius: 999px;
+  background: var(--bg-card);
+  font-size: 12.5px;
+}
+
+.library-tabs .tab:hover {
+  background: var(--bg-hover);
+  color: var(--text-main);
+}
+
+.library-tabs .tab.active {
+  border-color: var(--accent-green);
+  background: var(--accent-soft);
+  color: var(--text-primary);
+}
+
+/* ---------- Responsive ---------- */
+@media (max-width: 1180px) {
+  .library-dashboard {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .library-history,
+  .library-room {
+    grid-column: 1;
+    grid-row: auto;
+  }
+
+  .library-room {
+    margin-bottom: 22px;
+  }
+}
+
+@media (max-width: 720px) {
+  .reading-hero {
+    padding: 22px 20px;
+    border-radius: 16px;
+  }
+
+  .reading-hero-art {
+    display: none;
+  }
+
+  .library-room {
+    padding: 14px;
+    border-radius: 16px;
+  }
+
+  .shelf-cabinet {
+    padding: 10px 10px 21px;
+  }
+
+  .shelf-slot {
+    height: 132px;
+  }
+
+  .shelf-book-cover-wrap {
+    height: 108px;
+  }
+
+  .shelf-empty {
+    width: 82%;
+    height: 106px;
+  }
+
+  .shelf-row {
+    gap: 4px;
+    padding: 6px 5px 12px;
+  }
+
+  .shelf-row + .shelf-row {
+    margin-top: 17px;
+  }
+
+  .shelf-row::after {
+    left: -5px;
+    right: -5px;
+    bottom: -9px;
+    height: 12px;
+  }
+
+  .shelf-add-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 560px) {
+  .library-stats {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 480px) {
+  .shelf-slot {
+    height: 106px;
+  }
+
+  .shelf-book-cover-wrap {
+    height: 84px;
+  }
+
+  .shelf-empty {
+    width: 86%;
+    height: 84px;
+    border-radius: 4px;
+  }
+
+  .shelf-empty span:last-child {
+    display: none;
+  }
+
+  .shelf-book-tip {
+    display: none;
+  }
+
+  .shelf-cabinet-head {
+    padding-bottom: 9px;
+  }
+
+  .library-room-actions {
+    justify-content: space-between;
+    width: 100%;
+  }
+
+  .library-legend {
+    font-size: 11px;
+  }
+}

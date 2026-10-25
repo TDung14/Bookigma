@@ -21,4 +21,8 @@ public interface ChatConversationRepository extends JpaRepository<ChatConversati
 
     @Query("select c from ChatConversation c where c.type = :type and c.name = :name")
     Optional<ChatConversation> findByTypeAndName(@Param("type") ChatType type, @Param("name") String name);
+
+    @Query("select count(c) from ChatConversation c join c.participantIds p "
+            + "where c.id = :conversationId and p = :userId")
+    long countParticipant(@Param("conversationId") Long conversationId, @Param("userId") Long userId);
 }

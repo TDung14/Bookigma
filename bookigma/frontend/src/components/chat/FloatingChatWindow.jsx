@@ -78,14 +78,14 @@ export default function FloatingChatWindow({
     if (e) e.preventDefault();
     const text = draft.trim();
     if (!text || !user || !convId) return;
-    sendMessage(convId, user.id, text);
+    sendMessage(convId, text);
     setDraft('');
     setShowEmojiPicker(false);
   };
 
   const handleSendLike = () => {
     if (!user || !convId) return;
-    sendMessage(convId, user.id, '👍');
+    sendMessage(convId, '👍');
   };
 
   const handleKeyDown = (e) => {
@@ -106,8 +106,8 @@ export default function FloatingChatWindow({
 
     setUploadingImage(true);
     try {
-      const { imageUrl } = await uploadPostImage(file, user.id);
-      await sendMessage(convId, user.id, imageUrl);
+      const { imageUrl } = await uploadPostImage(file);
+      await sendMessage(convId, imageUrl);
     } catch (err) {
       toast(err.message || 'Không thể gửi ảnh.', 'error');
     } finally {
@@ -239,7 +239,7 @@ export default function FloatingChatWindow({
             <button
               className="btn btn-ghost btn-xs"
               style={{ marginTop: 12, borderRadius: 16 }}
-              onClick={() => sendMessage(convId, user.id, 'Xin chào! 👋')}
+              onClick={() => sendMessage(convId, 'Xin chào! 👋')}
             >
               Vẫy tay chào 👋
             </button>

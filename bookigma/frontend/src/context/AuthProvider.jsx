@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { AuthContext } from './contexts';
 import { load, save } from '../lib/storage';
-import * as seed from '../data/seed';
+import { AUTH_EXPIRED_EVENT, clearAuthToken, getAuthToken, setAuthToken } from '../lib/authToken';
 import { apiCall } from '../services/api';
-import { avatarSrc, DEFAULT_AVATAR } from '../lib/avatar';
+import { getVipMe } from '../services/vipApi';
+import { syncVipFromServer } from '../lib/vip';
+import { avatarSrc } from '../lib/avatar';
 
 const AUTH_STORAGE_KEY = 'authUser';
 
@@ -95,6 +97,7 @@ export function AuthProvider({ children }) {
    * Vì vậy F5 không làm mất phiên đăng nhập.
    */
   const [user, setUser] = useState(() => {
+    if (!getAuthToken()) return null;
     const savedUser = load(AUTH_STORAGE_KEY, null);
 
     return normalizeUser(savedUser);
@@ -127,13 +130,67 @@ export function AuthProvider({ children }) {
   }, [user]);
 
   /*
+   * Khôi phục phiên từ token khi mở lại trang: /auth/me xác nhận token còn hiệu lực
+   * và trả hồ sơ mới nhất (role có thể đã thay đổi ở backend).
+   */
+  useEffect(() => {
+    if (!getAuthToken()) return undefined;
+
+    let cancelled = false;
+    apiCall('/auth/me')
+      .then((apiUser) => {
+        if (cancelled) return;
+        const normalized = normalizeUser(apiUser);
+        if (normalized) {
+          setUser(normalized);
+        } else {
+          clearAuthToken();
+          setUser(null);
+        }
+      })
+      .catch(() => {
+        if (cancelled) return;
+        clearAuthToken();
+        setUser(null);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  /* Backend đã từ chối token: xóa phiên ngay để route bảo vệ chuyển về đăng nhập. */
+  useEffect(() => {
+    const handleExpired = () => {
+      clearAuthToken();
+      setUser(null);
+    };
+    window.addEventListener(AUTH_EXPIRED_EVENT, handleExpired);
+    return () => window.removeEventListener(AUTH_EXPIRED_EVENT, handleExpired);
+  }, []);
+
+  const startSession = useCallback((response) => {
+    const token = response?.token;
+    const normalized = normalizeUser(response?.user);
+
+    if (!token || !normalized) {
+      clearAuthToken();
+      return null;
+    }
+
+    setAuthToken(token);
+    setUser(normalized);
+    return normalized;
+  }, []);
+
+  /*
    * Đăng nhập
    */
   const login = useCallback(async (username, password) => {
     try {
       setLoading(true);
 
-      const apiUser = await apiCall(
+      const response = await apiCall(
         '/auth/login',
         'POST',
         {
@@ -142,7 +199,7 @@ export function AuthProvider({ children }) {
         }
       );
 
-      const normalized = normalizeUser(apiUser);
+      const normalized = startSession(response);
 
       if (!normalized) {
         return {
@@ -151,39 +208,12 @@ export function AuthProvider({ children }) {
         };
       }
 
-      setUser(normalized);
-
       return {
         ok: true,
         user: normalized,
       };
 
     } catch (error) {
-      const demoUser = (Array.isArray(seed.users) ? seed.users : []).find((u) => {
-        const normUser = String(u.username || '').trim().toLowerCase();
-        const normInput = String(username || '').trim().toLowerCase();
-        const emailMatch = String(u.email || '').trim().toLowerCase() === normInput;
-        const passMatch = String(password || '') === '123456';
-        return (normUser === normInput || emailMatch) && passMatch;
-      });
-
-      if (demoUser) {
-        const normalized = normalizeUser({
-          id: demoUser.id,
-          username: demoUser.username,
-          fullName: demoUser.fullName,
-          email: demoUser.email,
-          avatarUrl: demoUser.avatarUrl,
-          role: demoUser.role,
-          points: demoUser.points,
-          active: demoUser.active,
-          createdAt: demoUser.createdAt,
-        });
-
-        setUser(normalized);
-        return { ok: true, user: normalized };
-      }
-
       return {
         ok: false,
         error:
@@ -194,27 +224,29 @@ export function AuthProvider({ children }) {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [startSession]);
 
   /*
-   * Đăng ký
+   * Đăng nhập bằng Google
    */
-  const register = useCallback(async (data) => {
+  const loginWithGoogle = useCallback(async (credential) => {
+    if (!credential) {
+      return {
+        ok: false,
+        error: 'Không nhận được thông tin xác thực từ Google.',
+      };
+    }
+
     try {
       setLoading(true);
 
-      const apiUser = await apiCall(
-        '/auth/register',
+      const response = await apiCall(
+        '/auth/google',
         'POST',
-        {
-          username: data.username,
-          email: data.email,
-          password: data.password,
-          fullName: data.fullName,
-        }
+        { credential }
       );
 
-      const normalized = normalizeUser(apiUser);
+      const normalized = startSession(response);
 
       if (!normalized) {
         return {
@@ -223,15 +255,46 @@ export function AuthProvider({ children }) {
         };
       }
 
-      /*
-       * Sau khi đăng ký thành công,
-       * tài khoản cũng được đăng nhập luôn.
-       */
-      setUser(normalized);
-
       return {
         ok: true,
         user: normalized,
+      };
+
+    } catch (error) {
+      return {
+        ok: false,
+        error:
+          error.message ||
+          'Đăng nhập Google thất bại.',
+      };
+
+    } finally {
+      setLoading(false);
+    }
+  }, [startSession]);
+
+  /*
+   * Đăng ký
+   */
+  const register = useCallback(async (data) => {
+    try {
+      setLoading(true);
+
+      // Tài khoản mới chưa đăng nhập được cho tới khi bấm link xác thực email.
+      const response = await apiCall(
+        '/auth/register',
+        'POST',
+        {
+          username: String(data.username || '').trim(),
+          email: String(data.email || '').trim(),
+          password: String(data.password || ''),
+          fullName: String(data.fullName || '').trim(),
+        }
+      );
+
+      return {
+        ok: true,
+        data: response,
       };
 
     } catch (error) {
@@ -247,6 +310,53 @@ export function AuthProvider({ children }) {
       setLoading(false);
     }
   }, []);
+
+  /*
+   * Xác thực email bằng token trong link; thành công thì đăng nhập luôn.
+   */
+  const verifyEmail = useCallback(async (token) => {
+    if (!token) {
+      return {
+        ok: false,
+        error: 'Thiếu mã xác thực trong link.',
+      };
+    }
+
+    try {
+      setLoading(true);
+
+      const response = await apiCall(
+        '/auth/verify-email',
+        'POST',
+        { token }
+      );
+
+      const normalized = startSession(response);
+
+      if (!normalized) {
+        return {
+          ok: false,
+          error: 'Dữ liệu tài khoản từ server không hợp lệ.',
+        };
+      }
+
+      return {
+        ok: true,
+        user: normalized,
+      };
+
+    } catch (error) {
+      return {
+        ok: false,
+        error:
+          error.message ||
+          'Không thể xác thực email.',
+      };
+
+    } finally {
+      setLoading(false);
+    }
+  }, [startSession]);
 
   /*
    * Cập nhật profile
@@ -361,6 +471,9 @@ export function AuthProvider({ children }) {
    */
   const logout = useCallback(() => {
 
+    // Token là nguồn xác thực duy nhất — xóa trước để mọi request sau đó là khách.
+    clearAuthToken();
+
     // Xóa state React
     setUser(null);
 
@@ -382,6 +495,20 @@ export function AuthProvider({ children }) {
   const updateUserFields = useCallback((fields) => {
     setUser((current) => (current ? { ...current, ...fields } : current));
   }, []);
+
+  const vipUserId = user?.id ?? null;
+
+  // VIP do backend quyết định; đồng bộ vào cache để các trang dùng chung useVip.
+  useEffect(() => {
+    if (!vipUserId) return undefined;
+    let cancelled = false;
+    getVipMe(vipUserId)
+      .then((vip) => {
+        if (!cancelled) syncVipFromServer(vipUserId, vip);
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [vipUserId]);
 
   const value = useMemo(
     () => ({
@@ -412,7 +539,11 @@ export function AuthProvider({ children }) {
 
       login,
 
+      loginWithGoogle,
+
       register,
+
+      verifyEmail,
 
       updateProfile,
 
@@ -426,7 +557,9 @@ export function AuthProvider({ children }) {
       user,
       loading,
       login,
+      loginWithGoogle,
       register,
+      verifyEmail,
       updateProfile,
       updateUserFields,
       loginAs,

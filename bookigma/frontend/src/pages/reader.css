@@ -203,6 +203,45 @@
   50% { height: 18px; }
 }
 
+.ambient-vip-note {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--text-sub);
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--bg-soft);
+  border: 1px dashed var(--border-color);
+}
+
+.ambient-vip-note svg {
+  flex-shrink: 0;
+  color: var(--warning);
+}
+
+.ambient-vip-note b {
+  color: var(--text-main);
+  font-weight: 600;
+}
+
+.ambient-vip-note .link {
+  margin-left: auto;
+  white-space: nowrap;
+}
+
+.ambient-vip-note.is-unlocked {
+  color: var(--text-primary);
+  border-color: rgba(245, 158, 11, .35);
+  background: var(--warning-soft);
+}
+
+.ambient-vip-note.is-unlocked svg {
+  color: var(--warning);
+}
+
 /* Thử thách trắc nghiệm sau mỗi trang (Reading Quiz Modal) */
 .quiz-backdrop {
   position: fixed;

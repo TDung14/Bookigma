@@ -103,6 +103,7 @@ public class AdminServiceImpl implements AdminService {
                 .fullName(normalize(request.fullName()))
                 .role(role)
                 .active(request.active() == null || request.active())
+                .emailVerified(true)
                 .build();
 
         User saved = userRepository.save(user);

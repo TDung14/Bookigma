@@ -73,7 +73,7 @@ export default function ChatPage() {
     e?.preventDefault();
     const text = draft.trim();
     if (!text || !active) return;
-    sendMessage(active.id, user.id, text);
+    sendMessage(active.id, text);
     setDraft('');
     setShowEmoji(false);
   };
@@ -85,8 +85,8 @@ export default function ChatPage() {
 
     setUploadingImage(true);
     try {
-      const { imageUrl } = await uploadPostImage(file, user.id);
-      await sendMessage(active.id, user.id, imageUrl);
+      const { imageUrl } = await uploadPostImage(file);
+      await sendMessage(active.id, imageUrl);
     } catch (err) {
       toast(err.message || 'Không thể gửi ảnh.', 'error');
     } finally {
@@ -121,7 +121,7 @@ export default function ChatPage() {
     }
 
     try {
-      const created = await createGroupConversation(user.id, groupMembers, groupName.trim() || `Nhóm của ${user.name}`);
+      const created = await createGroupConversation(groupMembers, groupName.trim() || `Nhóm của ${user.name}`);
       setShowNew(false);
       setGroupMode(false);
       setGroupMembers([]);
@@ -378,7 +378,7 @@ export default function ChatPage() {
                     style={{ color: '#0084ff', width: 38, height: 38 }}
                     onClick={() => {
                       if (!active) return;
-                      sendMessage(active.id, user.id, '👍');
+                      sendMessage(active.id, '👍');
                     }}
                     title="Gửi biểu tượng thích 👍"
                     aria-label="Thích"

@@ -3,19 +3,30 @@ package com.bookigma.bookigma.service.impl;
 
 import com.bookigma.bookigma.dto.AuthRequest;
 import com.bookigma.bookigma.dto.ChangePasswordRequest;
+import com.bookigma.bookigma.dto.RegisterResponse;
+import com.bookigma.bookigma.exception.ApiException;
 import com.bookigma.bookigma.service.EmailService;
+import com.bookigma.bookigma.service.GoogleTokenVerifier;
 import com.bookigma.bookigma.dto.UserProfileDto;
 import com.bookigma.bookigma.entity.User;
 import com.bookigma.bookigma.repository.UserRepository;
 import com.bookigma.bookigma.repository.ShopRepository;
 import com.bookigma.bookigma.entity.Shop;
 import com.bookigma.bookigma.service.UserService;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDateTime;
+import java.util.Base64;
 import java.util.List;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
+import java.nio.charset.StandardCharsets;
+import java.util.Locale;
+import java.util.UUID;
 import java.util.stream.Collectors;
 
 @Service
@@ -25,24 +36,33 @@ public class UserServiceImpl implements UserService {
     private final PasswordEncoder passwordEncoder;
     private final EmailService emailService;
     private final ShopRepository shopRepository;
+    private final GoogleTokenVerifier googleTokenVerifier;
+    private final String frontendUrl;
     private final SecureRandom secureRandom = new SecureRandom();
+
+    private static final int VERIFICATION_TTL_HOURS = 24;
+    private static final int RESEND_COOLDOWN_SECONDS = 60;
 
     public UserServiceImpl(
             UserRepository userRepository,
             PasswordEncoder passwordEncoder,
             EmailService emailService,
-            ShopRepository shopRepository
+            ShopRepository shopRepository,
+            GoogleTokenVerifier googleTokenVerifier,
+            @Value("${app.frontend-url:http://localhost:5173}") String frontendUrl
     ) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
         this.emailService = emailService;
         this.shopRepository = shopRepository;
+        this.googleTokenVerifier = googleTokenVerifier;
+        this.frontendUrl = frontendUrl == null ? "" : frontendUrl.trim();
     }
 
     // Đăng ký tài khoản
     @Override
     @Transactional
-    public UserProfileDto register(AuthRequest request) {
+    public RegisterResponse register(AuthRequest request) {
         if (request == null) {
             throw new IllegalArgumentException("Dữ liệu đăng ký không hợp lệ!");
         }
@@ -50,6 +70,9 @@ public class UserServiceImpl implements UserService {
         String username = request.getUsername() == null ? "" : request.getUsername().trim().toLowerCase(java.util.Locale.ROOT);
         if (username.isBlank()) {
             throw new IllegalArgumentException("Tên đăng nhập không được để trống!");
+        }
+        if (username.length() > 50) {
+            throw new IllegalArgumentException("Tên đăng nhập không được vượt quá 50 ký tự!");
         }
 
         if (request.getEmail() == null || request.getEmail().isBlank()) {
@@ -59,8 +82,23 @@ public class UserServiceImpl implements UserService {
         if (request.getPassword() == null || request.getPassword().isBlank()) {
             throw new IllegalArgumentException("Mật khẩu không được để trống!");
         }
+        if (request.getPassword().length() < 6) {
+            throw new IllegalArgumentException("Mật khẩu phải có ít nhất 6 ký tự!");
+        }
+        // BCrypt chỉ nhận tối đa 72 byte UTF-8; ký tự có dấu chiếm 2-3 byte.
+        if (request.getPassword().getBytes(StandardCharsets.UTF_8).length > 72) {
+            throw new IllegalArgumentException("Mật khẩu quá dài, vui lòng rút ngắn lại!");
+        }
 
         String email = request.getEmail().trim().toLowerCase(java.util.Locale.ROOT);
+        if (email.length() > 100) {
+            throw new IllegalArgumentException("Email không được vượt quá 100 ký tự!");
+        }
+
+        String fullName = normalize(request.getFullName());
+        if (fullName != null && fullName.length() > 100) {
+            throw new IllegalArgumentException("Họ và tên không được vượt quá 100 ký tự!");
+        }
 
         if (userRepository.existsByUsernameIgnoreCase(username)) {
             throw new IllegalArgumentException("Tên đăng nhập đã tồn tại!");
@@ -74,14 +112,27 @@ public class UserServiceImpl implements UserService {
                 .username(username)
                 .email(email)
                 .passwordHash(passwordEncoder.encode(request.getPassword()))
-                .fullName(normalize(request.getFullName()))
+                .fullName(fullName)
                 .role(User.Role.USER)
                 .active(true)
+                .emailVerified(false)
                 .build();
+        String rawToken = issueVerificationToken(user);
 
         User savedUser = userRepository.save(user);
 
-        return toDto(savedUser);
+        // Nếu gửi mail lỗi, exception làm rollback cả tài khoản vừa tạo.
+        boolean emailSent = emailService.sendVerificationEmail(
+                savedUser.getEmail(),
+                savedUser.getUsername(),
+                verificationLink(rawToken)
+        );
+
+        return new RegisterResponse(
+                "Đăng ký thành công. Hãy kiểm tra email để xác thực tài khoản.",
+                savedUser.getEmail(),
+                emailSent
+        );
     }
 
     @Override
@@ -125,6 +176,160 @@ public class UserServiceImpl implements UserService {
             );
         }
 
+        if (!Boolean.TRUE.equals(user.getEmailVerified())) {
+            throw new IllegalArgumentException(
+                    "Tài khoản chưa được xác thực email. Hãy bấm vào link trong email đăng ký hoặc gửi lại email xác thực."
+            );
+        }
+
+        ensureShopForSeller(user);
+
+        return toDto(user);
+    }
+
+    // Đăng nhập bằng Google ID token; tài khoản được liên kết qua email đã xác thực.
+    @Override
+    @Transactional
+    public UserProfileDto loginWithGoogle(String credential) {
+        GoogleTokenVerifier.GoogleUser googleUser = googleTokenVerifier.verify(credential);
+        String email = googleUser.email();
+
+        if (email.length() > 100) {
+            throw ApiException.badRequest("Email Google quá dài để sử dụng trên hệ thống.");
+        }
+
+        User existingUser = userRepository.findByEmailIgnoreCase(email).orElse(null);
+        if (existingUser != null) {
+            if (!Boolean.TRUE.equals(existingUser.getActive())) {
+                throw ApiException.forbidden("Tài khoản đã bị khóa hoặc vô hiệu hóa!");
+            }
+            if (!Boolean.TRUE.equals(existingUser.getEmailVerified())) {
+                // Google đã chứng minh quyền sở hữu email. Đổi mật khẩu để người
+                // đăng ký trước đó (nếu không phải chủ email) không đăng nhập được.
+                existingUser.setEmailVerified(true);
+                existingUser.setVerificationTokenHash(null);
+                existingUser.setVerificationExpiresAt(null);
+                existingUser.setVerificationSentAt(null);
+                existingUser.setPasswordHash(passwordEncoder.encode(UUID.randomUUID().toString()));
+                userRepository.save(existingUser);
+            }
+            ensureShopForSeller(existingUser);
+            return toDto(existingUser);
+        }
+
+        String fullName = normalize(googleUser.name());
+        if (fullName != null && fullName.length() > 100) {
+            fullName = fullName.substring(0, 100);
+        }
+        if (fullName == null) {
+            fullName = emailLocalPart(email);
+        }
+
+        User newUser = User.builder()
+                .username(uniqueUsernameFromEmail(email))
+                .email(email)
+                // Google không cung cấp mật khẩu; hash ngẫu nhiên để không thể đăng nhập bằng mật khẩu.
+                .passwordHash(passwordEncoder.encode(UUID.randomUUID().toString()))
+                .fullName(fullName)
+                .role(User.Role.USER)
+                .active(true)
+                .emailVerified(true)
+                .build();
+
+        return toDto(userRepository.save(newUser));
+    }
+
+    @Override
+    @Transactional
+    public UserProfileDto verifyEmail(String token) {
+        if (token == null || token.isBlank()) {
+            throw new IllegalArgumentException("Thiếu mã xác thực.");
+        }
+
+        User user = userRepository.findByVerificationTokenHash(sha256(token.trim()))
+                .orElseThrow(() -> new IllegalArgumentException(
+                        "Link xác thực không hợp lệ hoặc đã được sử dụng."
+                ));
+
+        if (user.getVerificationExpiresAt() == null
+                || user.getVerificationExpiresAt().isBefore(LocalDateTime.now())) {
+            throw new IllegalArgumentException(
+                    "Link xác thực đã hết hạn. Vui lòng yêu cầu gửi lại email xác thực."
+            );
+        }
+
+        user.setEmailVerified(true);
+        user.setVerificationTokenHash(null);
+        user.setVerificationExpiresAt(null);
+        user.setVerificationSentAt(null);
+
+        return toDto(userRepository.save(user));
+    }
+
+    @Override
+    @Transactional
+    public void resendVerificationEmail(String email) {
+        if (email == null || email.isBlank()) {
+            throw new IllegalArgumentException("Email không được để trống.");
+        }
+        String normalizedEmail = email.trim().toLowerCase(Locale.ROOT);
+        User user = userRepository.findByEmailIgnoreCase(normalizedEmail)
+                .orElseThrow(() -> new IllegalArgumentException("Email chưa được đăng ký trong hệ thống."));
+
+        if (Boolean.TRUE.equals(user.getEmailVerified())) {
+            throw new IllegalArgumentException("Email này đã được xác thực.");
+        }
+
+        if (user.getVerificationSentAt() != null
+                && user.getVerificationSentAt().plusSeconds(RESEND_COOLDOWN_SECONDS).isAfter(LocalDateTime.now())) {
+            throw new IllegalArgumentException(
+                    "Vui lòng chờ khoảng " + RESEND_COOLDOWN_SECONDS + " giây trước khi gửi lại email xác thực."
+            );
+        }
+
+        // Gửi trước; nếu SMTP lỗi thì token mới cũng không được lưu.
+        String rawToken = issueVerificationToken(user);
+        emailService.sendVerificationEmail(
+                user.getEmail(),
+                user.getUsername(),
+                verificationLink(rawToken)
+        );
+        userRepository.save(user);
+    }
+
+    private String issueVerificationToken(User user) {
+        byte[] bytes = new byte[32];
+        secureRandom.nextBytes(bytes);
+        String rawToken = Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
+
+        user.setVerificationTokenHash(sha256(rawToken));
+        user.setVerificationExpiresAt(LocalDateTime.now().plusHours(VERIFICATION_TTL_HOURS));
+        user.setVerificationSentAt(LocalDateTime.now());
+        return rawToken;
+    }
+
+    private String verificationLink(String rawToken) {
+        String base = frontendUrl.endsWith("/")
+                ? frontendUrl.substring(0, frontendUrl.length() - 1)
+                : frontendUrl;
+        return base + "/verify-email?token=" + rawToken;
+    }
+
+    private String sha256(String value) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            byte[] hash = digest.digest(value.getBytes(StandardCharsets.UTF_8));
+            StringBuilder result = new StringBuilder(hash.length * 2);
+            for (byte b : hash) {
+                result.append(String.format("%02x", b));
+            }
+            return result.toString();
+        } catch (NoSuchAlgorithmException ex) {
+            throw new IllegalStateException("Không thể tạo mã xác thực.", ex);
+        }
+    }
+
+    private void ensureShopForSeller(User user) {
         // SHOP và MODERATOR đều có một kênh bán riêng. Tự khởi tạo nếu tài khoản
         // vừa được cấp role nhưng chưa có bản ghi trong bảng shops.
         if ((user.getRole() == User.Role.SHOP || user.getRole() == User.Role.MODERATOR)
@@ -136,8 +341,34 @@ public class UserServiceImpl implements UserService {
                     .verified(user.getRole() == User.Role.MODERATOR)
                     .build());
         }
+    }
 
-        return toDto(user);
+    private String emailLocalPart(String email) {
+        int at = email.indexOf('@');
+        return at > 0 ? email.substring(0, at) : email;
+    }
+
+    private String uniqueUsernameFromEmail(String email) {
+        String base = emailLocalPart(email).toLowerCase(Locale.ROOT)
+                .replaceAll("[^a-z0-9._-]", "");
+        if (base.isBlank()) {
+            base = "googleuser";
+        }
+        if (base.length() > 40) {
+            base = base.substring(0, 40);
+        }
+
+        String candidate = base;
+        int suffix = 1;
+        while (userRepository.existsByUsernameIgnoreCase(candidate)) {
+            String suffixText = String.valueOf(suffix++);
+            int maxBaseLength = 50 - suffixText.length();
+            String trimmedBase = base.length() > maxBaseLength
+                    ? base.substring(0, maxBaseLength)
+                    : base;
+            candidate = trimmedBase + suffixText;
+        }
+        return candidate;
     }
 
     // Lấy danh sách người dùng đang hoạt động

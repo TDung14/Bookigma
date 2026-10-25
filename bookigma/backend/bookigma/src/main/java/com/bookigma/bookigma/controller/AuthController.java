@@ -1,8 +1,16 @@
 package com.bookigma.bookigma.controller;
 
+import com.bookigma.bookigma.config.CurrentUserId;
 import com.bookigma.bookigma.dto.AuthRequest;
+import com.bookigma.bookigma.dto.AuthResponse;
 import com.bookigma.bookigma.dto.ForgotPasswordRequest;
+import com.bookigma.bookigma.dto.GoogleLoginRequest;
+import com.bookigma.bookigma.dto.RegisterResponse;
+import com.bookigma.bookigma.dto.ResendVerificationRequest;
 import com.bookigma.bookigma.dto.UserProfileDto;
+import com.bookigma.bookigma.dto.VerifyEmailRequest;
+import com.bookigma.bookigma.exception.ApiException;
+import com.bookigma.bookigma.security.JwtService;
 import com.bookigma.bookigma.service.UserService;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
@@ -16,9 +24,16 @@ import java.util.Map;
 public class AuthController {
 
     private final UserService userService;
+    private final JwtService jwtService;
 
-    public AuthController(UserService userService) {
+    public AuthController(UserService userService, JwtService jwtService) {
         this.userService = userService;
+        this.jwtService = jwtService;
+    }
+
+    private AuthResponse authResponse(UserProfileDto user) {
+        String token = jwtService.generateToken(user.getId(), user.getUsername(), user.getRole());
+        return AuthResponse.of(token, jwtService.getExpirationSeconds(), user);
     }
 
     /**
@@ -30,15 +45,20 @@ public class AuthController {
             @Valid @RequestBody AuthRequest request
     ) {
         try {
-            UserProfileDto user = userService.register(request);
+            RegisterResponse response = userService.register(request);
 
             return ResponseEntity
                     .status(HttpStatus.CREATED)
-                    .body(user);
+                    .body(response);
 
         } catch (IllegalArgumentException ex) {
             return ResponseEntity
                     .badRequest()
+                    .body(Map.of("message", ex.getMessage()));
+
+        } catch (IllegalStateException ex) {
+            return ResponseEntity
+                    .status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body(Map.of("message", ex.getMessage()));
 
         } catch (Exception ex) {
@@ -62,7 +82,7 @@ public class AuthController {
         try {
             UserProfileDto user = userService.login(request);
 
-            return ResponseEntity.ok(user);
+            return ResponseEntity.ok(authResponse(user));
 
         } catch (IllegalArgumentException ex) {
             return ResponseEntity
@@ -75,6 +95,105 @@ public class AuthController {
                     .body(Map.of(
                             "message",
                             "Không thể đăng nhập lúc này."
+                    ));
+        }
+    }
+
+    /**
+     * Hồ sơ người dùng đang đăng nhập — frontend dùng để khôi phục phiên từ token.
+     * GET /api/auth/me
+     */
+    @GetMapping("/me")
+    public ResponseEntity<UserProfileDto> me(@CurrentUserId Long userId) {
+        return ResponseEntity.ok(userService.getUserProfile(userId));
+    }
+
+    /**
+     * Xác thực email bằng token trong link
+     * POST /api/auth/verify-email
+     */
+    @PostMapping("/verify-email")
+    public ResponseEntity<?> verifyEmail(
+            @Valid @RequestBody VerifyEmailRequest request
+    ) {
+        try {
+            UserProfileDto user = userService.verifyEmail(request.token());
+            return ResponseEntity.ok(authResponse(user));
+
+        } catch (IllegalArgumentException ex) {
+            return ResponseEntity
+                    .badRequest()
+                    .body(Map.of("message", ex.getMessage()));
+
+        } catch (Exception ex) {
+            return ResponseEntity
+                    .status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(Map.of(
+                            "message",
+                            "Không thể xác thực email lúc này."
+                    ));
+        }
+    }
+
+    /**
+     * Gửi lại email xác thực
+     * POST /api/auth/resend-verification
+     */
+    @PostMapping("/resend-verification")
+    public ResponseEntity<?> resendVerification(
+            @Valid @RequestBody ResendVerificationRequest request
+    ) {
+        try {
+            userService.resendVerificationEmail(request.email());
+
+            return ResponseEntity.ok(
+                    Map.of("message", "Email xác thực đã được gửi lại.")
+            );
+
+        } catch (IllegalArgumentException ex) {
+            return ResponseEntity
+                    .badRequest()
+                    .body(Map.of("message", ex.getMessage()));
+
+        } catch (IllegalStateException ex) {
+            return ResponseEntity
+                    .status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(Map.of("message", ex.getMessage()));
+
+        } catch (Exception ex) {
+            return ResponseEntity
+                    .status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(Map.of(
+                            "message",
+                            "Không thể gửi email xác thực lúc này."
+                    ));
+        }
+    }
+
+    /**
+     * Đăng nhập bằng Google
+     * POST /api/auth/google
+     */
+    @PostMapping("/google")
+    public ResponseEntity<?> loginWithGoogle(
+            @Valid @RequestBody GoogleLoginRequest request
+    ) {
+        try {
+            return ResponseEntity.ok(
+                    authResponse(userService.loginWithGoogle(request.credential()))
+            );
+
+        } catch (ApiException ex) {
+            return ResponseEntity
+                    .status(ex.getStatus())
+                    .body(Map.of("message", ex.getMessage()));
+
+        } catch (Exception ex) {
+            return ResponseEntity
+                    .status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(Map.of(
+                            "message",
+                            "Không thể đăng nhập bằng Google lúc này."
                     ));
         }
     }

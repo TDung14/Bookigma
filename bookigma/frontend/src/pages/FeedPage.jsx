@@ -69,7 +69,7 @@ export default function FeedPage() {
       setPosting(true);
       let imageUrl = null;
       if (draftImage) {
-        const uploaded = await uploadPostImage(draftImage, user.id);
+        const uploaded = await uploadPostImage(draftImage);
         imageUrl = uploaded.imageUrl;
       }
       await addPost({
