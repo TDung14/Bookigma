@@ -5,6 +5,15 @@ import { useApp, useAuth, useToast } from '../hooks/useStore';
 
 import { avatarSrc, DEFAULT_AVATAR } from '../lib/avatar';
 
+const FILTER_OPTIONS = [
+  { value: 'all', label: 'Tất cả' },
+  { value: 'friends', label: 'Bạn bè' },
+  { value: 'following', label: 'Đang theo dõi' },
+  { value: 'followers', label: 'Người theo dõi' },
+  { value: 'waiting', label: 'Chờ xác nhận' },
+  { value: 'new', label: 'Gợi ý mới' },
+];
+
 export default function FriendsPage() {
   const navigate = useNavigate();
   const toast = useToast();
@@ -18,7 +27,6 @@ export default function FriendsPage() {
   const hasSentFriendRequest = app.hasSentFriendRequest || (() => false);
   const hasReceivedFriendRequest = app.hasReceivedFriendRequest || (() => false);
   const getFollowers = app.getFollowers || (() => []);
-  const getFollowing = app.getFollowing || (() => []);
   const toggleFriend = app.toggleFriend || (async () => false);
   const acceptFriendRequest = app.acceptFriendRequest || (async () => false);
   const rejectFriendRequest = app.rejectFriendRequest || (async () => false);
@@ -27,6 +35,8 @@ export default function FriendsPage() {
 
   const [searchQuery, setSearchQuery] = useState('');
   const [filter, setFilter] = useState('all');
+  const [searchScope, setSearchScope] = useState('all');
+  const [sortBy, setSortBy] = useState('default');
 
   const people = useMemo(() => {
     if (!userId) return [];
@@ -47,19 +57,47 @@ export default function FriendsPage() {
     return ids.map((id) => users.find((u) => String(u.id) === String(id))).filter(Boolean);
   }, [userId, getFollowers, users]);
 
-  const filteredPeople = useMemo(() => people.filter((person) => {
-    const haystack = [personDisplayName(person), personUsername(person), person.bio || ''].join(' ').toLowerCase();
-    if (normalizedSearch && !haystack.includes(normalizedSearch)) return false;
-    const friend = isFriend(userId, person.id);
-    const sent = hasSentFriendRequest(userId, person.id);
-    const received = hasReceivedFriendRequest(userId, person.id);
-    const follow = isFollowing(userId, person.id);
-    if (filter === 'friends') return friend;
-    if (filter === 'following') return follow && !friend;
-    if (filter === 'waiting') return sent || received;
-    if (filter === 'new') return !friend && !follow && !sent && !received;
-    return true;
-  }), [people, normalizedSearch, filter, userId, isFriend, isFollowing, hasSentFriendRequest, hasReceivedFriendRequest]);
+  const followerIds = useMemo(() => new Set((getFollowers(userId) || []).map(String)), [userId, getFollowers]);
+
+  const filteredPeople = useMemo(() => {
+    const list = people.filter((person) => {
+      const displayName = personDisplayName(person).toLowerCase();
+      const username = personUsername(person).toLowerCase();
+      const bio = String(person.bio || '').toLowerCase();
+      const haystack =
+        searchScope === 'name' ? displayName :
+        searchScope === 'username' ? username :
+        searchScope === 'bio' ? bio :
+        [displayName, username, bio].join(' ');
+      if (normalizedSearch && !haystack.includes(normalizedSearch)) return false;
+
+      const friend = isFriend(userId, person.id);
+      const sent = hasSentFriendRequest(userId, person.id);
+      const received = hasReceivedFriendRequest(userId, person.id);
+      const follow = isFollowing(userId, person.id);
+      if (filter === 'friends') return friend;
+      if (filter === 'following') return follow;
+      if (filter === 'followers') return followerIds.has(String(person.id));
+      if (filter === 'waiting') return sent || received;
+      if (filter === 'new') return !friend && !follow && !sent && !received;
+      return true;
+    });
+
+    if (sortBy === 'default') return list;
+
+    const sorted = [...list];
+    if (sortBy === 'name-asc' || sortBy === 'name-desc') {
+      const direction = sortBy === 'name-asc' ? 1 : -1;
+      sorted.sort((a, b) => direction * personDisplayName(a).localeCompare(personDisplayName(b), 'vi', { sensitivity: 'base' }));
+    } else if (sortBy === 'newest') {
+      const joinedAt = (person) => new Date(person.joinedAt || person.createdAt || 0).getTime() || 0;
+      sorted.sort((a, b) => joinedAt(b) - joinedAt(a));
+    } else if (sortBy === 'followers') {
+      const count = (person) => (getFollowers(person.id) || []).length;
+      sorted.sort((a, b) => count(b) - count(a) || personDisplayName(a).localeCompare(personDisplayName(b), 'vi', { sensitivity: 'base' }));
+    }
+    return sorted;
+  }, [people, normalizedSearch, searchScope, filter, sortBy, userId, isFriend, isFollowing, hasSentFriendRequest, hasReceivedFriendRequest, followerIds, getFollowers]);
 
   const messageUser = async (otherId) => {
     if (!findOrCreateConversation || !userId) return;
@@ -177,19 +215,51 @@ export default function FriendsPage() {
 
         <main className="card" style={{ padding: 20 }}>
           <div className="row-between" style={{ marginBottom: 16, gap: 12, flexWrap: 'wrap' }}>
-            <div><h3>Tìm kiếm người dùng</h3><div className="small muted">Tên, username và ảnh được lấy từ database.</div></div>
-            <div style={{ flex: 1, minWidth: 220, maxWidth: 420, position: 'relative' }}>
-              <Search size={16} style={{ position: 'absolute', left: 12, top: 11 }} />
-              <input className="input" style={{ paddingLeft: 36, height: 40 }} placeholder="Tìm kiếm theo tên, username..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
+            <div><h3>Tìm kiếm bạn bè</h3><div className="small muted"></div></div>
+            <div className="row" style={{ flex: 1, minWidth: 240, maxWidth: 620, gap: 8, flexWrap: 'wrap' }}>
+              <div style={{ flex: 1, minWidth: 220, position: 'relative' }}>
+                <Search size={16} style={{ position: 'absolute', left: 12, top: 11 }} />
+                <input className="input" style={{ paddingLeft: 36, height: 40 }} placeholder="Tìm kiếm theo tên, username..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
+              </div>
+              <select
+                className="select"
+                style={{ width: 'auto', height: 40 }}
+                value={searchScope}
+                onChange={(e) => setSearchScope(e.target.value)}
+                aria-label="Phạm vi tìm kiếm"
+              >
+                <option value="all">Mọi trường</option>
+                <option value="name">Tên</option>
+                <option value="username">Username</option>
+                <option value="bio">Tiểu sử</option>
+              </select>
             </div>
           </div>
 
-          <div className="row" style={{ gap: 8, marginBottom: 18, flexWrap: 'wrap' }}>
-            {['all', 'friends', 'waiting', 'new'].map((option) => (
-              <button key={option} className={`btn btn-sm ${filter === option ? 'btn-primary' : 'btn-ghost'}`} onClick={() => setFilter(option)}>
-                {option === 'all' ? 'Tất cả' : option === 'friends' ? 'Bạn bè' : option === 'waiting' ? 'Chờ xác nhận' : 'Gợi ý mới'}
-              </button>
-            ))}
+          <div className="row-between" style={{ gap: 8, marginBottom: 18, flexWrap: 'wrap' }}>
+            <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
+              {FILTER_OPTIONS.map((option) => (
+                <button key={option.value} className={`btn btn-sm ${filter === option.value ? 'btn-primary' : 'btn-ghost'}`} onClick={() => setFilter(option.value)}>
+                  {option.label}
+                </button>
+              ))}
+            </div>
+            <div className="row" style={{ gap: 8 }}>
+              <span className="tiny muted">{filteredPeople.length} kết quả</span>
+              <select
+                className="select"
+                style={{ width: 'auto' }}
+                value={sortBy}
+                onChange={(e) => setSortBy(e.target.value)}
+                aria-label="Sắp xếp kết quả"
+              >
+                <option value="default">Sắp xếp: Mặc định</option>
+                <option value="name-asc">Tên A → Z</option>
+                <option value="name-desc">Tên Z → A</option>
+                <option value="newest">Mới tham gia</option>
+                <option value="followers">Nhiều người theo dõi</option>
+              </select>
+            </div>
           </div>
 
           <div className="grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 16 }}>

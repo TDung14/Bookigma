@@ -5,7 +5,9 @@ import {
   Smile, Image as ImageIcon, CheckCheck, Sparkles
 } from 'lucide-react';
 import { useApp, useAuth, useToast } from '../../hooks/useStore';
-import { avatarSrc } from '../../lib/avatar';
+import { avatarSrc, isImageMedia, mediaSrc } from '../../lib/avatar';
+import { conversationTitle } from '../../lib/chat';
+import { uploadPostImage } from '../../services/api';
 import { clockTime } from '../../lib/format';
 
 const QUICK_EMOJIS = ['😀', '😂', '😍', '🔥', '👍', '❤️', '👏', '🎉', '🥳', '🤩', '📚', '✨', '💡', '🙌', '☕', '💯'];
@@ -33,6 +35,7 @@ export default function FloatingChatWindow({
   const [draft, setDraft] = useState('');
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [hoveredMessageId, setHoveredMessageId] = useState(null);
+  const [uploadingImage, setUploadingImage] = useState(false);
   const messagesEndRef = useRef(null);
   const fileInputRef = useRef(null);
   const inputRef = useRef(null);
@@ -46,7 +49,7 @@ export default function FloatingChatWindow({
 
   const partner = useMemo(() => (partnerId ? userById(partnerId) : null), [partnerId, userById]);
 
-  const title = conv?.name || partner?.name || 'Trò chuyện';
+  const title = conversationTitle(conv, user?.id, userById);
   const isOnline = partner?.status === 'active' || true;
 
   // Cuộn xuống tin nhắn mới nhất
@@ -96,14 +99,19 @@ export default function FloatingChatWindow({
     toast(`Đang kết nối cuộc gọi ${type === 'video' ? 'video' : 'thoại'} với ${title}... (Demo)`, 'info');
   };
 
-  const handleImageSelect = (e) => {
+  const handleImageSelect = async (e) => {
     const file = e.target.files?.[0];
-    if (file) {
-      // Demo gửi ảnh
-      const fakeUrl = URL.createObjectURL(file);
-      sendMessage(convId, user.id, `[Hình ảnh: ${file.name}]`);
-      toast('Đã gửi tệp ảnh đính kèm!', 'success');
-      e.target.value = '';
+    e.target.value = '';
+    if (!file || !convId || !user) return;
+
+    setUploadingImage(true);
+    try {
+      const { imageUrl } = await uploadPostImage(file, user.id);
+      await sendMessage(convId, user.id, imageUrl);
+    } catch (err) {
+      toast(err.message || 'Không thể gửi ảnh.', 'error');
+    } finally {
+      setUploadingImage(false);
     }
   };
 
@@ -193,7 +201,7 @@ export default function FloatingChatWindow({
             type="button"
             className="fb-action-btn"
             onClick={handleExpand}
-            title="Mở rộng trong Messenger"
+            title="Mở rộng trong Chat"
             aria-label="Mở rộng"
           >
             <Maximize2 size={14} />
@@ -288,10 +296,14 @@ export default function FloatingChatWindow({
 
                   <div className="fb-msg-bubble-wrap">
                     <div
-                      className={`fb-msg-bubble ${isMine ? 'mine' : 'other'}`}
+                      className={`fb-msg-bubble ${isMine ? 'mine' : 'other'} ${isImageMedia(m.text) ? 'fb-msg-bubble-image' : ''}`}
                       title={clockTime(m.at)}
                     >
-                      {m.text}
+                      {isImageMedia(m.text) ? (
+                        <img src={mediaSrc(m.text)} alt="Hình ảnh đính kèm" className="fb-msg-image" loading="lazy" />
+                      ) : (
+                        m.text
+                      )}
                     </div>
 
                     {/* Hiển thị các cảm xúc đã thả */}
@@ -345,7 +357,8 @@ export default function FloatingChatWindow({
             type="button"
             className="fb-tool-btn"
             onClick={() => fileInputRef.current?.click()}
-            title="Đính kèm ảnh"
+            disabled={uploadingImage}
+            title={uploadingImage ? 'Đang gửi ảnh...' : 'Đính kèm ảnh'}
             aria-label="Gửi ảnh"
           >
             <ImageIcon size={18} />

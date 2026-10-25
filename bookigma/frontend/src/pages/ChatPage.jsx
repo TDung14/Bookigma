@@ -1,9 +1,10 @@
-import { avatarSrc } from '../lib/avatar';
+import { avatarSrc, isImageMedia, mediaSrc } from '../lib/avatar';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { Flag, MessageSquare, Paperclip, Plus, Search, Send, Smile, X, Phone, Video, ThumbsUp, Minimize2 } from 'lucide-react';
 import { useApp, useAuth, useToast } from '../hooks/useStore';
 import { clockTime, timeAgo } from '../lib/format';
+import { uploadPostImage } from '../services/api';
 import { EmptyState } from '../components/common/ui';
 import Modal from '../components/common/Modal';
 import ReportModal from '../components/common/ReportModal';
@@ -31,7 +32,9 @@ export default function ChatPage() {
   const [groupName, setGroupName] = useState('');
   const [showEmoji, setShowEmoji] = useState(false);
   const [reporting, setReporting] = useState(false);
+  const [uploadingImage, setUploadingImage] = useState(false);
   const bodyRef = useRef(null);
+  const imageInputRef = useRef(null);
 
   const myConvs = useMemo(() => {
     const currentId = normalizeId(user.id);
@@ -73,6 +76,22 @@ export default function ChatPage() {
     sendMessage(active.id, user.id, text);
     setDraft('');
     setShowEmoji(false);
+  };
+
+  const handleImageSelect = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file || !active) return;
+
+    setUploadingImage(true);
+    try {
+      const { imageUrl } = await uploadPostImage(file, user.id);
+      await sendMessage(active.id, user.id, imageUrl);
+    } catch (err) {
+      toast(err.message || 'Không thể gửi ảnh.', 'error');
+    } finally {
+      setUploadingImage(false);
+    }
   };
 
   const startChat = async (otherId) => {
@@ -170,7 +189,7 @@ export default function ChatPage() {
                     </div>
                     <div className="row" style={{ gap: 6 }}>
                       <span className="tiny muted truncate" style={{ flex: 1, fontWeight: unread ? 700 : 400, color: unread ? 'var(--text-main)' : undefined }}>
-                        {last ? `${normalizeId(last.senderId) === normalizeId(user.id) ? 'Bạn: ' : ''}${last.text}` : 'Bắt đầu trò chuyện'}
+                        {last ? `${normalizeId(last.senderId) === normalizeId(user.id) ? 'Bạn: ' : ''}${isImageMedia(last.text) ? 'Đã gửi một ảnh' : last.text}` : 'Bắt đầu trò chuyện'}
                       </span>
                       {unread > 0 && (
                         <span className="badge" style={{ background: 'var(--accent-green)', color: '#fff', minWidth: 19, justifyContent: 'center', padding: '2px 6px' }}>
@@ -291,7 +310,11 @@ export default function ChatPage() {
                       </div>
                     )}
 
-                    <div className={`bubble ${mine ? 'bubble-me' : 'bubble-them'}`}>{m.text}</div>
+                    {isImageMedia(m.text) ? (
+                      <img src={mediaSrc(m.text)} alt="Hình ảnh đính kèm" className="chat-msg-image" loading="lazy" />
+                    ) : (
+                      <div className={`bubble ${mine ? 'bubble-me' : 'bubble-them'}`}>{m.text}</div>
+                    )}
 
                     {reactionEntries.length > 0 && (
                       <div className={`fb-msg-reactions ${mine ? 'mine' : 'other'}`}>
@@ -320,7 +343,21 @@ export default function ChatPage() {
                 <button type="button" className="btn-icon" onClick={() => setShowEmoji((v) => !v)} aria-label="Biểu tượng cảm xúc">
                   {showEmoji ? <X size={19} /> : <Smile size={19} />}
                 </button>
-                <button type="button" className="btn-icon" onClick={() => toast('Tính năng gửi tệp sẽ có khi kết nối backend.', 'info')} aria-label="Đính kèm">
+                <input
+                  type="file"
+                  ref={imageInputRef}
+                  style={{ display: 'none' }}
+                  accept="image/*"
+                  onChange={handleImageSelect}
+                />
+                <button
+                  type="button"
+                  className="btn-icon"
+                  onClick={() => imageInputRef.current?.click()}
+                  disabled={uploadingImage}
+                  title={uploadingImage ? 'Đang gửi ảnh...' : 'Đính kèm ảnh'}
+                  aria-label="Đính kèm ảnh"
+                >
                   <Paperclip size={19} />
                 </button>
                 <input

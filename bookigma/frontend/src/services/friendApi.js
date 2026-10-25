@@ -3,6 +3,9 @@ import { apiCall } from './api';
 export const getFriendState = (userId) =>
   apiCall('/friends/state', 'GET', null, { userId });
 
+export const getFriendsOf = (userId, viewerId) =>
+  apiCall(`/friends/of/${userId}`, 'GET', null, { userId: viewerId });
+
 export const sendFriendRequest = (userId, receiverId) =>
   apiCall('/friends/request', 'POST', { receiverId: Number(receiverId) }, { userId });
 

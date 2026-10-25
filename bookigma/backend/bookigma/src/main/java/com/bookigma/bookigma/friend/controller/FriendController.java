@@ -18,6 +18,12 @@ public class FriendController {
     @GetMapping("/state")
     public ResponseEntity<?> state(@CurrentUserId Long userId) { return ResponseEntity.ok(service.getState(userId)); }
 
+    @GetMapping("/of/{userId}")
+    public ResponseEntity<?> friendsOf(@PathVariable Long userId) {
+        try { return ResponseEntity.ok(service.getFriendsOf(userId)); }
+        catch (IllegalArgumentException e) { return ResponseEntity.badRequest().body(Map.of("message", e.getMessage())); }
+    }
+
     @PostMapping("/request")
     public ResponseEntity<?> request(@CurrentUserId Long userId, @RequestBody Map<String, Long> body) {
         try { return ResponseEntity.ok(service.sendRequest(userId, body.get("receiverId"))); }

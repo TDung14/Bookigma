@@ -24,3 +24,11 @@ export function mediaSrc(value) {
   if (raw.startsWith('/uploads/')) return `${API_ORIGIN}${raw}`;
   return raw;
 }
+
+const UPLOAD_IMAGE_RE = /^\/uploads\/[^\s?#]+\.(?:jpe?g|png|gif|webp)(?:[?#].*)?$/i;
+
+/** Nhận diện nội dung tin nhắn là đường dẫn ảnh đã upload lên backend. */
+export function isImageMedia(value) {
+  const raw = typeof value === 'string' ? value.trim() : '';
+  return UPLOAD_IMAGE_RE.test(raw);
+}

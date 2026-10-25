@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 import { X } from 'lucide-react';
 import { useApp, useAuth } from '../../hooks/useStore';
 import { avatarSrc } from '../../lib/avatar';
+import { conversationTitle } from '../../lib/chat';
 import FloatingChatWindow from './FloatingChatWindow';
 
 export default function FloatingChatContainer() {
@@ -45,7 +46,7 @@ export default function FloatingChatContainer() {
             const conv = conversations.find((c) => String(c.id) === String(chatItem.id));
             const partnerId = conv?.participants.find((p) => String(p) !== String(user.id));
             const partner = partnerId ? userById(partnerId) : null;
-            const name = conv?.name || partner?.name || 'Trò chuyện';
+            const name = conversationTitle(conv, user.id, userById);
             const unread = Math.max(0, (conv?.messages?.length || 0) - (conv?.readBy?.[String(user.id)] ?? 0));
 
             return (

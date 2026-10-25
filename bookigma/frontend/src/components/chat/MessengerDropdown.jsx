@@ -2,7 +2,8 @@ import { useState, useMemo, useRef, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Search, SquarePen, MessageSquare, Check, MoreHorizontal } from 'lucide-react';
 import { useApp, useAuth } from '../../hooks/useStore';
-import { avatarSrc } from '../../lib/avatar';
+import { avatarSrc, isImageMedia } from '../../lib/avatar';
+import { conversationTitle } from '../../lib/chat';
 import { timeAgo } from '../../lib/format';
 import Modal from '../common/Modal';
 
@@ -23,9 +24,11 @@ export default function MessengerDropdown({ isOpen, onClose }) {
   const [showNewModal, setShowNewModal] = useState(false);
   const dropdownRef = useRef(null);
 
-  // Đóng khi click ra ngoài
+  // Đóng khi click ra ngoài.
+  // Tạm gỡ listener khi modal mở: modal render ngoài dropdownRef nên mousedown vào modal
+  // sẽ đóng dropdown và unmount modal trước khi kịp chọn người.
   useEffect(() => {
-    if (!isOpen) return undefined;
+    if (!isOpen || showNewModal) return undefined;
     const handleClickOutside = (e) => {
       if (dropdownRef.current && !dropdownRef.current.contains(e.target)) {
         // Kiểm tra xem click có nằm trên nút toggle không
@@ -36,7 +39,7 @@ export default function MessengerDropdown({ isOpen, onClose }) {
     };
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [isOpen, onClose]);
+  }, [isOpen, showNewModal, onClose]);
 
   // Danh sách hội thoại của user
   const myConvs = useMemo(() => {
@@ -59,9 +62,7 @@ export default function MessengerDropdown({ isOpen, onClose }) {
     const q = query.trim().toLowerCase();
     if (q) {
       list = list.filter((c) => {
-        const partnerId = c.participants.find((p) => String(p) !== String(user?.id));
-        const partner = partnerId ? userById(partnerId) : null;
-        const name = c.name || partner?.name || '';
+        const name = conversationTitle(c, user?.id, userById);
         const lastMsg = c.messages[c.messages.length - 1]?.text || '';
         return name.toLowerCase().includes(q) || lastMsg.toLowerCase().includes(q);
       });
@@ -109,7 +110,7 @@ export default function MessengerDropdown({ isOpen, onClose }) {
             <input
               type="text"
               className="fb-search-input"
-              placeholder="Tìm kiếm trên Messenger..."
+              placeholder="Tìm kiếm trên Chat..."
               value={query}
               onChange={(e) => setQuery(e.target.value)}
             />
@@ -158,7 +159,7 @@ export default function MessengerDropdown({ isOpen, onClose }) {
             filteredConvs.map((c) => {
               const partnerId = c.participants.find((p) => String(p) !== String(user?.id));
               const partner = partnerId ? userById(partnerId) : null;
-              const name = c.name || partner?.name || 'Trò chuyện';
+              const name = conversationTitle(c, user?.id, userById);
               const lastMsg = c.messages[c.messages.length - 1];
               const unread = Math.max(0, c.messages.length - (c.readBy?.[String(user?.id)] ?? 0));
               const isMine = lastMsg && String(lastMsg.senderId) === String(user?.id);
@@ -192,7 +193,7 @@ export default function MessengerDropdown({ isOpen, onClose }) {
                         {lastMsg ? (
                           <>
                             {isMine ? 'Bạn: ' : ''}
-                            {lastMsg.text}
+                            {isImageMedia(lastMsg.text) ? 'Đã gửi một ảnh' : lastMsg.text}
                           </>
                         ) : (
                           'Bắt đầu cuộc trò chuyện mới'
@@ -214,7 +215,7 @@ export default function MessengerDropdown({ isOpen, onClose }) {
             className="fb-see-all-link"
             onClick={onClose}
           >
-            Xem tất cả trong Messenger
+            Xem tất cả trong Chat
           </Link>
         </div>
       </div>

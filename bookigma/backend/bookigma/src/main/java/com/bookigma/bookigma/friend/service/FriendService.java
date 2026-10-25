@@ -42,6 +42,15 @@ public class FriendService {
                 .build();
     }
 
+    @Transactional(readOnly = true)
+    public List<FriendUserDto> getFriendsOf(Long userId) {
+        requireUser(userId);
+        return repository.findAllForUserByStatus(userId, FriendRequest.Status.ACCEPTED).stream()
+                .map(f -> toDto(otherUser(f, userId)))
+                .distinct()
+                .toList();
+    }
+
     @Transactional
     public FriendStateDto sendRequest(Long requesterId, Long receiverId) {
         User requester = requireUser(requesterId);
