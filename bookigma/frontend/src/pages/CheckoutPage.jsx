@@ -4,7 +4,6 @@ import { Banknote, Check, CreditCard, MapPin, QrCode, Tag, Truck, Wallet, Zap } 
 import { useApp, useAuth, useToast } from '../hooks/useStore';
 import { currency } from '../lib/format';
 import { Field } from '../components/common/ui';
-import { POINT_RULES } from '../lib/gamification';
 import { SHIPPING_FEE, applyVoucher, cartSubtotal, countParcels, linePrice } from '../lib/cart';
 import { getPointsSummary } from '../services/pointsApi';
 import { isPrepaid } from '../lib/payment';
@@ -16,7 +15,7 @@ const PAYMENTS = [
 ];
 
 export default function CheckoutPage() {
-  const { getCart, vouchers, placeOrder, refreshCart, earnPoints } = useApp();
+  const { getCart, vouchers, placeOrder, refreshCart } = useApp();
   const { user } = useAuth();
   const toast = useToast();
   const navigate = useNavigate();
@@ -25,8 +24,8 @@ export default function CheckoutPage() {
 
   const [address, setAddress] = useState({
     name: user.name,
-    phone: '0901234567',
-    detail: '12 Nguyễn Trãi, Thanh Xuân, Hà Nội',
+    phone: '',
+    detail: '',
   });
   const [payment, setPayment] = useState('cod');
   const [voucherCode, setVoucherCode] = useState('');
@@ -93,8 +92,13 @@ export default function CheckoutPage() {
         note: note.trim(),
         pointsToUse: usePoints ? pointsDiscount : null,
       });
-      earnPoints(user.id, POINT_RULES.placeOrder);
-      navigate(`/order-success/${orders[0].id}`, { state: { orderIds: orders.map((o) => o.id) } });
+      const orderIds = orders.map((o) => String(o.id));
+      const idsQuery = `ids=${orderIds.join(',')}`;
+      // Trả trước phải qua trang thanh toán trước; trang đặt hàng thành công chỉ mở sau khi shop nhận tiền.
+      const nextPath = isPrepaid(orders[0].payment)
+        ? `/order-payment/${orders[0].id}?${idsQuery}`
+        : `/order-success/${orders[0].id}?${idsQuery}`;
+      navigate(nextPath, { replace: true, state: { orderIds } });
     } catch (error) {
       toast(error.message || 'Không thể đặt hàng, vui lòng thử lại.', 'error');
       refreshCart();
@@ -120,7 +124,7 @@ export default function CheckoutPage() {
         <p>Kiểm tra lại thông tin trước khi đặt hàng</p>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) minmax(0,360px)', gap: 20, alignItems: 'start' }}>
+      <div className="split-layout" style={{ '--split-side': '360px' }}>
         <div className="stack">
           {/* Địa chỉ */}
           <div className="card">
@@ -206,17 +210,17 @@ export default function CheckoutPage() {
               <div style={{ marginTop: 14, padding: 14, background: 'var(--bg-soft)', borderRadius: 10 }} className="small">
                 <div className="strong" style={{ marginBottom: 6 }}>Thanh toán bằng mã QR</div>
                 <div className="muted">
-                  Sau khi bấm Đặt hàng, mã QR sẽ hiện kèm đúng số tiền và nội dung chuyển khoản là mã đơn.
+                  Sau khi bấm Đặt hàng, bạn sẽ được chuyển đến trang thanh toán kèm mã QR đúng số tiền và nội dung chuyển khoản là mã đơn.
                   {payment === 'momo' ? ' Mở app MoMo, chọn Quét mã để thanh toán.' : ' Quét bằng app ngân hàng bất kỳ.'}
                 </div>
-                <div className="muted" style={{ marginTop: 4 }}>Shop sẽ giao hàng sau khi nhận được tiền.</div>
+                <div className="muted" style={{ marginTop: 4 }}>Đơn hàng được xác nhận thành công sau khi shop nhận được tiền.</div>
               </div>
             )}
           </div>
         </div>
 
         {/* Tóm tắt */}
-        <div className="card stack" style={{ position: 'sticky', top: 76 }}>
+        <div className="card stack sticky-rail">
           <h3 style={{ margin: 0, fontSize: 17 }}>Tóm tắt thanh toán</h3>
 
           <div>
@@ -293,7 +297,7 @@ export default function CheckoutPage() {
           </div>
 
           <button className="btn btn-primary btn-lg btn-block" onClick={submit} disabled={placing}>
-            {placing ? 'Đang xử lý...' : 'Đặt hàng'}
+            {placing ? 'Đang xử lý...' : isPrepaid(payment) ? 'Đặt hàng & thanh toán' : 'Đặt hàng'}
           </button>
           <p className="tiny muted" style={{ margin: 0, textAlign: 'center' }}>
             Bằng việc đặt hàng, bạn đồng ý với điều khoản sử dụng của Bookigma.

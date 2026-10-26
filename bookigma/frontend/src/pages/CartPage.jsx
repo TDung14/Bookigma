@@ -70,7 +70,7 @@ export default function CartPage() {
         <p>{lines.length} sản phẩm · sẽ được tách thành {parcels} đơn hàng theo nhà bán</p>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) minmax(0,330px)', gap: 20, alignItems: 'start' }}>
+      <div className="split-layout">
         <div className="stack">
           {groups.map((group) => (
             <div key={group.key} className="card">
@@ -166,7 +166,7 @@ export default function CartPage() {
         </div>
 
         {/* Tóm tắt */}
-        <div className="card stack" style={{ position: 'sticky', top: 76 }}>
+        <div className="card stack sticky-rail">
           <h3 style={{ margin: 0, fontSize: 17 }}>Tóm tắt đơn hàng</h3>
           <hr className="divider" style={{ margin: 0 }} />
           <div className="row-between small"><span className="muted">Tạm tính</span><span className="strong">{currency(subtotal)}</span></div>

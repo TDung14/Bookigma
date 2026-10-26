@@ -173,7 +173,9 @@ export default function FloatingChatWindow({
           <div className="fb-header-text">
             <div className="fb-header-name">{title}</div>
             <div className="fb-header-status">
-              {partner?.role === 'shop' ? 'Cửa hàng đối tác' : 'Đang hoạt động'}
+              {partner?.role === 'shop'
+                ? 'Cửa hàng đối tác'
+                : partner?.role === 'support' ? 'Hỗ trợ viên Bookigma' : 'Đang hoạt động'}
             </div>
           </div>
         </div>

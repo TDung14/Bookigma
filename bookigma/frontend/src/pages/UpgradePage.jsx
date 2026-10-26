@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import {
   BadgeCheck, Check, CheckCircle2, ChevronRight, CreditCard, Crown, Info,
   QrCode, RefreshCw, ShieldCheck, Sparkles, Ticket, Wallet, Zap,
@@ -29,6 +29,9 @@ export default function UpgradePage() {
   const [creating, setCreating] = useState(false);
   const [checking, setChecking] = useState(false);
   const paidNotified = useRef(false);
+  const preselectedPlan = useRef(false);
+  const [searchParams] = useSearchParams();
+  const requestedPlanId = searchParams.get('plan');
 
   useEffect(() => {
     let cancelled = false;
@@ -138,6 +141,13 @@ export default function UpgradePage() {
     }, 4000);
     return () => { stopped = true; clearInterval(timer); };
   }, [selectedPlan, purchaseId, purchaseStatus, user.id, markPaid]);
+
+  useEffect(() => {
+    if (preselectedPlan.current || !requestedPlanId) return;
+    preselectedPlan.current = true;
+    const plan = VIP_PLANS.find((item) => item.id === requestedPlanId);
+    if (plan) openCheckout(plan);
+  }, [requestedPlanId, openCheckout]);
 
   const transferCode = purchase?.transferCode || purchase?.qrContent || '';
   const checkoutAmount = purchase?.amount ?? selectedPlan?.price ?? 0;

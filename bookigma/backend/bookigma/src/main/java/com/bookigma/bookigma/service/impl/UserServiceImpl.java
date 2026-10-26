@@ -9,8 +9,11 @@ import com.bookigma.bookigma.service.EmailService;
 import com.bookigma.bookigma.service.GoogleTokenVerifier;
 import com.bookigma.bookigma.dto.UserProfileDto;
 import com.bookigma.bookigma.entity.User;
+import com.bookigma.bookigma.entity.UserPoint;
 import com.bookigma.bookigma.repository.UserRepository;
+import com.bookigma.bookigma.repository.UserPointRepository;
 import com.bookigma.bookigma.repository.ShopRepository;
+import com.bookigma.bookigma.progress.repository.ReadingProgressRepository;
 import com.bookigma.bookigma.entity.Shop;
 import com.bookigma.bookigma.service.UserService;
 import org.springframework.beans.factory.annotation.Value;
@@ -33,9 +36,11 @@ import java.util.stream.Collectors;
 public class UserServiceImpl implements UserService {
 
     private final UserRepository userRepository;
+    private final UserPointRepository userPointRepository;
     private final PasswordEncoder passwordEncoder;
     private final EmailService emailService;
     private final ShopRepository shopRepository;
+    private final ReadingProgressRepository readingProgressRepository;
     private final GoogleTokenVerifier googleTokenVerifier;
     private final String frontendUrl;
     private final SecureRandom secureRandom = new SecureRandom();
@@ -43,18 +48,31 @@ public class UserServiceImpl implements UserService {
     private static final int VERIFICATION_TTL_HOURS = 24;
     private static final int RESEND_COOLDOWN_SECONDS = 60;
 
+    private static final java.util.Set<String> MARITAL_STATUSES = java.util.Set.of(
+            "Độc thân",
+            "Đang hẹn hò",
+            "Đã kết hôn",
+            "Đã ly hôn",
+            "Góa",
+            "Phức tạp"
+    );
+
     public UserServiceImpl(
             UserRepository userRepository,
+            UserPointRepository userPointRepository,
             PasswordEncoder passwordEncoder,
             EmailService emailService,
             ShopRepository shopRepository,
+            ReadingProgressRepository readingProgressRepository,
             GoogleTokenVerifier googleTokenVerifier,
             @Value("${app.frontend-url:http://localhost:5173}") String frontendUrl
     ) {
         this.userRepository = userRepository;
+        this.userPointRepository = userPointRepository;
         this.passwordEncoder = passwordEncoder;
         this.emailService = emailService;
         this.shopRepository = shopRepository;
+        this.readingProgressRepository = readingProgressRepository;
         this.googleTokenVerifier = googleTokenVerifier;
         this.frontendUrl = frontendUrl == null ? "" : frontendUrl.trim();
     }
@@ -427,6 +445,38 @@ public class UserServiceImpl implements UserService {
             user.setAvatarUrl(dto.getAvatarUrl().trim());
         }
 
+        // Cập nhật ảnh bìa: chỉ nhận ảnh đã upload qua endpoint banner.
+        if (dto.getBannerUrl() != null) {
+            String bannerUrl = dto.getBannerUrl().trim();
+            if (bannerUrl.isEmpty()) {
+                user.setBannerUrl(null);
+            } else if (!bannerUrl.startsWith("/uploads/banners/") || bannerUrl.length() > 255) {
+                throw new IllegalArgumentException("Đường dẫn ảnh bìa không hợp lệ.");
+            } else {
+                user.setBannerUrl(bannerUrl);
+            }
+        }
+
+        if (dto.getInterests() != null) {
+            user.setInterests(normalizeInterests(dto.getInterests()));
+        }
+
+        if (dto.getHometown() != null) {
+            user.setHometown(normalizeLimited(dto.getHometown(), 120, "Quê quán không được vượt quá 120 ký tự."));
+        }
+
+        if (dto.getCurrentLocation() != null) {
+            user.setCurrentLocation(normalizeLimited(dto.getCurrentLocation(), 120, "Nơi ở hiện tại không được vượt quá 120 ký tự."));
+        }
+
+        if (dto.getMaritalStatus() != null) {
+            String maritalStatus = normalize(dto.getMaritalStatus());
+            if (maritalStatus != null && !MARITAL_STATUSES.contains(maritalStatus)) {
+                throw new IllegalArgumentException("Trạng thái hôn nhân không hợp lệ.");
+            }
+            user.setMaritalStatus(maritalStatus);
+        }
+
         User updatedUser = userRepository.save(user);
 
         return toDto(updatedUser);
@@ -441,6 +491,17 @@ public class UserServiceImpl implements UserService {
             throw new IllegalArgumentException("Đường dẫn ảnh đại diện không hợp lệ.");
         }
         user.setAvatarUrl(avatarUrl);
+        return toDto(userRepository.save(user));
+    }
+
+    @Override
+    @Transactional
+    public UserProfileDto updateUserBanner(Long userId, String bannerUrl) {
+        User user = findUser(userId);
+        if (bannerUrl == null || !bannerUrl.startsWith("/uploads/banners/")) {
+            throw new IllegalArgumentException("Đường dẫn ảnh bìa không hợp lệ.");
+        }
+        user.setBannerUrl(bannerUrl);
         return toDto(userRepository.save(user));
     }
 
@@ -511,6 +572,36 @@ public class UserServiceImpl implements UserService {
         return result.isBlank() ? null : result;
     }
 
+    private String normalizeLimited(String value, int maxLength, String message) {
+        String normalized = normalize(value);
+        if (normalized != null && normalized.length() > maxLength) {
+            throw new IllegalArgumentException(message);
+        }
+        return normalized;
+    }
+
+    // Sở thích lưu dạng "Văn học, Kinh doanh" để hiển thị thành từng chip.
+    private String normalizeInterests(String value) {
+        if (value == null) {
+            return null;
+        }
+        java.util.LinkedHashSet<String> unique = new java.util.LinkedHashSet<>();
+        for (String part : value.split(",")) {
+            String item = part.trim();
+            if (!item.isEmpty()) {
+                unique.add(item);
+            }
+        }
+        if (unique.isEmpty()) {
+            return null;
+        }
+        String joined = String.join(", ", unique);
+        if (joined.length() > 500) {
+            throw new IllegalArgumentException("Sở thích không được vượt quá 500 ký tự.");
+        }
+        return joined;
+    }
+
     // Chuyển User entity thành UserProfileDto
     private UserProfileDto toDto(User user) {
         UserProfileDto dto = new UserProfileDto();
@@ -521,6 +612,11 @@ public class UserServiceImpl implements UserService {
         dto.setFullName(user.getFullName());
         dto.setBio(user.getBio());
         dto.setAvatarUrl(user.getAvatarUrl());
+        dto.setBannerUrl(user.getBannerUrl());
+        dto.setInterests(user.getInterests());
+        dto.setHometown(user.getHometown());
+        dto.setCurrentLocation(user.getCurrentLocation());
+        dto.setMaritalStatus(user.getMaritalStatus());
 
         // API trả đúng giá trị enum trong database:
         // USER / MODERATOR / ADMIN.
@@ -532,6 +628,11 @@ public class UserServiceImpl implements UserService {
         );
 
         dto.setActive(user.getActive());
+        dto.setPoints(userPointRepository.findByUserId(user.getId())
+                .map(UserPoint::getTotalPoints)
+                .orElse(0));
+        dto.setStreak(user.getStreak() == null ? 0 : user.getStreak());
+        dto.setBooksRead((int) readingProgressRepository.countByUser_IdAndFinishedTrue(user.getId()));
         dto.setCreatedAt(user.getCreatedAt());
 
         return dto;

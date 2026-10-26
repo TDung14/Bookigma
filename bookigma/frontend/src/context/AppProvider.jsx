@@ -1,11 +1,14 @@
 import { avatarSrc, mediaSrc, DEFAULT_AVATAR } from '../lib/avatar';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AppContext } from './contexts';
 import * as seed from '../data/seed';
 import { load, save, uid } from '../lib/storage';
-import { DAILY_TASKS, FEED_XP, POINT_RULES, todayKey } from '../lib/gamification';
-import { vipPointBonusPercent } from '../lib/vip';
+import { FEED_XP, todayKey } from '../lib/gamification';
 import { apiCall } from '../services/api';
+import { deductPointsApi, earnActivityPoints, getPointsSummary } from '../services/pointsApi';
+import * as progressApi from '../services/progressApi';
+import * as missionApi from '../services/missionApi';
+import * as rewardApi from '../services/rewardApi';
 import * as shopApi from '../services/shopApi';
 import * as exchangeApi from '../services/exchangeApi';
 import * as notificationApi from '../services/notificationApi';
@@ -14,6 +17,7 @@ import * as reportApi from '../services/reportApi';
 import * as chatApi from '../lib/chatApi';
 import * as friendApi from '../services/friendApi';
 import * as followApi from '../services/followApi';
+import * as clubApi from '../services/clubApi';
 import { useAuth } from '../hooks/useStore';
 
 /**
@@ -49,6 +53,28 @@ function mergeById(...lists) {
 const replaceById = (list, item) =>
   list.some((x) => x.id === item.id) ? list.map((x) => (x.id === item.id ? item : x)) : [item, ...list];
 
+const ROLE_BADGES = {
+  admin: 'Quản trị viên',
+  moderator: 'Kiểm duyệt viên',
+  support: 'Hỗ trợ viên',
+  shop: 'Đối tác',
+};
+
+const roleBadge = (role) => ROLE_BADGES[role] || 'Thành viên';
+
+/** Chuyển bản ghi đổi thưởng của backend sang dạng hiển thị của trang Nhiệm vụ. */
+const toRedemption = (r, uId) => ({
+  id: r.id,
+  userId: uId,
+  rewardId: r.rewardId,
+  name: r.name,
+  cost: r.cost,
+  type: r.type,
+  status: r.status,
+  voucherCode: r.voucherCode || null,
+  at: r.createdAt ? new Date(r.createdAt).getTime() : Date.now(),
+});
+
 /** Tải dữ liệu cửa hàng (sách, shop, thể loại, voucher).
  * Nếu backend chưa chạy, dùng dataset demo để giao diện vẫn hiển thị, thay vì hiện cảnh báo lỗi liên tục. */
 async function fetchCatalog() {
@@ -80,9 +106,14 @@ const applyCatalog = (next) => (prev) => next || { ...prev, status: prev.books.l
  *   như bản demo, nên tải lại trang vẫn giữ nguyên trạng thái.
  */
 export function AppProvider({ children }) {
-  const { user, updateUserPoints, updateUserFields } = useAuth();
+  const { user, updateUserFields } = useAuth();
   const userId = user?.id ?? null;
   const role = user?.role ?? null;
+  const userRef = useRef(user);
+
+  useEffect(() => {
+    userRef.current = user;
+  }, [user]);
 
   // Danh sách users luôn lấy từ backend/database; không khôi phục dữ liệu user ảo từ localStorage.
   const [users, setUsers] = useState([]);
@@ -91,10 +122,16 @@ export function AppProvider({ children }) {
   const [conversations, setConversations] = useState([]);
   const [openChats, setOpenChats] = useState([]);
   const [friendState, setFriendState] = useState({ friendIds: [], sentPendingIds: [], receivedPendingIds: [] });
-  const [progressAll, setProgressAll] = useState(() => load('progress', seed.readingProgress));
+  const [progressAll, setProgressAll] = useState(() => load('progress', {}));
   const [localNotifications, setLocalNotifications] = useState(() => load('notifications', seed.notifications));
-  const [daily, setDaily] = useState(() => load('daily', {}));
-  const [redemptions, setRedemptions] = useState(() => load('redemptions', seed.redemptions));
+  const [daily, setDaily] = useState({});
+  const claimLocksRef = useRef(new Set());
+  const pointQueueRef = useRef(Promise.resolve());
+  const progressQueueRef = useRef(Promise.resolve());
+
+  const [redemptions, setRedemptions] = useState([]);
+  const [rewardCatalog, setRewardCatalog] = useState([]);
+  const [myVouchers, setMyVouchers] = useState([]);
   // Không khôi phục social/followings demo từ localStorage.
   // Xóa riêng 2 key dữ liệu ảo cũ nếu chúng còn tồn tại; các localStorage khác giữ nguyên.
   const [social, setSocial] = useState({ friends: {}, followings: {}, followers: {} });
@@ -107,6 +144,15 @@ export function AppProvider({ children }) {
   }, []);
 
   // Feed lấy dữ liệu thật từ MySQL; không dùng seed/localStorage cho bài viết.
+  const normalizeComment = useCallback((c) => ({
+    id: c.id, authorId: c.userId, authorName: c.authorName || c.username, username: c.username,
+    avatarUrl: c.avatarUrl || DEFAULT_AVATAR, text: c.content,
+    time: c.createdAt ? new Date(c.createdAt).getTime() : Date.now(), parentCommentId: c.parentCommentId,
+    reactionCount: Number(c.reactionCount || 0),
+    reactionCounts: c.reactionCounts || {},
+    myReaction: c.myReaction || null,
+  }), []);
+
   const normalizePost = useCallback((p) => ({
     id: p.id,
     authorId: p.userId,
@@ -116,21 +162,24 @@ export function AppProvider({ children }) {
     content: p.content,
     image: p.imageUrl ? mediaSrc(p.imageUrl) : null,
     bookId: p.bookId ?? null,
+    clubId: p.clubId ?? null,
     time: p.createdAt ? new Date(p.createdAt).getTime() : Date.now(),
     likedBy: Array.isArray(p.likedBy) ? p.likedBy : [],
     likeCount: Number(p.likeCount || 0),
     likedByMe: Boolean(p.likedByMe),
-    comments: Array.isArray(p.comments) ? p.comments.map((c) => ({
-      id: c.id, authorId: c.userId, authorName: c.authorName || c.username, username: c.username,
-      avatarUrl: c.avatarUrl || DEFAULT_AVATAR, text: c.content,
-      time: c.createdAt ? new Date(c.createdAt).getTime() : Date.now(), parentCommentId: c.parentCommentId,
-    })) : [],
+    reactionCounts: p.reactionCounts || {},
+    myReaction: p.myReaction || null,
+    comments: Array.isArray(p.comments) ? p.comments.map(normalizeComment) : [],
     hidden: false,
-  }), []);
+  }), [normalizeComment]);
 
   const refreshPosts = useCallback(async () => {
     const data = await apiCall('/posts', 'GET', null, { userId });
-    if (Array.isArray(data)) setPosts(data.map(normalizePost));
+    if (Array.isArray(data)) {
+      const globalPosts = data.map(normalizePost);
+      // Bài trong nhóm được tải riêng theo từng nhóm; giữ lại qua các lần refresh feed chung.
+      setPosts((prev) => [...globalPosts, ...prev.filter((post) => post.clubId != null)]);
+    }
   }, [userId, normalizePost]);
 
   useEffect(() => {
@@ -145,8 +194,6 @@ export function AppProvider({ children }) {
 
   useEffect(() => save('progress', progressAll), [progressAll]);
   useEffect(() => save('notifications', localNotifications), [localNotifications]);
-  useEffect(() => save('daily', daily), [daily]);
-  useEffect(() => save('redemptions', redemptions), [redemptions]);
 
   // ---------- Cửa hàng (backend) ----------
   const [catalog, setCatalog] = useState({ status: 'loading', books: [], shops: [], categories: [], vouchers: [] });
@@ -251,6 +298,13 @@ export function AppProvider({ children }) {
     } catch {}
   }, [userId, role, patchAccount]);
 
+  const refreshSellerOrders = useCallback(async () => {
+    if (role !== 'shop' && role !== 'moderator') return;
+    try {
+      patchAccount(userId, { sellerOrders: await shopApi.fetchSellerOrders(userId) });
+    } catch {}
+  }, [userId, role, patchAccount]);
+
   const refreshAdminData = useCallback(async () => {
     if (role !== 'admin' || !userId) return;
     const results = await Promise.allSettled([
@@ -272,8 +326,9 @@ export function AppProvider({ children }) {
         avatar: avatarSrc(u.avatarUrl),
         role: String(u.role || 'USER').toLowerCase(),
         status: u.active === false ? 'suspended' : 'active',
-        points: 0,
-        booksRead: 0,
+        points: Number(u.points || 0),
+        booksRead: Number(u.booksRead || 0),
+        streak: Number(u.streak || 0),
         joinedAt: u.createdAt,
       })));
     }
@@ -372,7 +427,7 @@ export function AppProvider({ children }) {
       role: userData.role || 'user',
       status: userData.status || 'active',
       badge: userData.badge || 'Thành viên',
-      points: userData.points || 0,
+      ...(userData.points !== undefined ? { points: Number(userData.points) || 0 } : {}),
       booksRead: userData.booksRead || 0,
       joinedAt: userData.joinedAt || new Date().toISOString().slice(0, 10),
     };
@@ -387,25 +442,33 @@ export function AppProvider({ children }) {
   }, []);
 
   const syncUsers = useCallback(async () => {
+    if (!userId) {
+      setUsers([]);
+      return [];
+    }
     try {
-      const data = role === 'admin' && userId
+      const data = role === 'admin'
         ? await adminApi.fetchUsers(userId)
         : await apiCall('/users');
       if (!Array.isArray(data)) return [];
       const normalized = data
         .filter((u) => u && Number.isFinite(Number(u.id)))
-        .map((u) => ({
-          ...u,
-          id: String(u.id),
-          name: u.fullName || u.username || 'Người dùng',
-          avatar: avatarSrc(u.avatarUrl),
-          role: (u.role || 'user').toLowerCase(),
-          status: u.active === false ? 'suspended' : 'active',
-          badge: 'Thành viên',
-          points: 0,
-          booksRead: 0,
-          joinedAt: u.createdAt || new Date().toISOString(),
-        }));
+        .map((u) => {
+          const normalizedRole = (u.role || 'user').toLowerCase();
+          return {
+            ...u,
+            id: String(u.id),
+            name: u.fullName || u.username || 'Người dùng',
+            avatar: avatarSrc(u.avatarUrl),
+            role: normalizedRole,
+            status: u.active === false ? 'suspended' : 'active',
+            badge: roleBadge(normalizedRole),
+            points: Number(u.points || 0),
+            booksRead: Number(u.booksRead || 0),
+            streak: Number(u.streak || 0),
+            joinedAt: u.createdAt || new Date().toISOString(),
+          };
+        });
 
       setUsers((prev) => {
         const existing = new Map(prev.map((u) => [String(u.id), u]));
@@ -626,15 +689,38 @@ export function AppProvider({ children }) {
     [userId, patchAccount]
   );
 
+  /** Cập nhật số dư điểm ở mọi nơi (users cache + phiên đăng nhập) từ con số backend trả về. */
+  const applyPointsBalance = useCallback((balance, uId = userId) => {
+    const value = Number(balance);
+    if (!uId || !Number.isFinite(value)) return null;
+    setUsers((prev) => prev.map((u) => (String(u.id) === String(uId) ? { ...u, points: value } : u)));
+    if (userId && String(userId) === String(uId)) {
+      updateUserFields({ points: value });
+    }
+    return value;
+  }, [userId, updateUserFields]);
+
+  /** Kéo lại số dư chuẩn từ backend, dùng sau các thao tác mà server tự cộng/trừ điểm. */
+  const syncPoints = useCallback(async (uId = userId) => {
+    if (!uId) return null;
+    try {
+      const summary = await getPointsSummary(uId);
+      return applyPointsBalance(summary?.balance, uId);
+    } catch {
+      return null;
+    }
+  }, [userId, applyPointsBalance]);
+
   const placeOrder = useCallback(
     async (checkout) => {
       const created = await shopApi.checkout(userId, checkout);
       patchAccount(userId, (prev) => ({ orders: [...created, ...prev.orders], cart: [] }));
       refreshCatalog();
       refreshNotifications();
+      syncPoints();
       return created;
     },
-    [userId, patchAccount, refreshCatalog, refreshNotifications]
+    [userId, patchAccount, refreshCatalog, refreshNotifications, syncPoints]
   );
 
   const cancelOrder = useCallback(
@@ -642,9 +728,10 @@ export function AppProvider({ children }) {
       const order = await shopApi.cancelOrder(userId, orderId, reason);
       replaceOrder(order);
       refreshCatalog();
+      syncPoints();
       return order;
     },
-    [userId, replaceOrder, refreshCatalog]
+    [userId, replaceOrder, refreshCatalog, syncPoints]
   );
 
   const completeOrder = useCallback(
@@ -710,6 +797,15 @@ export function AppProvider({ children }) {
     [userId, patchAccount]
   );
 
+  const confirmSellerOrderRefund = useCallback(
+    async (orderId) => {
+      const order = await shopApi.confirmSellerOrderRefund(userId, orderId);
+      patchAccount(userId, (prev) => ({ sellerOrders: replaceById(prev.sellerOrders, order) }));
+      return order;
+    },
+    [userId, patchAccount]
+  );
+
   // ---------- Quản trị sản phẩm ----------
   const setBookStatus = useCallback(
     async (bookId, status) => {
@@ -746,12 +842,37 @@ export function AppProvider({ children }) {
     }, { userId });
     const normalized = normalizePost(saved);
     setPosts((prev) => [normalized, ...prev.filter((p) => p.id !== normalized.id)]);
+    syncPoints();
     return normalized;
-  }, [userId, normalizePost]);
+  }, [userId, normalizePost, syncPoints]);
 
-  const toggleLike = useCallback(async (postId) => {
-    if (!userId) throw new Error('Bạn cần đăng nhập để thích bài viết.');
-    const saved = await apiCall(`/posts/${postId}/like`, 'POST', null, { userId });
+  const loadClubPosts = useCallback(async (clubId) => {
+    if (!clubId) return [];
+    const data = await clubApi.fetchClubPosts(clubId);
+    const normalized = Array.isArray(data) ? data.map(normalizePost) : [];
+    setPosts((prev) => [
+      ...normalized,
+      ...prev.filter((post) => String(post.clubId) !== String(clubId)),
+    ]);
+    return normalized;
+  }, [normalizePost]);
+
+  const addClubPost = useCallback(async (clubId, post) => {
+    if (!userId) throw new Error('Bạn cần đăng nhập để đăng bài.');
+    const saved = await clubApi.createClubPost(clubId, {
+      content: post.content,
+      imageUrl: post.image || null,
+      bookId: /^\d+$/.test(String(post.bookId || '')) ? Number(post.bookId) : null,
+    });
+    const normalized = normalizePost(saved);
+    setPosts((prev) => [normalized, ...prev.filter((p) => p.id !== normalized.id)]);
+    syncPoints();
+    return normalized;
+  }, [userId, normalizePost, syncPoints]);
+
+  const reactToPost = useCallback(async (postId, type) => {
+    if (!userId) throw new Error('Bạn cần đăng nhập để thả cảm xúc.');
+    const saved = await apiCall(`/posts/${postId}/reactions`, 'POST', { type }, { userId });
     const normalized = normalizePost(saved);
     setPosts((prev) => prev.map((p) => p.id === normalized.id ? normalized : p));
     return normalized;
@@ -763,15 +884,21 @@ export function AppProvider({ children }) {
       content: comment.text,
       parentCommentId: comment.parentCommentId || null,
     }, { userId });
-    const normalizedComment = {
-      id: savedComment.id, authorId: savedComment.userId, authorName: savedComment.authorName || savedComment.username,
-      username: savedComment.username, avatarUrl: savedComment.avatarUrl, text: savedComment.content,
-      time: savedComment.createdAt ? new Date(savedComment.createdAt).getTime() : Date.now(),
-      parentCommentId: savedComment.parentCommentId,
-    };
-    setPosts((prev) => prev.map((p) => p.id === postId ? { ...p, comments: [...p.comments, normalizedComment] } : p));
-    return normalizedComment;
-  }, [userId]);
+    const normalized = normalizeComment(savedComment);
+    setPosts((prev) => prev.map((p) => p.id === postId ? { ...p, comments: [...p.comments, normalized] } : p));
+    syncPoints();
+    return normalized;
+  }, [userId, normalizeComment, syncPoints]);
+
+  const reactToComment = useCallback(async (postId, commentId, type) => {
+    if (!userId) throw new Error('Bạn cần đăng nhập để thả cảm xúc.');
+    const saved = await apiCall(`/posts/comments/${commentId}/reactions`, 'POST', { type }, { userId });
+    const normalized = normalizeComment(saved);
+    setPosts((prev) => prev.map((p) => p.id === postId
+      ? { ...p, comments: p.comments.map((c) => (c.id === commentId ? normalized : c)) }
+      : p));
+    return normalized;
+  }, [userId, normalizeComment]);
 
   const setPostHidden = useCallback((postId, hidden) => {
     setPosts((prev) => prev.map((p) => (p.id === postId ? { ...p, hidden } : p)));
@@ -1018,6 +1145,14 @@ export function AppProvider({ children }) {
     }
   }, [userId, conversations, mapConversation]);
 
+  const startSupportConversation = useCallback(async () => {
+    if (!userId) throw new Error('Bạn cần đăng nhập để trò chuyện với hỗ trợ.');
+    const created = await chatApi.createSupportConversation();
+    const mapped = mapConversation(created);
+    setConversations((prev) => [mapped, ...prev.filter((c) => String(c.id) !== String(mapped.id))]);
+    return mapped.id;
+  }, [userId, mapConversation]);
+
   const createGroupConversation = useCallback(async (participantIds, name) => {
     if (!userId) return null;
 
@@ -1164,116 +1299,225 @@ export function AppProvider({ children }) {
     });
   }, []);
 
-  // ---------- Tiến trình đọc ----------
-  const getProgress = useCallback((uId) => progressAll[uId] || {}, [progressAll]);
-
-  const saveProgress = useCallback((uId, bookId, patch) => {
+  // ---------- Tiến trình đọc (server là nguồn chuẩn) ----------
+  const applyServerProgress = useCallback((uId, list) => {
+    if (!uId || !Array.isArray(list)) return;
     setProgressAll((prev) => {
-      const forUser = prev[uId] || {};
-      const current = forUser[bookId] || {
-        bookId,
-        chapterIndex: 0,
-        paragraphIndex: 0,
-        percent: 0,
-        secondsRead: 0,
-        finished: false,
-      };
-      const unchanged = Object.keys(patch).every((k) => current[k] === patch[k]);
-      if (unchanged) return prev;
-
-      const next = { ...current, ...patch, lastReadAt: Date.now() };
-      next.finished = next.percent >= 100;
-      return { ...prev, [uId]: { ...forUser, [bookId]: next } };
+      const forUser = { ...(prev[uId] || {}) };
+      list.forEach((p) => {
+        const existing = forUser[p.bookId] || {};
+        forUser[p.bookId] = {
+          ...existing,
+          bookId: p.bookId,
+          chapterIndex: p.chapterIndex ?? 0,
+          paragraphIndex: p.paragraphIndex ?? 0,
+          percent: Math.max(existing.percent || 0, p.percent || 0),
+          secondsRead: Math.max(existing.secondsRead || 0, p.secondsRead || 0),
+          finished: Boolean(existing.finished || p.finished),
+          lastReadAt: p.lastReadAt ? new Date(p.lastReadAt).getTime() : existing.lastReadAt,
+        };
+      });
+      return { ...prev, [uId]: forUser };
     });
   }, []);
 
-  // ---------- Gamification ----------
+  const applyServerMissions = useCallback((uId, dto) => {
+    if (!uId || !dto) return;
+    setDaily((prev) => ({
+      ...prev,
+      [uId]: {
+        date: dto.date,
+        counters: dto.counters || {},
+        claimed: dto.claimed || [],
+        tasks: dto.tasks || [],
+      },
+    }));
+  }, []);
+
+  // Tải tiến trình đọc, nhiệm vụ, quà đã đổi và voucher thật từ backend khi đăng nhập.
+  useEffect(() => {
+    if (!userId) {
+      setProgressAll({});
+      setDaily({});
+      setRedemptions([]);
+      setRewardCatalog([]);
+      setMyVouchers([]);
+      return undefined;
+    }
+    let cancelled = false;
+    (async () => {
+      const [progressRes, missionsRes, redemptionsRes, catalogRes, vouchersRes] = await Promise.allSettled([
+        progressApi.fetchProgress(),
+        missionApi.fetchTodayMissions(),
+        rewardApi.fetchRedemptions(),
+        rewardApi.fetchRewardCatalog(),
+        rewardApi.fetchMyVouchers(),
+      ]);
+      if (cancelled) return;
+      if (progressRes.status === 'fulfilled') applyServerProgress(userId, progressRes.value);
+      if (missionsRes.status === 'fulfilled') applyServerMissions(userId, missionsRes.value);
+      if (redemptionsRes.status === 'fulfilled' && Array.isArray(redemptionsRes.value)) {
+        setRedemptions(redemptionsRes.value.map((r) => toRedemption(r, userId)));
+      }
+      if (catalogRes.status === 'fulfilled' && Array.isArray(catalogRes.value)) setRewardCatalog(catalogRes.value);
+      if (vouchersRes.status === 'fulfilled' && Array.isArray(vouchersRes.value)) setMyVouchers(vouchersRes.value);
+    })();
+    return () => { cancelled = true; };
+  }, [userId, applyServerProgress, applyServerMissions]);
+
+  const getProgress = useCallback((uId) => progressAll[uId] || {}, [progressAll]);
+
+  /**
+   * Ghi tiến trình đọc: cập nhật lạc quan trên máy và đẩy delta giây lên backend.
+   * Backend tự cộng điểm đọc, điểm xong sách, nhiệm vụ và chuỗi ngày.
+   */
+  const saveProgress = useCallback(async (uId, bookId, patch = {}) => {
+    if (!uId || bookId === undefined || bookId === null) return null;
+    const secondsDelta = Math.max(0, Math.min(300, Math.round(Number(patch.secondsDelta) || 0)));
+    const localPatch = { ...patch };
+    delete localPatch.secondsDelta;
+
+    setProgressAll((prev) => {
+      const forUser = prev[uId] || {};
+      const current = forUser[bookId] || {
+        bookId, chapterIndex: 0, paragraphIndex: 0, percent: 0, secondsRead: 0, finished: false,
+      };
+      const next = {
+        ...current,
+        ...localPatch,
+        secondsRead: (current.secondsRead || 0) + secondsDelta,
+        lastReadAt: Date.now(),
+      };
+      next.finished = Boolean(current.finished || next.finished || next.percent >= 100);
+      const unchanged = Object.keys(next).every((k) => current[k] === next[k]);
+      if (unchanged) return prev;
+      return { ...prev, [uId]: { ...forUser, [bookId]: next } };
+    });
+
+    if (!userId || String(uId) !== String(userId)) return null;
+
+    const payload = { secondsDelta };
+    if (patch.chapterIndex !== undefined) payload.chapterIndex = patch.chapterIndex;
+    if (patch.paragraphIndex !== undefined) payload.paragraphIndex = patch.paragraphIndex;
+    if (patch.percent !== undefined) payload.percent = patch.percent;
+    if (patch.finished || patch.percent >= 100) payload.finished = true;
+
+    const run = progressQueueRef.current
+      .catch(() => {})
+      .then(() => progressApi.updateProgress(bookId, payload));
+    progressQueueRef.current = run.catch(() => {});
+    try {
+      const res = await run;
+      if (res?.progress) applyServerProgress(uId, [res.progress]);
+      if (res?.balanceAfter !== undefined && res?.balanceAfter !== null) applyPointsBalance(res.balanceAfter, uId);
+      if (res?.missions) applyServerMissions(uId, res.missions);
+      if (res?.streak !== undefined && res?.streak !== null) updateUserFields({ streak: res.streak });
+      return res;
+    } catch {
+      return null;
+    }
+  }, [userId, applyServerProgress, applyServerMissions, applyPointsBalance, updateUserFields]);
+
+  /** Chốt một chương đã đọc xong; server chỉ thưởng lần đầu để tránh farm điểm. */
+  const completeChapterReading = useCallback(async (uId, bookId, chapterIndex) => {
+    if (!uId || bookId === undefined || chapterIndex === undefined) return null;
+    try {
+      const res = await progressApi.completeChapter(bookId, chapterIndex);
+      if (res?.balanceAfter !== undefined && res?.balanceAfter !== null) applyPointsBalance(res.balanceAfter, uId);
+      if (res?.missions) applyServerMissions(uId, res.missions);
+      return res;
+    } catch {
+      return null;
+    }
+  }, [applyPointsBalance, applyServerMissions]);
+
+  /** Ghi nhận đã mở một cuốn sách mới cho nhiệm vụ Khám phá; server tự chống trùng. */
+  const recordExploreBook = useCallback(async (uId, bookId) => {
+    if (!uId || !userId || String(uId) !== String(userId)) return;
+    try {
+      applyServerMissions(uId, await missionApi.recordExplore(bookId));
+    } catch {}
+  }, [userId, applyServerMissions]);
+
+  /** Kéo lại nhiệm vụ hôm nay (dùng khi mở trang Nhiệm vụ để thấy tiến độ mới nhất). */
+  const refreshMissions = useCallback(async (uId = userId) => {
+    if (!uId || !userId || String(uId) !== String(userId)) return null;
+    try {
+      const dto = await missionApi.fetchTodayMissions();
+      applyServerMissions(uId, dto);
+      return dto;
+    } catch {
+      return null;
+    }
+  }, [userId, applyServerMissions]);
+
+  // ---------- Gamification (nhiệm vụ & chuỗi do server quản lý) ----------
   const getDaily = useCallback(
     (uId) => {
       const d = daily[uId];
-      return d && d.date === todayKey() ? d : { date: todayKey(), counters: {}, claimed: [] };
+      return d && d.date === todayKey() ? d : { date: todayKey(), counters: {}, claimed: [], tasks: [] };
     },
     [daily]
   );
 
-  const earnPoints = useCallback(
-    (uId, amount) => {
-      if (!uId || !amount) return 0;
-      // Thành viên VIP nhận thêm phần trăm điểm trên mọi khoản thưởng.
-      const bonusPercent = vipPointBonusPercent(uId);
-      const credited = bonusPercent > 0
-        ? Math.round(amount * (1 + bonusPercent / 100))
-        : amount;
-      setUsers((prev) => prev.map((u) => (u.id === uId ? { ...u, points: (u.points || 0) + credited } : u)));
-      if (user && String(user.id) === String(uId) && updateUserFields) {
-        updateUserFields({ points: (user.points || 0) + credited });
-      }
-      return credited;
-    },
-    [user, updateUserFields]
-  );
+  /**
+   * Cộng điểm cho hai hoạt động phía client được phép (quiz, pomodoro).
+   * Đọc sách, xong chương/sách và chuỗi ngày do backend tự cộng qua API tiến trình.
+   */
+  const earnPoints = useCallback(async (uId, activity) => {
+    if (!uId || !activity) return 0;
+    // Xếp hàng các khoản thưởng: đọc mỗi phút và giữ chuỗi có thể phát sinh cùng lúc,
+    // backend cộng số dư kiểu read-modify-write nên gửi song song sẽ dễ mất một khoản.
+    const run = pointQueueRef.current
+      .catch(() => {})
+      .then(() => earnActivityPoints(uId, activity));
+    pointQueueRef.current = run.catch(() => {});
+    try {
+      const tx = await run;
+      applyPointsBalance(tx?.balanceAfter, uId);
+      return Number(tx?.amount || 0);
+    } catch {
+      return 0;
+    }
+  }, [applyPointsBalance]);
 
-  const trackDaily = useCallback((uId, metric, amount = 1) => {
-    if (!uId) return;
-    setDaily((prev) => {
-      const today = todayKey();
-      const cur = prev[uId]?.date === today ? prev[uId] : { date: today, counters: {}, claimed: [] };
-      const goal = Math.max(...DAILY_TASKS.filter((t) => t.metric === metric).map((t) => t.goal), 0);
-      const now = cur.counters[metric] || 0;
-      if (goal && now >= goal) return prev;
-      return { ...prev, [uId]: { ...cur, counters: { ...cur.counters, [metric]: now + amount } } };
-    });
-  }, []);
+  /** Nhận thưởng nhiệm vụ qua backend; server kiểm tra tiến độ và chống nhận trùng. */
+  const claimTask = useCallback(async (uId, taskId) => {
+    if (!uId) return { ok: false, credited: 0, message: 'Bạn cần đăng nhập để nhận thưởng.' };
 
-  const claimTask = useCallback((uId, taskId) => {
-    const task = DAILY_TASKS.find((t) => t.id === taskId);
-    if (!task) return 0;
-    let granted = 0;
-    setDaily((prev) => {
-      const today = todayKey();
-      const cur = prev[uId]?.date === today ? prev[uId] : { date: today, counters: {}, claimed: [] };
-      if (cur.claimed.includes(taskId)) return prev;
-      if ((cur.counters[task.metric] || 0) < task.goal) return prev;
-      granted = task.reward;
-      return { ...prev, [uId]: { ...cur, claimed: [...cur.claimed, taskId] } };
-    });
-    return granted;
-  }, []);
+    const lockKey = `${uId}:${todayKey()}:${taskId}`;
+    if (claimLocksRef.current.has(lockKey)) {
+      return { ok: false, credited: 0, message: 'Đang xử lý phần thưởng, vui lòng chờ.' };
+    }
+    claimLocksRef.current.add(lockKey);
 
-  const touchStreak = useCallback((uId) => {
-    setUsers((prev) =>
-      prev.map((u) => {
-        if (u.id !== uId) return u;
-        const today = todayKey();
-        if (u.lastStreakDate === today) return u;
-        const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
-        const streak = u.lastStreakDate === yesterday ? (u.streak || 0) + 1 : 1;
-        return { ...u, streak, lastStreakDate: today, points: (u.points || 0) + POINT_RULES.dailyStreak };
-      })
-    );
-  }, []);
+    try {
+      const res = await missionApi.claimMission(taskId);
+      if (res?.balanceAfter !== undefined && res?.balanceAfter !== null) applyPointsBalance(res.balanceAfter, uId);
+      if (res?.missions) applyServerMissions(uId, res.missions);
+      return { ok: true, credited: Number(res?.amount ?? 0), message: '' };
+    } catch (error) {
+      return { ok: false, credited: 0, message: error.message || 'Không thể nhận thưởng, thử lại sau.' };
+    } finally {
+      claimLocksRef.current.delete(lockKey);
+    }
+  }, [applyPointsBalance, applyServerMissions]);
 
-  const feedPet = useCallback(
-    (uId, cost) => {
+  /** Cho thú ảo ăn: trừ điểm ở backend trước, chỉ cộng EXP khi giao dịch thành công. */
+  const feedPet = useCallback(async (uId, cost) => {
+    if (!uId) return false;
+    try {
+      const tx = await deductPointsApi(uId, cost, 'FEED_PET', 'Cho thú ảo ăn bánh');
+      applyPointsBalance(tx?.balanceAfter, uId);
       const now = Date.now();
-      const newXp = (user?.petXp || 0) + FEED_XP;
-      setUsers((prev) =>
-        prev.map((u) =>
-          u.id === uId
-            ? { ...u, points: Math.max(0, (u.points || 0) - cost), petXp: (u.petXp || 0) + FEED_XP, petLastFed: now }
-            : u
-        )
-      );
-      if (user && String(user.id) === String(uId) && updateUserFields) {
-        updateUserFields({
-          points: Math.max(0, (user.points || 0) - cost),
-          petXp: newXp,
-          petLastFed: now,
-        });
-      }
-    },
-    [user, updateUserFields]
-  );
+      const newXp = (userRef.current?.petXp || 0) + FEED_XP;
+      setUsers((prev) => prev.map((u) => (String(u.id) === String(uId) ? { ...u, petXp: newXp, petLastFed: now } : u)));
+      updateUserFields({ petXp: newXp, petLastFed: now });
+      return true;
+    } catch {
+      return false;
+    }
+  }, [applyPointsBalance, updateUserFields]);
 
   const growPet = useCallback((uId, xp) => {
     setUsers((prev) => prev.map((u) => (u.id === uId ? { ...u, petXp: (u.petXp || 0) + xp } : u)));
@@ -1289,42 +1533,19 @@ export function AppProvider({ children }) {
     }
   }, [user, updateUserFields]);
 
-  const redeemReward = useCallback(
-    (uId, reward, currentBalance) => {
-      let ok = false;
-      const effectivePoints = currentBalance ?? user?.points ?? 0;
-      if (effectivePoints < reward.cost) return false;
-      ok = true;
-      const now = Date.now();
-      const isPetReward = reward.type === 'pet';
-      const newPetXp = isPetReward ? (user?.petXp || 0) + FEED_XP : (user?.petXp || 0);
-
-      setUsers((prev) =>
-        prev.map((u) => {
-          if (u.id !== uId) return u;
-          return {
-            ...u,
-            points: Math.max(0, effectivePoints - reward.cost),
-            ...(isPetReward ? { petXp: (u.petXp || 0) + FEED_XP, petLastFed: now } : {}),
-          };
-        })
-      );
-      if (user && String(user.id) === String(uId) && updateUserFields) {
-        updateUserFields({
-          points: Math.max(0, effectivePoints - reward.cost),
-          ...(isPetReward ? { petXp: newPetXp, petLastFed: now } : {}),
-        });
-      }
-      if (ok) {
-        setRedemptions((prev) => [
-          { id: uid('rd'), userId: uId, rewardId: reward.id, name: reward.name, cost: reward.cost, at: Date.now() },
-          ...prev,
-        ]);
-      }
-      return ok;
-    },
-    [user, updateUserFields]
-  );
+  /** Đổi thưởng ở backend: server trừ điểm, cấp voucher/quà và ghi lịch sử. */
+  const redeemReward = useCallback(async (uId, reward) => {
+    if (!uId || !reward?.id) return { ok: false, message: 'Phần thưởng không hợp lệ.' };
+    try {
+      const res = await rewardApi.redeemRewardApi(reward.id);
+      if (res?.balanceAfter !== undefined && res?.balanceAfter !== null) applyPointsBalance(res.balanceAfter, uId);
+      if (res?.redemption) setRedemptions((prev) => [toRedemption(res.redemption, uId), ...prev]);
+      if (res?.voucher) setMyVouchers((prev) => [res.voucher, ...prev]);
+      return { ok: true, voucher: res?.voucher || null };
+    } catch (error) {
+      return { ok: false, message: error.message || 'Không thể đổi thưởng. Vui lòng kiểm tra điểm và thử lại.' };
+    }
+  }, [applyPointsBalance]);
 
   // ---------- Blind Book ----------
   const matchBlindBox = useCallback((payload) => shopApi.matchBlindBox(userId, payload), [userId]);
@@ -1370,6 +1591,14 @@ export function AppProvider({ children }) {
     [userId, account.notifications, patchAccount]
   );
 
+  // Voucher cá nhân đổi bằng điểm đứng trước voucher toàn sàn để người dùng thấy ngay.
+  const vouchers = useMemo(() => {
+    const personal = (myVouchers || []).map((v) => ({ ...v, personal: true }));
+    const personalCodes = new Set(personal.map((v) => String(v.code || '').toLowerCase()));
+    const global = catalog.vouchers || seed.vouchers;
+    return [...personal, ...global.filter((v) => !personalCodes.has(String(v.code || '').toLowerCase()))];
+  }, [catalog.vouchers, myVouchers]);
+
   const value = useMemo(
     () => ({
       users,
@@ -1383,7 +1612,7 @@ export function AppProvider({ children }) {
       notifications,
       shops: catalog.shops || seed.shops,
       categories: catalog.categories || seed.CATEGORIES,
-      vouchers: catalog.vouchers || seed.vouchers,
+      vouchers,
       catalogStatus: catalog.status,
       accountReady: account.loaded,
       sellerBooks: account.sellerBooks,
@@ -1413,6 +1642,7 @@ export function AppProvider({ children }) {
       refreshCart,
       refreshOrders,
       refreshSellerData,
+      refreshSellerOrders,
       refreshAdminData,
       refreshPosts,
       refreshExchanges,
@@ -1428,8 +1658,11 @@ export function AppProvider({ children }) {
       completeOrder,
       updateOrderStatus,
       addPost,
-      toggleLike,
+      addClubPost,
+      loadClubPosts,
+      reactToPost,
       addComment,
+      reactToComment,
       setPostHidden,
       deletePost,
       addReport,
@@ -1443,6 +1676,7 @@ export function AppProvider({ children }) {
       deleteSellerBook,
       updateSellerOrderStatus,
       confirmSellerOrderPaid,
+      confirmSellerOrderRefund,
       setBookStatus,
       deleteBook,
       addExchange,
@@ -1451,6 +1685,7 @@ export function AppProvider({ children }) {
       setExchangeStatus,
       deleteExchange,
       findOrCreateConversation,
+      startSupportConversation,
       createGroupConversation,
       sendMessage,
       refreshConversations,
@@ -1464,19 +1699,24 @@ export function AppProvider({ children }) {
       addMessageReaction,
       getProgress,
       saveProgress,
+      completeChapterReading,
+      recordExploreBook,
+      refreshMissions,
       pushNotification,
       markNotificationsRead,
       daily,
       getDaily,
+      applyPointsBalance,
+      syncPoints,
       earnPoints,
-      trackDaily,
       claimTask,
-      touchStreak,
       feedPet,
       growPet,
       renamePet,
       redeemReward,
       redemptions,
+      rewardCatalog,
+      myVouchers,
       matchBlindBox,
       addBlindBox,
       revealBlindBox,
@@ -1494,6 +1734,7 @@ export function AppProvider({ children }) {
       catalog.shops,
       catalog.categories,
       catalog.vouchers,
+      vouchers,
       catalog.status,
       account.loaded,
       account.sellerBooks,
@@ -1523,6 +1764,7 @@ export function AppProvider({ children }) {
       refreshCart,
       refreshOrders,
       refreshSellerData,
+      refreshSellerOrders,
       refreshAdminData,
       refreshPosts,
       refreshExchanges,
@@ -1538,8 +1780,11 @@ export function AppProvider({ children }) {
       completeOrder,
       updateOrderStatus,
       addPost,
-      toggleLike,
+      addClubPost,
+      loadClubPosts,
+      reactToPost,
       addComment,
+      reactToComment,
       setPostHidden,
       deletePost,
       addReport,
@@ -1553,6 +1798,7 @@ export function AppProvider({ children }) {
       deleteSellerBook,
       updateSellerOrderStatus,
       confirmSellerOrderPaid,
+      confirmSellerOrderRefund,
       setBookStatus,
       deleteBook,
       addExchange,
@@ -1561,6 +1807,7 @@ export function AppProvider({ children }) {
       setExchangeStatus,
       deleteExchange,
       findOrCreateConversation,
+      startSupportConversation,
       createGroupConversation,
       sendMessage,
       refreshConversations,
@@ -1574,19 +1821,24 @@ export function AppProvider({ children }) {
       addMessageReaction,
       getProgress,
       saveProgress,
+      completeChapterReading,
+      recordExploreBook,
+      refreshMissions,
       pushNotification,
       markNotificationsRead,
       daily,
       getDaily,
+      applyPointsBalance,
+      syncPoints,
       earnPoints,
-      trackDaily,
       claimTask,
-      touchStreak,
       feedPet,
       growPet,
       renamePet,
       redeemReward,
       redemptions,
+      rewardCatalog,
+      myVouchers,
       matchBlindBox,
       addBlindBox,
       revealBlindBox,

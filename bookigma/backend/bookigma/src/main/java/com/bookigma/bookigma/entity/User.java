@@ -4,6 +4,7 @@ import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.persistence.*;
 import lombok.*;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 
 @Entity
@@ -15,7 +16,7 @@ import java.time.LocalDateTime;
 @Builder
 public class User {
     public enum Role {
-        USER, SHOP, MODERATOR, ADMIN
+        USER, SHOP, MODERATOR, SUPPORT, ADMIN
     }
 
     @Id
@@ -39,8 +40,23 @@ public class User {
     @Column(name = "avatar_url", length = 255)
     private String avatarUrl;
 
+    @Column(name = "banner_url", length = 255)
+    private String bannerUrl;
+
     @Column(name = "bio", columnDefinition = "TEXT")
     private String bio;
+
+    @Column(name = "interests", length = 500)
+    private String interests;
+
+    @Column(name = "hometown", length = 120)
+    private String hometown;
+
+    @Column(name = "current_location", length = 120)
+    private String currentLocation;
+
+    @Column(name = "marital_status", length = 30)
+    private String maritalStatus;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "role", nullable = false, length = 20)
@@ -69,10 +85,20 @@ public class User {
     @Column(name = "created_at", nullable = false)
     private LocalDateTime createdAt;
 
+    @Column(name = "streak", nullable = false, columnDefinition = "int default 0")
+    @Builder.Default
+    private Integer streak = 0;
+
+    @Column(name = "last_streak_date")
+    private LocalDate lastStreakDate;
+
     @PrePersist
     protected void onCreate() {
         if (createdAt == null) {
             createdAt = LocalDateTime.now();
+        }
+        if (streak == null) {
+            streak = 0;
         }
         if (role == null) {
             role = Role.USER;

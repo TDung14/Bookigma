@@ -4,6 +4,7 @@ import lombok.Builder;
 import lombok.Data;
 
 import java.time.LocalDateTime;
+import java.util.Map;
 
 @Data
 @Builder
@@ -17,4 +18,7 @@ public class CommentResponseDto {
     private String content;
     private Long parentCommentId;
     private LocalDateTime createdAt;
+    private long reactionCount;
+    private Map<String, Long> reactionCounts;
+    private String myReaction;
 }

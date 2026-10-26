@@ -9,14 +9,16 @@ import com.bookigma.bookigma.exception.ApiException;
 import com.bookigma.bookigma.repository.PointTransactionRepository;
 import com.bookigma.bookigma.repository.UserPointRepository;
 import com.bookigma.bookigma.service.AccessGuard;
+import com.bookigma.bookigma.service.PointActivity;
 import com.bookigma.bookigma.service.PointService;
+import com.bookigma.bookigma.vip.entity.VipSubscription;
+import com.bookigma.bookigma.vip.repository.VipSubscriptionRepository;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.time.LocalTime;
 import java.time.ZoneId;
 import java.util.List;
 
@@ -25,13 +27,16 @@ public class PointServiceImpl implements PointService {
 
     private final UserPointRepository userPointRepository;
     private final PointTransactionRepository pointTransactionRepository;
+    private final VipSubscriptionRepository vipSubscriptionRepository;
     private final AccessGuard accessGuard;
 
     public PointServiceImpl(UserPointRepository userPointRepository,
                             PointTransactionRepository pointTransactionRepository,
+                            VipSubscriptionRepository vipSubscriptionRepository,
                             AccessGuard accessGuard) {
         this.userPointRepository = userPointRepository;
         this.pointTransactionRepository = pointTransactionRepository;
+        this.vipSubscriptionRepository = vipSubscriptionRepository;
         this.accessGuard = accessGuard;
     }
 
@@ -111,6 +116,26 @@ public class PointServiceImpl implements PointService {
 
     @Override
     @Transactional
+    public PointTransactionDto addRewardPoints(Long userId, int amount, String type, String referenceId, String description) {
+        if (amount <= 0) {
+            throw ApiException.badRequest("Số điểm cộng phải lớn hơn 0");
+        }
+        int bonusPercent = activeVipBonusPercent(userId);
+        int credited = bonusPercent > 0
+                ? (int) Math.round(amount * (1 + bonusPercent / 100.0))
+                : amount;
+        return addPoints(userId, credited, type, referenceId, description);
+    }
+
+    @Override
+    @Transactional
+    public PointTransactionDto awardActivity(Long userId, String activity, String referenceId) {
+        PointActivity rule = PointActivity.parseClientAwardable(activity);
+        return addRewardPoints(userId, rule.getPoints(), rule.name(), referenceId, rule.getDescription());
+    }
+
+    @Override
+    @Transactional
     public PointTransactionDto deductPoints(Long userId, int amount, String type, String referenceId, String description) {
         if (amount <= 0) {
             throw ApiException.badRequest("Số điểm trừ phải lớn hơn 0");
@@ -131,6 +156,31 @@ public class PointServiceImpl implements PointService {
                 .description(description)
                 .build();
 
+        return toDto(pointTransactionRepository.save(tx));
+    }
+
+    @Override
+    @Transactional
+    public PointTransactionDto deductPointsUpTo(Long userId, int amount, String type, String referenceId, String description) {
+        if (amount <= 0) {
+            throw ApiException.badRequest("Số điểm trừ phải lớn hơn 0");
+        }
+        UserPoint userPoint = getOrCreateUserPoint(userId);
+        int actual = Math.min(amount, userPoint.getTotalPoints());
+        if (actual <= 0) {
+            return null;
+        }
+        userPoint.setTotalPoints(userPoint.getTotalPoints() - actual);
+        userPointRepository.save(userPoint);
+
+        PointTransaction tx = PointTransaction.builder()
+                .user(userPoint.getUser())
+                .amount(-actual)
+                .balanceAfter(userPoint.getTotalPoints())
+                .type(type)
+                .referenceId(referenceId)
+                .description(description)
+                .build();
         return toDto(pointTransactionRepository.save(tx));
     }
 
@@ -157,6 +207,12 @@ public class PointServiceImpl implements PointService {
     }
 
     @Override
+    @Transactional(readOnly = true)
+    public boolean hasTransaction(Long userId, String type, String referenceId) {
+        return pointTransactionRepository.existsByUser_IdAndTypeAndReferenceId(userId, type, referenceId);
+    }
+
+    @Override
     @Transactional
     public PointTransactionDto dailyCheckIn(Long userId) {
         LocalDateTime startOfDay = LocalDate.now(ZoneId.of("Asia/Ho_Chi_Minh")).atStartOfDay();
@@ -167,8 +223,17 @@ public class PointServiceImpl implements PointService {
             throw ApiException.conflict("Bạn đã điểm danh nhận điểm hôm nay rồi!");
         }
 
-        int rewardPoints = 50; // 50 Điểm / ngày
-        return addPoints(userId, rewardPoints, "DAILY_CHECKIN", LocalDate.now(ZoneId.of("Asia/Ho_Chi_Minh")).toString(), "Điểm danh nhận Điểm hàng ngày");
+        int rewardPoints = 30;
+        return addRewardPoints(userId, rewardPoints, "DAILY_CHECKIN", LocalDate.now(ZoneId.of("Asia/Ho_Chi_Minh")).toString(), "Điểm danh nhận 30 Điểm Bookigma");
+    }
+
+    private int activeVipBonusPercent(Long userId) {
+        LocalDateTime now = LocalDateTime.now(ZoneId.of("Asia/Ho_Chi_Minh"));
+        return vipSubscriptionRepository.findByUser_Id(userId)
+                .filter(subscription -> subscription.getExpiresAt() != null
+                        && subscription.getExpiresAt().isAfter(now))
+                .map(VipSubscription::getPointBonusPercent)
+                .orElse(0);
     }
 
     private String getNextTier(int points) {

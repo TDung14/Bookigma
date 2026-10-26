@@ -50,6 +50,9 @@ export const updateSellerOrderStatus = async (userId, orderId, status, note) =>
 /** Shop xác nhận đã nhận tiền cho đơn chuyển khoản / MoMo. */
 export const confirmSellerOrderPaid = async (userId, orderId) =>
   toOrder(await apiCall(`/seller/orders/${orderId}/paid`, 'PATCH', null, as(userId)));
+/** Shop xác nhận đã hoàn tiền cho đơn trả trước bị hủy. */
+export const confirmSellerOrderRefund = async (userId, orderId) =>
+  toOrder(await apiCall(`/seller/orders/${orderId}/refunded`, 'PATCH', null, as(userId)));
 
 // ---------- Quản trị ----------
 export const fetchAdminBooks = async (userId) => (await apiCall('/admin/books', 'GET', null, as(userId))).map(toBook);

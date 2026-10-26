@@ -11,8 +11,16 @@ public class UserProfileDto {
     private String fullName;
     private String bio;
     private String avatarUrl;
+    private String bannerUrl;
+    private String interests;
+    private String hometown;
+    private String currentLocation;
+    private String maritalStatus;
     private String role;
     private Boolean active;
+    private Integer points;
+    private Integer streak;
+    private Integer booksRead;
     private LocalDateTime createdAt;
 
     // Constructor không tham số để Jackson đọc JSON
@@ -90,6 +98,46 @@ public class UserProfileDto {
         this.avatarUrl = avatarUrl;
     }
 
+    public String getBannerUrl() {
+        return bannerUrl;
+    }
+
+    public void setBannerUrl(String bannerUrl) {
+        this.bannerUrl = bannerUrl;
+    }
+
+    public String getInterests() {
+        return interests;
+    }
+
+    public void setInterests(String interests) {
+        this.interests = interests;
+    }
+
+    public String getHometown() {
+        return hometown;
+    }
+
+    public void setHometown(String hometown) {
+        this.hometown = hometown;
+    }
+
+    public String getCurrentLocation() {
+        return currentLocation;
+    }
+
+    public void setCurrentLocation(String currentLocation) {
+        this.currentLocation = currentLocation;
+    }
+
+    public String getMaritalStatus() {
+        return maritalStatus;
+    }
+
+    public void setMaritalStatus(String maritalStatus) {
+        this.maritalStatus = maritalStatus;
+    }
+
     public String getRole() {
         return role;
     }
@@ -104,6 +152,30 @@ public class UserProfileDto {
 
     public void setActive(Boolean active) {
         this.active = active;
+    }
+
+    public Integer getPoints() {
+        return points;
+    }
+
+    public void setPoints(Integer points) {
+        this.points = points;
+    }
+
+    public Integer getStreak() {
+        return streak;
+    }
+
+    public void setStreak(Integer streak) {
+        this.streak = streak;
+    }
+
+    public Integer getBooksRead() {
+        return booksRead;
+    }
+
+    public void setBooksRead(Integer booksRead) {
+        this.booksRead = booksRead;
     }
 
     public LocalDateTime getCreatedAt() {

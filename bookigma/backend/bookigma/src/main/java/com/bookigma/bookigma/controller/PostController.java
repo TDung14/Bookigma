@@ -81,10 +81,28 @@ public class PostController {
         catch (IllegalArgumentException ex) { return ResponseEntity.badRequest().body(Map.of("message", ex.getMessage())); }
     }
 
-    @PostMapping("/{postId}/like")
-    public ResponseEntity<?> toggleLike(@CurrentUserId Long currentUserId, @PathVariable Long postId) {
-        try { return ResponseEntity.ok(postService.toggleLike(currentUserId, postId)); }
-        catch (IllegalArgumentException ex) { return ResponseEntity.badRequest().body(Map.of("message", ex.getMessage())); }
+    public record ReactionRequest(String type) {}
+
+    @PostMapping("/{postId}/reactions")
+    public ResponseEntity<?> reactToPost(@CurrentUserId Long currentUserId,
+                                         @PathVariable Long postId,
+                                         @RequestBody(required = false) ReactionRequest request) {
+        try {
+            return ResponseEntity.ok(postService.reactToPost(currentUserId, postId, request == null ? null : request.type()));
+        } catch (IllegalArgumentException ex) {
+            return ResponseEntity.badRequest().body(Map.of("message", ex.getMessage()));
+        }
+    }
+
+    @PostMapping("/comments/{commentId}/reactions")
+    public ResponseEntity<?> reactToComment(@CurrentUserId Long currentUserId,
+                                            @PathVariable Long commentId,
+                                            @RequestBody(required = false) ReactionRequest request) {
+        try {
+            return ResponseEntity.ok(postService.reactToComment(currentUserId, commentId, request == null ? null : request.type()));
+        } catch (IllegalArgumentException ex) {
+            return ResponseEntity.badRequest().body(Map.of("message", ex.getMessage()));
+        }
     }
 
     public record CommentRequest(String content, Long parentCommentId) {}

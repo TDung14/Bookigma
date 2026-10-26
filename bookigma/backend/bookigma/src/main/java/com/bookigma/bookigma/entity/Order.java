@@ -115,6 +115,14 @@ public class Order {
     @Column(name = "paid_at")
     private LocalDateTime paidAt;
 
+    /** Hạn thanh toán của đơn trả trước; null với COD và các đơn tạo trước khi có tính năng hết hạn. */
+    @Column(name = "payment_expires_at")
+    private LocalDateTime paymentExpiresAt;
+
+    /** Lúc shop xác nhận đã hoàn tiền cho đơn trả trước bị hủy. Null = chưa hoàn tiền. */
+    @Column(name = "refunded_at")
+    private LocalDateTime refundedAt;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "status", nullable = false, length = 20)
     @Builder.Default

@@ -41,12 +41,17 @@ public class PointController {
         public String description;
     }
 
-    @PostMapping("/add")
-    public ResponseEntity<PointTransactionDto> addPoints(@CurrentUserId Long userId, @RequestBody PointReq req) {
-        int amount = (req != null && req.amount != null) ? req.amount : 0;
-        String type = (req != null && req.type != null) ? req.type : "EARN_POINTS";
-        String desc = (req != null && req.description != null) ? req.description : "Thưởng điểm";
-        return ResponseEntity.ok(pointService.addPoints(userId, amount, type, null, desc));
+    public static class ActivityReq {
+        public String activity;
+        public String referenceId;
+    }
+
+    @PostMapping("/earn")
+    public ResponseEntity<PointTransactionDto> earnActivity(@CurrentUserId Long userId,
+                                                            @RequestBody(required = false) ActivityReq req) {
+        String activity = req == null ? null : req.activity;
+        String referenceId = req == null ? null : req.referenceId;
+        return ResponseEntity.ok(pointService.awardActivity(userId, activity, referenceId));
     }
 
     @PostMapping("/deduct")

@@ -11,8 +11,16 @@ public interface PointService {
     List<PointTransactionDto> getPointsHistory(Long userId);
     UserPoint getOrCreateUserPoint(Long userId);
     PointTransactionDto addPoints(Long userId, int amount, String type, String referenceId, String description);
+    /** Cộng điểm thưởng, kèm ưu đãi % điểm của thành viên VIP đang còn hiệu lực. */
+    PointTransactionDto addRewardPoints(Long userId, int amount, String type, String referenceId, String description);
+    /** Cộng điểm theo hoạt động do server quy định (đọc sách, giữ chuỗi...). */
+    PointTransactionDto awardActivity(Long userId, String activity, String referenceId);
     PointTransactionDto deductPoints(Long userId, int amount, String type, String referenceId, String description);
+    /** Trừ tối đa bằng số dư hiện có — dùng cho khoản phạt, không được chặn thao tác gốc. */
+    PointTransactionDto deductPointsUpTo(Long userId, int amount, String type, String referenceId, String description);
     /** Trả lại điểm đã trừ (vd. đơn bị hủy): chỉ cộng vào số dư, không tính vào điểm xét hạng. */
     PointTransactionDto refundPoints(Long userId, int amount, String type, String referenceId, String description);
+    /** Đã có giao dịch điểm loại này cho đối tượng tham chiếu chưa — dùng để tránh cộng/trừ trùng. */
+    boolean hasTransaction(Long userId, String type, String referenceId);
     PointTransactionDto dailyCheckIn(Long userId);
 }

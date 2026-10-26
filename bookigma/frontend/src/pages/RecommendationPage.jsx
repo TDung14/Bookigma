@@ -85,7 +85,7 @@ export default function RecommendationPage() {
         )}
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) minmax(0,380px)', gap: 20, alignItems: 'start' }}>
+      <div className="split-layout" style={{ '--split-side': '380px' }}>
         {/* Danh sách gợi ý */}
         <div className="stack">
           {rec.items.map(({ book, score, reasons }) => (
@@ -154,7 +154,7 @@ export default function RecommendationPage() {
         </div>
 
         {/* Trợ lý hỏi đáp */}
-        <div className="card" style={{ position: 'sticky', top: 76, padding: 0, display: 'flex', flexDirection: 'column', height: 'calc(100vh - 140px)', minHeight: 440 }}>
+        <div className="card assistant-panel">
           <div className="row" style={{ padding: 14, borderBottom: '1px solid var(--border-color)' }}>
             <div className="stat-icon" style={{ background: 'var(--accent-soft)' }}>
               <Bot size={19} color="var(--accent-green)" />

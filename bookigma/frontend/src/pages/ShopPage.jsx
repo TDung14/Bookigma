@@ -4,6 +4,7 @@ import { RefreshCw, Search, SlidersHorizontal, Store, WifiOff } from 'lucide-rea
 import { useApp, useAuth } from '../hooks/useStore';
 import BookCard from '../components/book/BookCard';
 import { EmptyState } from '../components/common/ui';
+import VipUpsell from '../components/vip/VipUpsell';
 
 const SORTS = [
   { id: 'popular', label: 'Phổ biến' },
@@ -90,9 +91,9 @@ export default function ShopPage() {
         </div>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,230px) minmax(0,1fr)', gap: 20, alignItems: 'start' }}>
+      <div className="shop-layout">
         {/* Bộ lọc */}
-        <aside className="stack hide-lg" style={{ position: 'sticky', top: 76, gap: 16 }}>
+        <aside className="stack hide-lg sticky-rail" style={{ gap: 16 }}>
           <div className="card stack" style={{ gap: 10 }}>
             <div className="row" style={{ gap: 8 }}>
               <Store size={17} color="var(--accent-green)" />
@@ -139,6 +140,10 @@ export default function ShopPage() {
 
         {/* Kết quả */}
         <div>
+          <div style={{ marginBottom: 14 }}>
+            <VipUpsell compact />
+          </div>
+
           <div className="card row" style={{ marginBottom: 18, gap: 12, flexWrap: 'wrap' }}>
             <div style={{ position: 'relative', flex: '1 1 240px' }}>
               <Search size={17} style={{ position: 'absolute', left: 11, top: 12, color: 'var(--text-sub)' }} />

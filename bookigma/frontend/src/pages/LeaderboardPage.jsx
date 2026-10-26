@@ -1,16 +1,33 @@
 import { avatarSrc } from '../lib/avatar';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Award, Flame, Star, Trophy } from 'lucide-react';
 import { useApp } from '../hooks/useStore';
 import { Rating } from '../components/common/ui';
-import { currency } from '../lib/format';
+import { currency, duration } from '../lib/format';
+import { fetchLeaderboard } from '../services/leaderboardApi';
 
 const MEDALS = ['#f59e0b', '#94a3b8', '#b45309'];
 
 export default function LeaderboardPage() {
-  const { books, users, orders } = useApp();
+  const { books } = useApp();
   const [metric, setMetric] = useState('rating');
+  const [board, setBoard] = useState({ readers: [], buyers: [] });
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchLeaderboard()
+      .then((data) => {
+        if (cancelled) return;
+        setBoard({ readers: data?.readers || [], buyers: data?.buyers || [] });
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, []);
 
   const topBooks = useMemo(() => {
     const sorters = {
@@ -21,22 +38,8 @@ export default function LeaderboardPage() {
     return [...books].filter((b) => b.status === 'active').sort(sorters[metric]).slice(0, 8);
   }, [books, metric]);
 
-  const topReaders = useMemo(
-    () => users.filter((u) => u.role === 'user').sort((a, b) => b.points - a.points).slice(0, 8),
-    [users]
-  );
-
-  const topBuyers = useMemo(() => {
-    const spend = {};
-    orders
-      .filter((o) => o.status !== 'cancelled')
-      .forEach((o) => { spend[o.userId] = (spend[o.userId] || 0) + o.total; });
-    return Object.entries(spend)
-      .map(([id, total]) => ({ user: users.find((u) => u.id === id), total }))
-      .filter((x) => x.user)
-      .sort((a, b) => b.total - a.total)
-      .slice(0, 5);
-  }, [orders, users]);
+  const topReaders = board.readers;
+  const topBuyers = board.buyers;
 
   return (
     <div className="main-layout">
@@ -89,24 +92,26 @@ export default function LeaderboardPage() {
           <h3 className="row" style={{ margin: '0 0 14px', fontSize: 16, gap: 8 }}>
             <Award size={19} color="#3b82f6" /> Top độc giả tích cực
           </h3>
+          {loading && <p className="small muted">Đang tải bảng xếp hạng...</p>}
+          {!loading && topReaders.length === 0 && <p className="small muted">Chưa có dữ liệu đọc sách.</p>}
           {topReaders.map((u, i) => (
-            <div key={u.id} className="row" style={{ padding: '10px 0', borderBottom: '1px solid var(--border-color)', gap: 12 }}>
+            <div key={u.userId} className="row" style={{ padding: '10px 0', borderBottom: '1px solid var(--border-color)', gap: 12 }}>
               <span
                 className="strong"
                 style={{ width: 26, textAlign: 'center', color: i < 3 ? MEDALS[i] : 'var(--text-sub)', fontSize: i < 3 ? 17 : 14 }}
               >
                 {i + 1}
               </span>
-              <img src={avatarSrc(u.avatar)} alt="" className="avatar" style={{ width: 38, height: 38 }} />
+              <img src={avatarSrc(u.avatarUrl)} alt="" className="avatar" style={{ width: 38, height: 38 }} />
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div className="small strong truncate">{u.name}</div>
-                <div className="tiny muted">{u.booksRead} cuốn đã đọc</div>
+                <div className="tiny muted">{u.booksFinished} cuốn hoàn thành · {duration(u.secondsRead)}</div>
               </div>
               <div style={{ textAlign: 'right', flexShrink: 0 }}>
-                <div className="row small strong" style={{ gap: 4, color: 'var(--accent-green)' }}>
-                  <Flame size={14} /> {u.points.toLocaleString('vi-VN')}
+                <div className="row small strong" style={{ gap: 4, color: 'var(--accent-green)', justifyContent: 'flex-end' }}>
+                  <Flame size={14} /> {u.streak} ngày
                 </div>
-                <div className="tiny muted">{u.badge}</div>
+                <div className="tiny muted">{u.points.toLocaleString('vi-VN')} điểm</div>
               </div>
             </div>
           ))}
@@ -118,15 +123,15 @@ export default function LeaderboardPage() {
             <Star size={19} color="var(--purple)" /> Khách hàng thân thiết
           </h3>
           {topBuyers.length === 0 && <p className="small muted">Chưa có dữ liệu mua hàng.</p>}
-          {topBuyers.map(({ user: u, total }, i) => (
-            <div key={u.id} className="row" style={{ padding: '10px 0', borderBottom: '1px solid var(--border-color)', gap: 12 }}>
+          {topBuyers.map((u, i) => (
+            <div key={u.userId} className="row" style={{ padding: '10px 0', borderBottom: '1px solid var(--border-color)', gap: 12 }}>
               <span className="strong" style={{ width: 26, textAlign: 'center', color: i < 3 ? MEDALS[i] : 'var(--text-sub)' }}>{i + 1}</span>
-              <img src={avatarSrc(u.avatar)} alt="" className="avatar" style={{ width: 38, height: 38 }} />
+              <img src={avatarSrc(u.avatarUrl)} alt="" className="avatar" style={{ width: 38, height: 38 }} />
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div className="small strong truncate">{u.name}</div>
-                <div className="tiny muted">{u.badge}</div>
+                <div className="tiny muted">{u.orderCount} đơn hàng</div>
               </div>
-              <div className="small strong price">{currency(total)}</div>
+              <div className="small strong price">{currency(u.totalSpent)}</div>
             </div>
           ))}
         </div>

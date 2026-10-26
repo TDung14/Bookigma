@@ -2,9 +2,11 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Package, Search, Store } from 'lucide-react';
 import { useApp, useAuth, useToast } from '../hooks/useStore';
+import useVisibleInterval from '../hooks/useVisibleInterval';
 import { currency, dateTime, ORDER_STATUS } from '../lib/format';
 import { EmptyState } from '../components/common/ui';
 import { PaymentBadge } from '../components/common/PaymentQr';
+import { isPrepaid } from '../lib/payment';
 
 const TABS = [
   { id: 'all', label: 'Tất cả' },
@@ -30,6 +32,9 @@ export default function OrdersPage() {
   useEffect(() => {
     refreshOrders();
   }, [refreshOrders]);
+
+  // Cập nhật định kỳ để trạng thái đơn theo kịp thao tác của shop.
+  useVisibleInterval(refreshOrders, 10000);
 
   const myOrders = useMemo(
     () => orders.filter((o) => o.userId === user.id).sort((a, b) => b.createdAt - a.createdAt),
@@ -63,7 +68,7 @@ export default function OrdersPage() {
 
   const cancel = (order) => {
     const question = order.paidAt
-      ? `Đơn ${order.code} đã thanh toán. Hủy đơn thì shop sẽ liên hệ hoàn tiền cho bạn. Tiếp tục hủy?`
+      ? `Đơn ${order.code} đã thanh toán. Hủy đơn thì shop sẽ hoàn tiền cho bạn. Tiếp tục hủy?`
       : `Hủy đơn hàng ${order.code}?`;
     if (!window.confirm(question)) return;
     run(order, () => cancelOrder(order.id), 'Đã hủy đơn hàng.', 'info');
@@ -128,6 +133,11 @@ export default function OrdersPage() {
                   </div>
                   <div className="row" style={{ gap: 6 }}>
                     <PaymentBadge order={order} />
+                    {order.status === 'cancelled' && order.paidAt && (
+                      <span className={`badge ${order.refundedAt ? 'badge-green' : 'badge-amber'}`}>
+                        {order.refundedAt ? 'Đã hoàn tiền' : 'Chờ hoàn tiền'}
+                      </span>
+                    )}
                     <span className={`badge ${st.badge}`}>{st.label}</span>
                   </div>
                 </div>
@@ -163,6 +173,11 @@ export default function OrdersPage() {
                   </span>
                   <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
                     <button className="btn btn-ghost btn-sm" onClick={() => navigate(`/orders/${order.id}`)}>Xem chi tiết</button>
+                    {isPrepaid(order.payment) && !order.paidAt && order.status !== 'cancelled' && (
+                      <button className="btn btn-primary btn-sm" onClick={() => navigate(`/order-payment/${order.id}?ids=${order.id}`)}>
+                        Thanh toán
+                      </button>
+                    )}
                     {['pending', 'confirmed'].includes(order.status) && (
                       <button className="btn btn-ghost btn-sm" style={{ color: 'var(--danger)' }} disabled={busy} onClick={() => cancel(order)}>Hủy đơn</button>
                     )}

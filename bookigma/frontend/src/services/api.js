@@ -57,6 +57,27 @@ export async function uploadAvatar(file, userId) {
   return data;
 }
 
+/** Upload ảnh bìa hồ sơ bằng multipart/form-data, không đặt Content-Type thủ công. */
+export async function uploadBanner(file, userId) {
+  if (!file || !userId) throw new Error('Thiếu ảnh hoặc thông tin tài khoản.');
+  const formData = new FormData();
+  formData.append('file', file);
+  const hadToken = Boolean(getAuthToken());
+  const response = await fetch(`${API_URL}/users/${userId}/banner`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: formData,
+  });
+  handleUnauthorized(response, hadToken);
+  const text = await response.text();
+  let data = {};
+  if (text) {
+    try { data = JSON.parse(text); } catch { data = { message: text }; }
+  }
+  if (!response.ok) throw new Error(data?.message || `Upload ảnh bìa thất bại (HTTP ${response.status}).`);
+  return data;
+}
+
 export function getApiErrorMessage(error) {
   if (!error) {
     return 'Không thể thực hiện yêu cầu.';
@@ -156,12 +177,12 @@ export const postApi = {
   create: (body, userId) =>
     apiCall('/posts', 'POST', body, { userId }),
 
-  // Like / Unlike bài viết
-  toggleLike: (postId, userId) =>
+  // Thả / đổi / bỏ cảm xúc bài viết
+  reactToPost: (postId, type, userId) =>
     apiCall(
-      `/posts/${postId}/like`,
+      `/posts/${postId}/reactions`,
       'POST',
-      null,
+      { type },
       { userId }
     ),
 
@@ -171,6 +192,15 @@ export const postApi = {
       `/posts/${postId}/comments`,
       'POST',
       body,
+      { userId }
+    ),
+
+  // Thả / đổi / bỏ cảm xúc bình luận
+  reactToComment: (commentId, type, userId) =>
+    apiCall(
+      `/posts/comments/${commentId}/reactions`,
+      'POST',
+      { type },
       { userId }
     ),
 };

@@ -53,6 +53,7 @@ public class SecurityConfig {
                         .requestMatchers("/api/vip/webhook/**").permitAll()
                         .requestMatchers("/api/chat/**", "/api/notifications/**", "/api/users/**").authenticated()
                         .requestMatchers("/api/cart/**", "/api/orders/**", "/api/points/**", "/api/vip/**").authenticated()
+                        .requestMatchers("/api/progress/**", "/api/missions/**", "/api/rewards/**").authenticated()
                         .requestMatchers("/api/admin/**").hasRole("ADMIN")
                         .requestMatchers("/api/seller/**").hasAnyRole("SHOP", "MODERATOR")
                         // Các API công khai (feed, sách, shop...) vẫn mở; endpoint cần danh tính

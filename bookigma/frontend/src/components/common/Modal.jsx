@@ -1,12 +1,17 @@
 import { useEffect } from 'react';
 import { X } from 'lucide-react';
+import { lockBodyScroll, unlockBodyScroll } from '../../lib/scrollLock';
 
 export default function Modal({ open, title, onClose, children, footer, width = 480 }) {
   useEffect(() => {
     if (!open) return undefined;
+    lockBodyScroll();
     const onKey = (e) => e.key === 'Escape' && onClose?.();
     window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+    return () => {
+      unlockBodyScroll();
+      window.removeEventListener('keydown', onKey);
+    };
   }, [open, onClose]);
 
   if (!open) return null;

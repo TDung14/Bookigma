@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import {
-  Bookmark, CheckCircle, ChevronLeft, ChevronRight, Crown, Headphones, HelpCircle,
-  List, Lock, Minus, Music, Pause, Play, Plus, RotateCcw,
+  Bookmark, CheckCircle, ChevronLeft, ChevronRight, Crown, FileText, Headphones, HelpCircle,
+  List, Lock, Minus, Music, Pause, Play, Plus, RotateCcw, Square,
   Sparkles, Type, Volume2, XCircle,
 } from 'lucide-react';
 import { useApp, useAuth, useToast } from '../hooks/useStore';
@@ -11,6 +11,7 @@ import { duration } from '../lib/format';
 import { load, save } from '../lib/storage';
 import { POINT_RULES } from '../lib/gamification';
 import { ProgressBar } from '../components/common/ui';
+import Modal from '../components/common/Modal';
 import {
   AMBIENT_SOUNDS, getCurrentAmbient, playAmbient, playSuccessChime,
   playWrongChime, setAmbientVolume, stopAmbient,
@@ -30,6 +31,49 @@ const SPINE_COLORS = [
 ];
 
 const PARAGRAPHS_PER_PAGE = 3; // Mỗi trang sách hiển thị 3 đoạn văn vừa mắt
+const AUDIO_RATES = [0.8, 1, 1.2, 1.5, 2];
+const WORDS_PER_MINUTE = 165;
+const AUDIO_CHUNK_LIMIT = 340;
+
+const countWords = (value) =>
+  typeof value === 'string' && value.trim() ? value.trim().split(/\s+/).length : 0;
+
+/** Gộp đoạn văn thành từng khối vừa giọng đọc để theo dõi tiến độ và tránh câu quá dài. */
+const buildAudioChunks = (paragraphs = []) => {
+  const chunks = [];
+  let buffer = '';
+
+  const pushBuffer = () => {
+    if (buffer) chunks.push(buffer);
+    buffer = '';
+  };
+
+  const add = (raw) => {
+    const text = String(raw || '').replace(/\s+/g, ' ').trim();
+    if (!text) return;
+    if (buffer && buffer.length + text.length + 1 > AUDIO_CHUNK_LIMIT) pushBuffer();
+    buffer = buffer ? `${buffer} ${text}` : text;
+
+    while (buffer.length > AUDIO_CHUNK_LIMIT * 1.35) {
+      let cut = buffer.lastIndexOf('. ', AUDIO_CHUNK_LIMIT);
+      if (cut < 140) cut = buffer.lastIndexOf(' ', AUDIO_CHUNK_LIMIT);
+      if (cut < 140) cut = AUDIO_CHUNK_LIMIT;
+      chunks.push(buffer.slice(0, cut + 1).trim());
+      buffer = buffer.slice(cut + 1).trim();
+    }
+  };
+
+  paragraphs.forEach(add);
+  pushBuffer();
+  return chunks;
+};
+
+/** Đổi paragraphIndex server lưu ((trang + 1) * 3) về trang hiện tại, kẹp trong số trang của chương. */
+const pageFromParagraph = (chapter, paragraphIndex) => {
+  const totalPages = Math.max(1, Math.ceil((chapter?.paragraphs?.length || 0) / PARAGRAPHS_PER_PAGE));
+  const page = Math.floor((paragraphIndex || 0) / PARAGRAPHS_PER_PAGE) - 1;
+  return Math.min(totalPages - 1, Math.max(0, page));
+};
 
 const READER_THEMES = ['bookshelf', 'sepia', 'midnight', 'clean'];
 const FONT_MIN = 14;
@@ -45,6 +89,9 @@ const initialReaderTheme = () => {
   const value = load('readerTheme', 'bookshelf');
   return READER_THEMES.includes(value) ? value : 'bookshelf';
 };
+
+const CUSTOM_AMBIENT_SOUNDS = AMBIENT_SOUNDS.filter((sound) => sound.group === 'file');
+const BUILTIN_AMBIENT_SOUNDS = AMBIENT_SOUNDS.filter((sound) => sound.group === 'builtin');
 
 /**
  * Trình đọc sách Góc Đọc Bookigma.
@@ -78,20 +125,28 @@ function ReaderContent() {
   const toast = useToast();
   const { user } = useAuth();
   const { isVip } = useVip(user.id);
-  const { bookById, getProgress, saveProgress, earnPoints, trackDaily, growPet, touchStreak } = useApp();
+  const { bookById, getProgress, saveProgress, completeChapterReading, earnPoints, growPet } = useApp();
 
   const book = bookById(bookId);
   const saved = getProgress(user.id)[bookId];
 
   // Trạng thái chương và trang
   const [chapterIndex, setChapterIndex] = useState(saved?.chapterIndex ?? 0);
-  const [pageIndex, setPageIndex] = useState(0);
+  const [pageIndex, setPageIndex] = useState(() =>
+    pageFromParagraph(book?.chapters?.[saved?.chapterIndex ?? 0], saved?.paragraphIndex));
   const [fontSize, setFontSize] = useState(initialFontSize);
   const [language, setLanguage] = useState('vi');
   const [showToc, setShowToc] = useState(false);
   const [showAi, setShowAi] = useState(true);
   const [bookmarks, setBookmarks] = useState([]);
   const [speaking, setSpeaking] = useState(false);
+  const [summaryOpen, setSummaryOpen] = useState(false);
+  const [audioStatus, setAudioStatus] = useState('idle');
+  const [audioProgress, setAudioProgress] = useState(0);
+  const [audioRate, setAudioRate] = useState(() => {
+    const value = Number(load('audioRate', 1));
+    return AUDIO_RATES.includes(value) ? value : 1;
+  });
 
   // Theme giao diện tủ sách
   const [readerTheme, setReaderTheme] = useState(initialReaderTheme);
@@ -99,7 +154,7 @@ function ReaderContent() {
 
   // Âm thanh chill chill
   const [ambientPlaying, setAmbientPlaying] = useState(false);
-  const [ambientType, setAmbientType] = useState('rain');
+  const [ambientType, setAmbientType] = useState(() => AMBIENT_SOUNDS[0]?.id || 'rain');
   const [ambientVol, setAmbientVol] = useState(50);
 
   // Pomodoro & Đồng hồ đọc sách
@@ -119,9 +174,23 @@ function ReaderContent() {
   // Tiến trình
   const [percent, setPercent] = useState(saved?.percent ?? 0);
   const contentRef = useRef(null);
+  const audioQueueRef = useRef({ chunks: [], index: 0, chapter: null, token: 0 });
+  const audioRateRef = useRef(audioRate);
+  const pendingAutoPlayRef = useRef(false);
 
   const chapters = useMemo(() => book?.chapters || [], [book]);
   const chapter = chapters[chapterIndex];
+  const chapterAudioSeconds = useMemo(() => {
+    const words = (chapter?.paragraphs || []).reduce((sum, paragraph) => sum + countWords(paragraph), 0);
+    return Math.max(30, Math.round((words / WORDS_PER_MINUTE) * 60));
+  }, [chapter]);
+  const bookAudioSeconds = useMemo(() => {
+    const words = chapters.reduce(
+      (sum, item) => sum + (item.paragraphs || []).reduce((total, paragraph) => total + countWords(paragraph), 0),
+      0
+    );
+    return Math.max(60, Math.round((words / WORDS_PER_MINUTE) * 60));
+  }, [chapters]);
 
   // Chia đoạn văn của chương hiện tại thành các trang
   const pages = useMemo(() => {
@@ -153,20 +222,64 @@ function ReaderContent() {
     [chapters, totalParagraphs]
   );
 
-  // Đếm thời gian đọc thực tế của phiên này
+  // Đếm thời gian đọc thực tế của phiên này; số giây chưa gửi được cộng dồn để đẩy lên server.
+  const pendingSecondsRef = useRef(0);
   useEffect(() => {
-    const id = setInterval(() => setSessionSeconds((s) => s + 1), 1000);
+    const id = setInterval(() => {
+      setSessionSeconds((s) => s + 1);
+      pendingSecondsRef.current += 1;
+    }, 1000);
     return () => clearInterval(id);
   }, []);
 
-  // Cứ mỗi phút đọc trọn vẹn thì cộng điểm Bookigma, nuôi thú ảo và ghi nhận streak
+  const progressStateRef = useRef({ chapterIndex, pageIndex, percent });
+  useEffect(() => {
+    progressStateRef.current = { chapterIndex, pageIndex, percent };
+  }, [chapterIndex, pageIndex, percent]);
+
+  /** Gửi phần thời gian đọc còn tồn lên backend; backend tự cộng điểm và nhiệm vụ. */
+  const flushReading = useCallback((extra = {}) => {
+    if (!book) return Promise.resolve(null);
+    const delta = Math.min(300, pendingSecondsRef.current);
+    const state = progressStateRef.current;
+    const payload = {
+      chapterIndex: extra.chapterIndex ?? state.chapterIndex,
+      paragraphIndex: ((extra.pageIndex ?? state.pageIndex) + 1) * PARAGRAPHS_PER_PAGE,
+      percent: extra.percent ?? state.percent,
+      secondsDelta: delta,
+      ...(extra.finished ? { finished: true } : {}),
+    };
+    if (!delta && !extra.finished && !extra.force) return Promise.resolve(null);
+    pendingSecondsRef.current = Math.max(0, pendingSecondsRef.current - delta);
+    return saveProgress(user.id, book.id, payload);
+  }, [book, saveProgress, user.id]);
+
+  // Đồng bộ phần trăm mới nhất từ tiến trình server (ví dụ vừa đọc trên thiết bị khác).
+  useEffect(() => {
+    if (saved?.percent) setPercent((p) => Math.max(p, saved.percent));
+  }, [saved?.percent]);
+
+  // Tiến trình server có thể về sau khi trang đã mở (thiết bị mới): nhảy đúng chương/trang đã đọc.
+  const restoredFromServerRef = useRef(Boolean(saved));
+  useEffect(() => {
+    if (restoredFromServerRef.current || !saved) return;
+    restoredFromServerRef.current = true;
+    const idx = saved.chapterIndex ?? 0;
+    setChapterIndex(idx);
+    setPageIndex(pageFromParagraph(book?.chapters?.[idx], saved.paragraphIndex));
+    setPercent((p) => Math.max(p, saved.percent ?? 0));
+  }, [saved, book]);
+
+  // Mỗi phút đọc trọn vẹn: đẩy delta lên server (điểm, nhiệm vụ, chuỗi do backend xử lý) và nuôi thú ảo.
+  const lastFlushedMinuteRef = useRef(0);
   useEffect(() => {
     if (sessionSeconds === 0 || sessionSeconds % 60 !== 0) return;
-    earnPoints(user.id, POINT_RULES.readMinute);
+    // Các callback đổi identity sau khi ví cập nhật; chặn gửi trùng cho cùng một phút.
+    if (lastFlushedMinuteRef.current === sessionSeconds) return;
+    lastFlushedMinuteRef.current = sessionSeconds;
     growPet(user.id, 1);
-    trackDaily(user.id, 'readMinutes', 1);
-    touchStreak(user.id);
-  }, [sessionSeconds, user.id, earnPoints, growPet, trackDaily, touchStreak]);
+    flushReading();
+  }, [sessionSeconds, user.id, growPet, flushReading]);
 
   // Pomodoro
   useEffect(() => {
@@ -176,7 +289,7 @@ function ReaderContent() {
         if (s <= 1) {
           setTimerOn(false);
           toast('⏰ Hoàn thành mục tiêu đọc sách Pomodoro! Thưởng +20 điểm Bookigma 🎉');
-          earnPoints(user.id, 20);
+          earnPoints(user.id, 'POMODORO');
           return 0;
         }
         return s - 1;
@@ -185,13 +298,19 @@ function ReaderContent() {
     return () => clearInterval(id);
   }, [timerOn, toast, earnPoints, user.id]);
 
-  // Tắt âm thanh và speech khi thoát trang
+  // Tắt âm thanh, speech và gửi nốt thời gian đọc khi rời trang
   useEffect(() => {
+    const handleVisibility = () => {
+      if (document.visibilityState === 'hidden') flushReading();
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
     return () => {
+      document.removeEventListener('visibilitychange', handleVisibility);
+      flushReading();
       stopAmbient();
       window.speechSynthesis?.cancel();
     };
-  }, []);
+  }, [flushReading]);
 
   const changeFontSize = (delta) => {
     const next = Math.min(FONT_MAX, Math.max(FONT_MIN, fontSize + delta));
@@ -206,6 +325,12 @@ function ReaderContent() {
   };
 
   const isSoundLocked = (sound) => Boolean(sound?.premium && !isVip);
+
+  const renderAmbientOption = (sound) => (
+    <option key={sound.id} value={sound.id} disabled={isSoundLocked(sound)}>
+      {sound.icon} {sound.name}{isSoundLocked(sound) ? ' · VIP' : ''}
+    </option>
+  );
 
   // Bật/tắt âm thanh chill
   const toggleAmbientSound = () => {
@@ -246,13 +371,140 @@ function ReaderContent() {
   // Điều hướng chương
   const goChapter = (idx) => {
     if (idx < 0 || idx >= chapters.length) return;
+    const newPercent = Math.max(percent, computePercent(idx, 0));
+    // Chốt vị trí chương mới lên server ngay, kể cả khi chưa đủ một phút đọc.
+    flushReading({ chapterIndex: idx, pageIndex: 0, percent: newPercent, force: true });
     setChapterIndex(idx);
     setPageIndex(0);
     setShowToc(false);
     contentRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    const newPercent = computePercent(idx, 0);
-    setPercent((p) => Math.max(p, newPercent));
+    setPercent(newPercent);
   };
+
+  const speakAudioChunk = (chunks, index, token) => {
+    const synth = window.speechSynthesis;
+    if (!synth) return;
+
+    if (index >= chunks.length) {
+      if (audioQueueRef.current.token === token) {
+        setAudioProgress(1);
+        if (chapterIndex < chapters.length - 1) {
+          pendingAutoPlayRef.current = true;
+          stopAudiobook();
+          goChapter(chapterIndex + 1);
+        } else {
+          setAudioStatus('idle');
+          toast('Đã nghe hết cuốn sách. Bạn có thể nghe lại bất cứ chương nào.');
+        }
+      }
+      return;
+    }
+
+    const utterance = new SpeechSynthesisUtterance(chunks[index]);
+    utterance.lang = 'vi-VN';
+    utterance.rate = audioRateRef.current;
+    utterance.onend = () => {
+      if (audioQueueRef.current.token !== token) return;
+      audioQueueRef.current.index = index + 1;
+      setAudioProgress((index + 1) / chunks.length);
+      speakAudioChunk(chunks, index + 1, token);
+    };
+    utterance.onerror = (event) => {
+      if (audioQueueRef.current.token !== token) return;
+      if (event.error === 'canceled' || event.error === 'interrupted') return;
+      setAudioStatus('idle');
+      setAudioProgress(0);
+      toast('Không thể phát sách nói trên trình duyệt này.', 'error');
+    };
+    synth.speak(utterance);
+  };
+
+  const startAudiobook = ({ restart = false } = {}) => {
+    const synth = window.speechSynthesis;
+    if (!synth || typeof SpeechSynthesisUtterance === 'undefined') {
+      toast('Trình duyệt không hỗ trợ sách nói.', 'error');
+      return;
+    }
+
+    const queue = audioQueueRef.current;
+    if (!restart && audioStatus === 'paused' && queue.chapter === chapterIndex && queue.index < queue.chunks.length) {
+      synth.resume();
+      setAudioStatus('playing');
+      return;
+    }
+
+    synth.cancel();
+    const chunks = buildAudioChunks(chapter?.paragraphs || []);
+    if (!chunks.length) {
+      toast('Chương này chưa có nội dung để nghe.', 'error');
+      return;
+    }
+
+    if (speaking) setSpeaking(false);
+    if (ambientPlaying) {
+      stopAmbient();
+      setAmbientPlaying(false);
+    }
+
+    const token = queue.token + 1;
+    audioQueueRef.current = { chunks, index: 0, chapter: chapterIndex, token };
+    setAudioProgress(0);
+    setAudioStatus('playing');
+    speakAudioChunk(chunks, 0, token);
+  };
+
+  const stopAudiobook = ({ resetProgress = true } = {}) => {
+    window.speechSynthesis?.cancel();
+    audioQueueRef.current = {
+      chunks: [],
+      index: 0,
+      chapter: null,
+      token: audioQueueRef.current.token + 1,
+    };
+    setAudioStatus('idle');
+    if (resetProgress) setAudioProgress(0);
+  };
+
+  const toggleAudiobook = () => {
+    if (audioStatus === 'playing') {
+      window.speechSynthesis?.pause();
+      setAudioStatus('paused');
+      return;
+    }
+    startAudiobook();
+  };
+
+  const changeAudioRate = (value) => {
+    const rate = Number(value);
+    if (!AUDIO_RATES.includes(rate)) return;
+    audioRateRef.current = rate;
+    setAudioRate(rate);
+    save('audioRate', rate);
+    if (audioStatus !== 'idle') startAudiobook({ restart: true });
+  };
+
+  const skipAudioChapter = (delta) => {
+    const next = chapterIndex + delta;
+    if (next < 0 || next >= chapters.length) {
+      stopAudiobook();
+      return;
+    }
+    pendingAutoPlayRef.current = audioStatus !== 'idle';
+    stopAudiobook();
+    goChapter(next);
+  };
+
+  useEffect(() => {
+    if (audioQueueRef.current.chapter !== null && audioQueueRef.current.chapter !== chapterIndex) {
+      stopAudiobook();
+    }
+    if (pendingAutoPlayRef.current) {
+      pendingAutoPlayRef.current = false;
+      startAudiobook({ restart: true });
+    }
+    // Chỉ chạy khi đổi chương để không cắt audio khi các state khác cập nhật.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chapterIndex]);
 
   // Lật trang trước
   const handlePrevPage = () => {
@@ -297,27 +549,24 @@ function ReaderContent() {
       const newPercent = computePercent(chapterIndex, pageIndex + 1);
       setPercent((p) => Math.max(p, newPercent));
     } else if (chapterIndex < chapters.length - 1) {
-      // Hết chương -> sang chương sau
-      earnPoints(user.id, POINT_RULES.finishChapter);
-      trackDaily(user.id, 'chapters', 1);
-      toast(`Xong một chương — nhận ${POINT_RULES.finishChapter} điểm Bookigma`);
+      // Hết chương -> sang chương sau; backend chỉ thưởng lần đầu đọc xong chương.
+      flushReading();
+      completeChapterReading(user.id, book.id, chapterIndex).then((res) => {
+        if (res?.firstTime) {
+          toast(`Xong một chương — nhận ${res.pointsAwarded ?? POINT_RULES.finishChapter} điểm Bookigma`);
+        }
+      });
       goChapter(chapterIndex + 1);
     } else {
-      // Đọc xong toàn bộ cuốn sách
+      // Đọc xong toàn bộ cuốn sách; backend tự thưởng một lần cho lần hoàn thành đầu tiên.
+      const alreadyFinished = Boolean(saved?.finished);
       setPercent(100);
-      saveProgress(user.id, book.id, {
-        chapterIndex,
-        paragraphIndex: chapter.paragraphs.length,
-        percent: 100,
-        secondsRead: (saved?.secondsRead || 0) + sessionSeconds,
+      progressStateRef.current = { ...progressStateRef.current, percent: 100 };
+      flushReading({ finished: true, percent: 100 }).then(() => {
+        toast(alreadyFinished
+          ? 'Bạn đã đọc lại xong cuốn sách này 🎉'
+          : `Chúc mừng! Đọc xong toàn bộ cuốn sách — nhận ${POINT_RULES.finishBook} điểm Bookigma 🎉`);
       });
-      trackDaily(user.id, 'chapters', 1);
-      if (!saved?.finished) {
-        earnPoints(user.id, POINT_RULES.finishBook);
-        toast(`Chúc mừng! Đọc xong toàn bộ cuốn sách — nhận ${POINT_RULES.finishBook} điểm Bookigma 🎉`);
-      } else {
-        toast('Bạn đã đọc lại xong cuốn sách này 🎉');
-      }
     }
   };
 
@@ -334,18 +583,12 @@ function ReaderContent() {
       setPassedPages((prev) => ({ ...prev, [pageKey]: true }));
 
       // Thưởng điểm đọc hiểu
-      earnPoints(user.id, 10);
+      earnPoints(user.id, 'QUIZ_CORRECT');
       toast('🎉 Chính xác 100%! Bạn đã nắm vững nội dung trang này. +10 Điểm Bookigma');
 
-      // Tự động ghi nhận tiến độ đọc
+      // Tự động ghi nhận tiến độ đọc (thời gian đọc đã được đẩy lên server theo từng phút)
       const newPercent = computePercent(chapterIndex, pageIndex);
       setPercent((p) => Math.max(p, newPercent));
-      saveProgress(user.id, book.id, {
-        chapterIndex,
-        paragraphIndex: (pageIndex + 1) * PARAGRAPHS_PER_PAGE,
-        percent: Math.max(percent, newPercent),
-        secondsRead: (saved?.secondsRead || 0) + sessionSeconds,
-      });
 
       // Đóng modal và chuyển trang sau 1.2s
       setTimeout(() => {
@@ -365,10 +608,16 @@ function ReaderContent() {
       setSpeaking(false);
       return;
     }
+    if (audioStatus !== 'idle') stopAudiobook();
+    if (ambientPlaying) {
+      stopAmbient();
+      setAmbientPlaying(false);
+    }
     const textToRead = currentPageParagraphs.join(' ');
     const utter = new SpeechSynthesisUtterance(textToRead);
     utter.lang = language === 'vi' ? 'vi-VN' : 'en-US';
     utter.onend = () => setSpeaking(false);
+    utter.onerror = () => setSpeaking(false);
     window.speechSynthesis.speak(utter);
     setSpeaking(true);
     toast('Đang đọc thành tiếng trang hiện tại.');
@@ -422,13 +671,24 @@ function ReaderContent() {
             <span className="tiny strong" style={{ color: 'var(--accent-green)', whiteSpace: 'nowrap' }}>{percent}%</span>
           </div>
 
-          <div className="row tiny" style={{ gap: 8 }}>
+          <div className="row tiny reader-toolbar-actions" style={{ gap: 8 }}>
             <button
               className={`btn btn-sm ${showShelf ? 'btn-primary' : 'btn-soft'}`}
               onClick={() => setShowShelf((v) => !v)}
               title="Mở hoặc thu gọn kệ sách"
             >
               📚 Kệ sách
+            </button>
+            <button className="btn btn-soft btn-sm" onClick={() => setSummaryOpen(true)} title="Xem tóm tắt sách">
+              <FileText size={14} /> Tóm tắt
+            </button>
+            <button
+              className={`btn btn-sm ${audioStatus === 'playing' ? 'btn-primary' : 'btn-soft'}`}
+              onClick={toggleAudiobook}
+              title="Nghe sách nói"
+            >
+              {audioStatus === 'playing' ? <Pause size={14} /> : audioStatus === 'paused' ? <Play size={14} /> : <Headphones size={14} />}
+              {audioStatus === 'playing' ? 'Tạm dừng' : audioStatus === 'paused' ? 'Tiếp tục' : 'Sách nói'}
             </button>
             <button
               className={`btn btn-sm ${ambientPlaying ? 'btn-primary' : 'btn-soft'}`}
@@ -495,7 +755,7 @@ function ReaderContent() {
       )}
 
       {/* KHÔNG GIAN ĐỌC CHÍNH (MAIN READING VIEW) */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) minmax(0,310px)', gap: 20, alignItems: 'start' }}>
+      <div className="split-layout" style={{ '--split-side': '310px' }}>
         {/* CUỐN SÁCH MỞ RA (OPEN BOOK SHEET) */}
         <div className={`open-book-sheet theme-${readerTheme}`} ref={contentRef}>
           {/* Dải ruy băng bookmark */}
@@ -583,7 +843,106 @@ function ReaderContent() {
         </div>
 
         {/* SIDEBAR BÊN PHẢI: ÂM THANH CHILL, BỘ ĐẾM GIỜ & TIỆN ÍCH */}
-        <aside className="stack" style={{ position: 'sticky', top: 120 }}>
+        <aside className="stack sticky-rail" style={{ '--rail-top': '120px' }}>
+          {/* 0. SÁCH NÓI & TÓM TẮT SÁCH */}
+          <div className="card stack audiobook-card" style={{ gap: 10 }}>
+            <div className="row-between">
+              <span className="row strong small" style={{ gap: 6 }}>
+                <Headphones size={16} color="var(--accent-green)" /> Sách nói
+              </span>
+              <span className="badge">Chương {chapterIndex + 1}/{chapters.length}</span>
+            </div>
+
+            <div className="tiny muted clamp-2" style={{ lineHeight: 1.5 }}>{chapter.title}</div>
+
+            <ProgressBar percent={Math.round(audioProgress * 100)} />
+
+            <div className="row-between tiny muted">
+              <span>{Math.round(audioProgress * 100)}%</span>
+              <span>
+                ~{duration(Math.max(0, Math.round(chapterAudioSeconds * (1 - audioProgress))))} còn lại
+              </span>
+            </div>
+
+            <div className="row-between" style={{ gap: 8 }}>
+              <div className="row" style={{ gap: 4 }}>
+                <button
+                  type="button"
+                  className="btn-icon"
+                  onClick={() => skipAudioChapter(-1)}
+                  disabled={chapterIndex === 0}
+                  title="Chương trước"
+                  aria-label="Chương trước"
+                >
+                  <ChevronLeft size={16} />
+                </button>
+                <button
+                  type="button"
+                  className={`btn btn-sm ${audioStatus === 'playing' ? 'btn-primary' : 'btn-soft'}`}
+                  onClick={toggleAudiobook}
+                  title="Phát hoặc tạm dừng sách nói"
+                >
+                  {audioStatus === 'playing' ? <Pause size={14} /> : <Play size={14} />}
+                  {audioStatus === 'playing' ? 'Tạm dừng' : audioStatus === 'paused' ? 'Tiếp tục' : 'Nghe'}
+                </button>
+                <button
+                  type="button"
+                  className="btn-icon"
+                  onClick={() => skipAudioChapter(1)}
+                  disabled={chapterIndex >= chapters.length - 1}
+                  title="Chương sau"
+                  aria-label="Chương sau"
+                >
+                  <ChevronRight size={16} />
+                </button>
+                {audioStatus !== 'idle' && (
+                  <button
+                    type="button"
+                    className="btn-icon"
+                    onClick={() => stopAudiobook()}
+                    title="Dừng sách nói"
+                    aria-label="Dừng sách nói"
+                  >
+                    <Square size={13} />
+                  </button>
+                )}
+              </div>
+
+              <select
+                className="select"
+                style={{ width: 'auto', padding: '4px 6px', fontSize: 12 }}
+                value={audioRate}
+                onChange={(event) => changeAudioRate(event.target.value)}
+                title="Tốc độ đọc"
+              >
+                {AUDIO_RATES.map((rate) => (
+                  <option key={rate} value={rate}>{rate}x</option>
+                ))}
+              </select>
+            </div>
+
+            <p className="tiny muted" style={{ margin: 0, lineHeight: 1.5 }}>
+              Giọng đọc tự động của trình duyệt · khoảng {duration(chapterAudioSeconds)} mỗi chương.
+            </p>
+
+            <hr className="divider" style={{ margin: '4px 0' }} />
+
+            <div className="row-between">
+              <span className="row strong small" style={{ gap: 6 }}>
+                <FileText size={15} color="var(--accent-green)" /> Tóm tắt sách
+              </span>
+              <span className="tiny muted">{duration(bookAudioSeconds)}</span>
+            </div>
+
+            <p className="tiny muted clamp-3" style={{ margin: 0, lineHeight: 1.6 }}>
+              {book.description || 'Cuốn sách chưa có phần giới thiệu tóm tắt.'}
+            </p>
+
+            <button type="button" className="btn btn-soft btn-sm" onClick={() => setSummaryOpen(true)}>
+              <FileText size={14} /> Xem tóm tắt đầy đủ
+            </button>
+          </div>
+
           {/* 1. WIDGET ÂM THANH CHILL CHILL */}
           <div className="ambient-player-card stack" style={{ gap: 12 }}>
             <div className="row-between">
@@ -616,11 +975,14 @@ function ReaderContent() {
                   value={ambientType}
                   onChange={(e) => changeAmbientSound(e.target.value)}
                 >
-                  {AMBIENT_SOUNDS.map((s) => (
-                    <option key={s.id} value={s.id} disabled={isSoundLocked(s)}>
-                      {s.icon} {s.name}{isSoundLocked(s) ? ' · VIP' : ''}
-                    </option>
-                  ))}
+                  {CUSTOM_AMBIENT_SOUNDS.length > 0 && (
+                    <optgroup label="Bản nhạc của bạn">
+                      {CUSTOM_AMBIENT_SOUNDS.map(renderAmbientOption)}
+                    </optgroup>
+                  )}
+                  <optgroup label={CUSTOM_AMBIENT_SOUNDS.length > 0 ? 'Âm thanh tạo sẵn' : 'Âm thanh chill'}>
+                    {BUILTIN_AMBIENT_SOUNDS.map(renderAmbientOption)}
+                  </optgroup>
                 </select>
               </div>
 
@@ -739,6 +1101,89 @@ function ReaderContent() {
           </div>
         </aside>
       </div>
+
+      <Modal
+        open={summaryOpen}
+        title="Tóm tắt sách"
+        width={640}
+        onClose={() => setSummaryOpen(false)}
+        footer={
+          <>
+            <button type="button" className="btn btn-soft" onClick={() => setSummaryOpen(false)}>
+              Đóng
+            </button>
+            <button
+              type="button"
+              className="btn btn-primary"
+              onClick={() => {
+                setSummaryOpen(false);
+                startAudiobook({ restart: true });
+              }}
+            >
+              <Headphones size={15} /> Nghe sách nói
+            </button>
+          </>
+        }
+      >
+        <div className="reader-summary">
+          <div className="reader-summary-head">
+            <img src={book.cover} alt="" className="reader-summary-cover" />
+            <div className="reader-summary-info">
+              <h3>{book.title}</h3>
+              <p>{book.author}</p>
+              <div className="reader-summary-meta">
+                <span className="badge">{book.category}</span>
+                {book.rating > 0 && <span className="badge badge-amber">★ {book.rating}</span>}
+                {book.pages > 0 && <span className="badge">{book.pages} trang</span>}
+                <span className="badge badge-blue">{chapters.length} chương</span>
+                <span className="badge badge-purple">
+                  <Headphones size={12} /> {duration(bookAudioSeconds)}
+                </span>
+              </div>
+              {(book.tags || []).length > 0 && (
+                <div className="reader-summary-tags">
+                  {book.tags.map((tag) => (
+                    <span key={tag} className="badge">{tag}</span>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+
+          <section className="reader-summary-section">
+            <h4>Tóm tắt nội dung</h4>
+            <p>{book.description || 'Cuốn sách chưa có phần giới thiệu tóm tắt.'}</p>
+          </section>
+
+          <section className="reader-summary-section">
+            <h4>Mục lục nhanh</h4>
+            <div className="reader-summary-toc">
+              {chapters.map((item, index) => {
+                const words = (item.paragraphs || []).reduce(
+                  (sum, paragraph) => sum + countWords(paragraph),
+                  0
+                );
+                const seconds = Math.max(30, Math.round((words / WORDS_PER_MINUTE) * 60));
+                return (
+                  <button
+                    key={index}
+                    type="button"
+                    className={`reader-summary-toc-item ${index === chapterIndex ? 'active' : ''}`}
+                    onClick={() => {
+                      setSummaryOpen(false);
+                      goChapter(index);
+                    }}
+                  >
+                    <span>{String(index + 1).padStart(2, '0')}</span>
+                    <strong>{item.title}</strong>
+                    <span>{duration(seconds)}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </section>
+        </div>
+      </Modal>
 
       {/* MODAL THỬ THÁCH ĐỌC HIỂU SAU MỖI TRANG */}
       {quizModalOpen && currentQuiz && (

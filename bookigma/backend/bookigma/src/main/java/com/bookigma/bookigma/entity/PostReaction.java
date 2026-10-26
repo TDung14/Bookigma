@@ -9,8 +9,6 @@ import java.time.LocalDateTime;
 @Table(name = "post_reactions", uniqueConstraints = @UniqueConstraint(name = "uq_post_user", columnNames = {"post_id", "user_id"}))
 @Getter @Setter @NoArgsConstructor @AllArgsConstructor @Builder
 public class PostReaction {
-    public enum ReactionType { LIKE, LOVE, BOOKWORM, INSIGHTFUL }
-
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     @Column(name = "reaction_id")

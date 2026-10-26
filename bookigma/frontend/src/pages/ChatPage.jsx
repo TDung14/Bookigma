@@ -1,7 +1,7 @@
 import { avatarSrc, isImageMedia, mediaSrc } from '../lib/avatar';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { Flag, MessageSquare, Paperclip, Plus, Search, Send, Smile, X, Phone, Video, ThumbsUp, Minimize2 } from 'lucide-react';
+import { ChevronLeft, Flag, MessageSquare, Paperclip, Plus, Search, Send, Smile, X, Phone, Video, ThumbsUp, Minimize2 } from 'lucide-react';
 import { useApp, useAuth, useToast } from '../hooks/useStore';
 import { clockTime, timeAgo } from '../lib/format';
 import { uploadPostImage } from '../services/api';
@@ -149,12 +149,9 @@ export default function ChatPage() {
         </div>
       </div>
 
-      <div
-        className="card"
-        style={{ padding: 0, display: 'grid', gridTemplateColumns: 'minmax(0,300px) minmax(0,1fr)', height: 'calc(100vh - 210px)', minHeight: 460, overflow: 'hidden', minWidth: 0, minHeight: 0 }}
-      >
+      <div className={`card chat-shell ${active ? 'has-conv' : ''}`}>
         {/* Danh sách hội thoại */}
-        <div style={{ borderRight: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+        <div className="chat-list-pane">
           <div style={{ padding: 12, borderBottom: '1px solid var(--border-color)', position: 'relative' }}>
             <Search size={16} style={{ position: 'absolute', left: 23, top: 22, color: 'var(--text-sub)' }} />
             <input
@@ -206,7 +203,7 @@ export default function ChatPage() {
 
         {/* Khung hội thoại */}
         {!active ? (
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div className="chat-thread-pane" style={{ alignItems: 'center', justifyContent: 'center' }}>
             <EmptyState
               icon={MessageSquare}
               title="Chọn một cuộc trò chuyện"
@@ -215,13 +212,22 @@ export default function ChatPage() {
             />
           </div>
         ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0, minHeight: 0, height: '100%' }}>
-            <div className="row-between" style={{ padding: '12px 16px', borderBottom: '1px solid var(--border-color)' }}>
+          <div className="chat-thread-pane">
+            <div className="row-between" style={{ padding: '12px 16px', borderBottom: '1px solid var(--border-color)', gap: 8 }}>
+              <button
+                type="button"
+                className="btn-icon chat-back-btn"
+                onClick={() => navigate('/chat')}
+                aria-label="Quay lại danh sách trò chuyện"
+                title="Quay lại danh sách"
+              >
+                <ChevronLeft size={19} />
+              </button>
               <button
                 type="button"
                 className="row"
                 onClick={() => partner?.id && navigate(`/profile/${partner.id}`)}
-                style={{ background: 'transparent', border: 'none', padding: 0, cursor: 'pointer', textAlign: 'left' }}
+                style={{ background: 'transparent', border: 'none', padding: 0, cursor: 'pointer', textAlign: 'left', minWidth: 0, flex: 1 }}
                 aria-label={`Xem trang cá nhân của ${partner?.name || 'người dùng'}`}
               >
                 <img src={avatarSrc(partner?.avatar)} alt="" className="avatar" style={{ width: 40, height: 40 }} />
@@ -229,14 +235,18 @@ export default function ChatPage() {
                   <div className="small strong">{partner?.name}</div>
                   <div className="tiny muted row" style={{ gap: 5 }}>
                     <span className="dot" style={{ background: partner?.status === 'active' ? '#22c55e' : '#9ca3af', width: 7, height: 7 }} />
-                    {partner?.role === 'shop' ? 'Đối tác bán hàng' : partner?.status === 'active' ? 'Đang hoạt động' : 'Ngoại tuyến'}
+                    {partner?.role === 'shop'
+                      ? 'Đối tác bán hàng'
+                      : partner?.role === 'support'
+                        ? 'Hỗ trợ viên Bookigma'
+                        : partner?.status === 'active' ? 'Đang hoạt động' : 'Ngoại tuyến'}
                   </div>
                 </div>
               </button>
-              <div className="row" style={{ gap: 6 }}>
+              <div className="row" style={{ gap: 6, flexShrink: 0 }}>
                 <button
                   type="button"
-                  className="btn-icon"
+                  className="btn-icon hide-sm"
                   onClick={() => toast(`Đang kết nối cuộc gọi thoại với ${partner?.name}... (Demo)`, 'info')}
                   title="Gọi thoại"
                   aria-label="Gọi thoại"
@@ -245,7 +255,7 @@ export default function ChatPage() {
                 </button>
                 <button
                   type="button"
-                  className="btn-icon"
+                  className="btn-icon hide-sm"
                   onClick={() => toast(`Đang kết nối cuộc gọi video với ${partner?.name}... (Demo)`, 'info')}
                   title="Gọi video"
                   aria-label="Gọi video"
@@ -412,7 +422,7 @@ export default function ChatPage() {
                         <img src={avatarSrc(u.avatar)} alt="" className="avatar" style={{ width: 32, height: 32 }} />
                         <div style={{ minWidth: 0 }}>
                           <div className="small strong truncate">{u.name}</div>
-                          <div className="tiny muted">{u.role === 'shop' ? 'Đối tác bán hàng' : u.badge}</div>
+                          <div className="tiny muted">{u.role === 'shop' ? 'Đối tác bán hàng' : u.role === 'support' ? 'Hỗ trợ viên' : u.badge}</div>
                         </div>
                       </div>
                       <input

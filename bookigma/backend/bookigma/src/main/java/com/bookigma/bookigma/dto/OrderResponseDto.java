@@ -31,6 +31,10 @@ public class OrderResponseDto {
     private BigDecimal total;
     /** Lúc shop xác nhận đã nhận tiền; null khi chưa thanh toán hoặc đơn COD. */
     private LocalDateTime paidAt;
+    /** Hạn thanh toán của đơn trả trước; null với COD và đơn cũ. */
+    private LocalDateTime paymentExpiresAt;
+    /** Lúc shop xác nhận đã hoàn tiền cho đơn trả trước bị hủy; null khi chưa hoàn. */
+    private LocalDateTime refundedAt;
     private LocalDateTime createdAt;
     private List<OrderItemResponseDto> items;
     private List<OrderTimelineDto> timeline;

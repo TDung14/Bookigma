@@ -5,6 +5,7 @@ import lombok.Data;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 
 @Data
 @Builder
@@ -24,5 +25,7 @@ public class PostResponseDto {
     private long likeCount;
     private boolean likedByMe;
     private List<Long> likedBy;
+    private Map<String, Long> reactionCounts;
+    private String myReaction;
     private List<CommentResponseDto> comments;
 }

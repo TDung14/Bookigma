@@ -6,9 +6,11 @@ import {
   ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from 'recharts';
 import {
-  AlertTriangle, DollarSign, Edit3, Gift, Package, Plus, ShoppingBag, Store, Trash2, TrendingUp,
+  AlertTriangle, BadgeCheck, DollarSign, Edit3, Gift, Package, Plus, RefreshCw,
+  ShoppingBag, Store, Trash2, TrendingUp,
 } from 'lucide-react';
 import { useApp, useAuth, useToast } from '../../hooks/useStore';
+import useVisibleInterval from '../../hooks/useVisibleInterval';
 import { compactNumber, currency, dateTime, ORDER_STATUS, PAYMENT_LABEL } from '../../lib/format';
 import { isPrepaid } from '../../lib/payment';
 import { EmptyState, Field, StatCard } from '../../components/common/ui';
@@ -21,6 +23,16 @@ const TABS = [
   { id: 'blind-books', label: 'Kho Blind Book' },
   { id: 'orders', label: 'Đơn hàng' },
   { id: 'revenue', label: 'Doanh thu' },
+];
+
+const ORDER_FILTERS = [
+  { id: 'all', label: 'Tất cả' },
+  { id: 'pending', label: 'Chờ xác nhận' },
+  { id: 'awaiting', label: 'Chờ thanh toán' },
+  { id: 'confirmed', label: 'Đã xác nhận' },
+  { id: 'shipping', label: 'Đang giao' },
+  { id: 'completed', label: 'Hoàn tất' },
+  { id: 'cancelled', label: 'Đã hủy' },
 ];
 
 const CHART_COLORS = ['#16a34a', '#2563eb', '#7c3aed', '#d97706', '#dc2626', '#0891b2', '#db2777'];
@@ -45,16 +57,18 @@ const EMPTY_FORM = {
 export default function ShopDashboard() {
   const { user } = useAuth();
   const {
-    shops, sellerBooks, sellerOrders, refreshSellerData, refreshCatalog, accountReady,
-    saveSellerBook, deleteSellerBook, updateSellerOrderStatus, confirmSellerOrderPaid,
+    shops, sellerBooks, sellerOrders, refreshSellerData, refreshSellerOrders, refreshCatalog, accountReady,
+    saveSellerBook, deleteSellerBook, updateSellerOrderStatus, confirmSellerOrderPaid, confirmSellerOrderRefund,
   } = useApp();
   const toast = useToast();
 
   const [tab, setTab] = useState('overview');
+  const [orderFilter, setOrderFilter] = useState('all');
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
   const [busyOrder, setBusyOrder] = useState(null);
+  const [refreshingOrders, setRefreshingOrders] = useState(false);
 
   // Lấy đơn mới nhất mỗi lần mở kênh người bán (khách có thể vừa đặt / vừa hủy).
   useEffect(() => {
@@ -76,37 +90,88 @@ export default function ShopDashboard() {
     };
   }, [refreshSellerData, refreshCatalog]);
 
+  // Đơn mới và xác nhận thanh toán phải tự hiện ra khi shop đang mở tab Đơn hàng.
+  useVisibleInterval(() => {
+    if (tab === 'orders') refreshSellerOrders();
+  }, 10000);
+
   const shop = shops.find((s) => s.ownerId === user.id);
   const myBooks = sellerBooks;
   // Mỗi đơn trên backend chỉ thuộc về một shop nên không cần lọc lại từng dòng hàng.
   const myOrders = useMemo(() => [...sellerOrders].sort((a, b) => b.createdAt - a.createdAt), [sellerOrders]);
 
-  const paidOrders = useMemo(() => myOrders.filter((o) => o.status !== 'cancelled'), [myOrders]);
-  const revenue = paidOrders.reduce((s, o) => s + o.items.reduce((x, i) => x + i.price * i.qty, 0), 0);
-  const unitsSold = paidOrders.reduce((s, o) => s + o.items.reduce((x, i) => x + i.qty, 0), 0);
+  const orderCounts = useMemo(() => {
+    const counts = {
+      all: myOrders.length, pending: 0, awaiting: 0, confirmed: 0, shipping: 0, completed: 0, cancelled: 0,
+    };
+    myOrders.forEach((order) => {
+      if (order.status === 'cancelled') {
+        counts.cancelled += 1;
+        return;
+      }
+      // Chờ thanh toán là bộ lọc riêng, đơn vẫn đồng thời nằm ở tab trạng thái của nó.
+      if (isPrepaid(order.payment) && !order.paidAt) counts.awaiting += 1;
+      if (order.status === 'delivered' || order.status === 'completed') counts.completed += 1;
+      else counts[order.status] += 1;
+    });
+    return counts;
+  }, [myOrders]);
+
+  const visibleOrders = useMemo(() => myOrders.filter((order) => {
+    if (orderFilter === 'all') return true;
+    if (orderFilter === 'awaiting') {
+      return isPrepaid(order.payment) && !order.paidAt && order.status !== 'cancelled';
+    }
+    if (orderFilter === 'completed') return order.status === 'delivered' || order.status === 'completed';
+    return order.status === orderFilter;
+  }), [myOrders, orderFilter]);
+
+  // Doanh thu chỉ ghi nhận khi đã thực thu: QR đã được shop xác nhận tiền,
+  // hoặc COD đã giao/hoàn tất. Đơn hủy không tính kể cả đã từng thanh toán.
+  const revenueOrders = useMemo(() => myOrders.filter((o) => {
+    if (o.status === 'cancelled') return false;
+    if (o.paidAt) return true;
+    return o.payment === 'cod' && (o.status === 'delivered' || o.status === 'completed');
+  }), [myOrders]);
+  const revenue = revenueOrders.reduce((s, o) => s + o.total, 0);
+  const realizedByBook = useMemo(() => {
+    const map = {};
+    revenueOrders.forEach((o) => o.items.forEach((i) => {
+      if (i.bookId) map[i.bookId] = (map[i.bookId] || 0) + i.qty;
+    }));
+    return map;
+  }, [revenueOrders]);
+  const unitsSold = Object.values(realizedByBook).reduce((s, qty) => s + qty, 0);
   const pendingCount = myOrders.filter((o) => o.status === 'pending').length;
   const lowStock = myBooks.filter((b) => b.stock > 0 && b.stock < 60);
 
   const revenueByDay = useMemo(() => {
     const map = buildDailyBuckets();
-    paidOrders.forEach((o) => {
-      const key = new Date(o.createdAt).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' });
-      if (key in map) map[key] += o.items.reduce((x, i) => x + i.price * i.qty, 0);
+    revenueOrders.forEach((o) => {
+      // Đơn QR ghi nhận vào ngày shop xác nhận tiền; COD vào ngày đặt vì chưa có mốc giao hàng riêng.
+      const key = new Date(o.paidAt || o.createdAt).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' });
+      if (key in map) map[key] += o.total;
     });
     return Object.entries(map).map(([date, value]) => ({ date, value }));
-  }, [paidOrders]);
+  }, [revenueOrders]);
 
   const topProducts = useMemo(
-    () => [...myBooks].sort((a, b) => b.sold * b.price - a.sold * a.price).slice(0, 6)
-      .map((b) => ({ name: b.title.length > 18 ? b.title.slice(0, 18) + '…' : b.title, value: b.sold * b.price })),
-    [myBooks]
+    () => [...myBooks].sort((a, b) => (realizedByBook[b.id] || 0) * b.price - (realizedByBook[a.id] || 0) * a.price)
+      .slice(0, 6)
+      .map((b) => ({
+        name: b.title.length > 18 ? b.title.slice(0, 18) + '…' : b.title,
+        value: (realizedByBook[b.id] || 0) * b.price,
+      })),
+    [myBooks, realizedByBook]
   );
 
   const byCategory = useMemo(() => {
     const map = {};
-    myBooks.forEach((b) => { map[b.category] = (map[b.category] || 0) + b.sold; });
-    return Object.entries(map).map(([name, value]) => ({ name, value }));
-  }, [myBooks]);
+    myBooks.forEach((b) => { map[b.category] = (map[b.category] || 0) + (realizedByBook[b.id] || 0); });
+    return Object.entries(map).filter(([, value]) => value > 0).map(([name, value]) => ({ name, value }));
+  }, [myBooks, realizedByBook]);
+
+  const soldOf = (book) => realizedByBook[book.id] || 0;
 
   const openCreate = () => { setForm({ ...EMPTY_FORM, blindBook: false }); setEditing('new'); };
 
@@ -206,6 +271,41 @@ export default function ShopDashboard() {
     }
   };
 
+  const confirmRefund = async (order) => {
+    if (!window.confirm(`Xác nhận bạn đã hoàn ${currency(order.total)} cho đơn ${order.code}?`)) return;
+    setBusyOrder(order.id);
+    try {
+      await confirmSellerOrderRefund(order.id);
+      toast(`Đơn ${order.code}: đã xác nhận hoàn tiền`);
+    } catch (error) {
+      toast(error.message || 'Không thể xác nhận hoàn tiền.', 'error');
+    } finally {
+      setBusyOrder(null);
+    }
+  };
+
+  const reloadOrders = async () => {
+    if (refreshingOrders) return;
+    setRefreshingOrders(true);
+    try {
+      await refreshSellerOrders();
+    } finally {
+      setRefreshingOrders(false);
+    }
+  };
+
+  const cancelShopOrder = (order) => {
+    const confirmed = order.status === 'confirmed';
+    const question = order.paidAt
+      ? `Đơn ${order.code} đã nhận ${currency(order.total)}. Hủy đơn? Sau đó bạn cần hoàn lại tiền cho khách.`
+      : confirmed
+        ? `Hủy đơn ${order.code}? Khách sẽ nhận thông báo đơn đã hủy.`
+        : `Từ chối đơn ${order.code}?`;
+    if (!window.confirm(question)) return;
+    advanceOrder(order, 'cancelled',
+      order.paidAt ? 'Hết hàng, shop sẽ hoàn tiền cho khách' : confirmed ? 'Shop hủy đơn' : 'Hết hàng');
+  };
+
   if (!shop) {
     return (
       <div className="main-layout">
@@ -234,8 +334,8 @@ export default function ShopDashboard() {
       </div>
 
       <div className="grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', marginBottom: 20 }}>
-        <StatCard icon={DollarSign} label="Doanh thu" value={currency(revenue)} sub={`${paidOrders.length} đơn hợp lệ`} />
-        <StatCard icon={ShoppingBag} label="Sản phẩm đã bán" value={compactNumber(unitsSold)} sub="Trong các đơn hiện có" color="var(--info)" bg="var(--info-soft)" />
+        <StatCard icon={DollarSign} label="Doanh thu" value={currency(revenue)} sub={`${revenueOrders.length} đơn đã thu tiền`} />
+        <StatCard icon={ShoppingBag} label="Sản phẩm đã bán" value={compactNumber(unitsSold)} sub="Chỉ tính đơn đã thu tiền" color="var(--info)" bg="var(--info-soft)" />
         <StatCard icon={Package} label="Đơn chờ xác nhận" value={pendingCount} sub="Cần xử lý sớm" color="var(--warning)" bg="var(--warning-soft)" />
         <StatCard icon={AlertTriangle} label="Sắp hết hàng" value={lowStock.length} sub="Dưới 60 cuốn tồn kho" color="var(--danger)" bg="var(--danger-soft)" />
       </div>
@@ -345,7 +445,7 @@ export default function ShopDashboard() {
                     <td>
                       <span className={`badge ${b.stock === 0 ? 'badge-red' : b.stock < 60 ? 'badge-amber' : 'badge-green'}`}>{b.stock}</span>
                     </td>
-                    <td className="small">{b.sold.toLocaleString('vi-VN')}</td>
+                    <td className="small">{soldOf(b).toLocaleString('vi-VN')}</td>
                     <td className="small">{b.rating}★</td>
                     <td>
                       <span className={`badge ${b.status === 'active' ? 'badge-green' : b.status === 'pending' ? 'badge-amber' : 'badge-red'}`}>
@@ -408,10 +508,39 @@ export default function ShopDashboard() {
       {/* ---------- Đơn hàng ---------- */}
       {tab === 'orders' && (
         <div className="stack">
-          {myOrders.length === 0 && <div className="card"><EmptyState icon={Package} title="Chưa có đơn hàng nào" /></div>}
-          {myOrders.map((o) => {
+          <div className="card" style={{ padding: 0 }}>
+            <div className="row-between" style={{ gap: 10, padding: '10px 12px', flexWrap: 'wrap' }}>
+              <div className="tabs" style={{ borderBottom: 'none', flexWrap: 'wrap' }}>
+                {ORDER_FILTERS.map((f) => (
+                  <button
+                    key={f.id}
+                    className={`tab ${orderFilter === f.id ? 'active' : ''}`}
+                    onClick={() => setOrderFilter(f.id)}
+                  >
+                    {f.label}{orderCounts[f.id] ? ` (${orderCounts[f.id]})` : ''}
+                  </button>
+                ))}
+              </div>
+              <button className="btn btn-ghost btn-sm" onClick={reloadOrders} disabled={refreshingOrders}>
+                <RefreshCw size={15} /> {refreshingOrders ? 'Đang cập nhật...' : 'Làm mới'}
+              </button>
+            </div>
+            <div className="tiny muted" style={{ padding: '0 14px 10px' }}>
+              Tự động cập nhật mỗi 10 giây khi tab này đang mở.
+            </div>
+          </div>
+
+          {visibleOrders.length === 0 && (
+            <div className="card">
+              <EmptyState
+                icon={Package}
+                title={myOrders.length === 0 ? 'Chưa có đơn hàng nào' : 'Không có đơn ở mục này'}
+              />
+            </div>
+          )}
+
+          {visibleOrders.map((o) => {
             const st = ORDER_STATUS[o.status];
-            const total = o.items.reduce((s, i) => s + i.price * i.qty, 0);
             // Đơn quét mã QR (chuyển khoản / MoMo) chỉ được giao sau khi shop xác nhận đã nhận tiền
             const awaitingPayment = isPrepaid(o.payment) && !o.paidAt && o.status !== 'cancelled';
             return (
@@ -453,34 +582,71 @@ export default function ShopDashboard() {
 
                 <div className="row-between" style={{ paddingTop: 12, borderTop: '1px solid var(--border-color)', flexWrap: 'wrap', gap: 10 }}>
                   <div className="small stack" style={{ gap: 2 }}>
-                    <span>Giá trị đơn: <span className="price">{currency(total)}</span></span>
+                    <span>Giá trị đơn: <span className="price">{currency(o.total)}</span></span>
                     <span className="tiny muted">
                       {PAYMENT_LABEL[o.payment]}
                       {awaitingPayment && ` · Khách cần chuyển ${currency(o.total)}, nội dung "${o.code}"`}
+                      {awaitingPayment && o.paymentExpiresAt && ` · Hạn thanh toán ${dateTime(o.paymentExpiresAt)}`}
+                      {o.paidAt && ` · Đã nhận tiền lúc ${dateTime(o.paidAt)}`}
+                      {o.refundedAt && ` · Đã hoàn tiền lúc ${dateTime(o.refundedAt)}`}
                     </span>
                   </div>
                   <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
                     {awaitingPayment && (
-                      <button className="btn btn-soft btn-sm" disabled={busyOrder === o.id} onClick={() => confirmPaid(o)}>Đã nhận tiền</button>
+                      <button className="btn btn-primary btn-sm" disabled={busyOrder === o.id} onClick={() => confirmPaid(o)}>
+                        <BadgeCheck size={15} /> Đã nhận tiền
+                      </button>
                     )}
                     {o.status === 'pending' && (
                       <>
-                        <button className="btn btn-primary btn-sm" disabled={busyOrder === o.id} onClick={() => advanceOrder(o, 'confirmed')}>Xác nhận đơn</button>
-                        <button className="btn btn-ghost btn-sm" style={{ color: 'var(--danger)' }} disabled={busyOrder === o.id} onClick={() => advanceOrder(o, 'cancelled', 'Shop từ chối: hết hàng')}>Từ chối</button>
+                        <button
+                          className={`btn ${awaitingPayment ? 'btn-soft' : 'btn-primary'} btn-sm`}
+                          disabled={busyOrder === o.id}
+                          onClick={() => advanceOrder(o, 'confirmed')}
+                        >
+                          Xác nhận đơn
+                        </button>
+                        <button
+                          className="btn btn-ghost btn-sm"
+                          style={{ color: 'var(--danger)' }}
+                          disabled={busyOrder === o.id}
+                          onClick={() => cancelShopOrder(o)}
+                        >
+                          {o.paidAt ? 'Hủy & hoàn tiền' : 'Từ chối'}
+                        </button>
                       </>
                     )}
                     {o.status === 'confirmed' && (
-                      <button
-                        className="btn btn-primary btn-sm"
-                        disabled={busyOrder === o.id || awaitingPayment}
-                        title={awaitingPayment ? 'Chờ khách thanh toán trước khi giao hàng' : undefined}
-                        onClick={() => advanceOrder(o, 'shipping')}
-                      >
-                        Bàn giao vận chuyển
-                      </button>
+                      <>
+                        <button
+                          className="btn btn-primary btn-sm"
+                          disabled={busyOrder === o.id || awaitingPayment}
+                          title={awaitingPayment ? 'Chờ khách thanh toán trước khi giao hàng' : undefined}
+                          onClick={() => advanceOrder(o, 'shipping')}
+                        >
+                          Bàn giao vận chuyển
+                        </button>
+                        <button
+                          className="btn btn-ghost btn-sm"
+                          style={{ color: 'var(--danger)' }}
+                          disabled={busyOrder === o.id}
+                          onClick={() => cancelShopOrder(o)}
+                        >
+                          {o.paidAt ? 'Hủy & hoàn tiền' : 'Hủy đơn'}
+                        </button>
+                      </>
                     )}
                     {o.status === 'shipping' && (
                       <button className="btn btn-primary btn-sm" disabled={busyOrder === o.id} onClick={() => advanceOrder(o, 'delivered')}>Đánh dấu đã giao</button>
+                    )}
+                    {o.status === 'cancelled' && o.paidAt && (
+                      o.refundedAt ? (
+                        <span className="badge badge-green">Đã hoàn tiền</span>
+                      ) : (
+                        <button className="btn btn-primary btn-sm" disabled={busyOrder === o.id} onClick={() => confirmRefund(o)}>
+                          Xác nhận đã hoàn tiền
+                        </button>
+                      )
                     )}
                   </div>
                 </div>
@@ -494,24 +660,27 @@ export default function ShopDashboard() {
       {tab === 'revenue' && (
         <div className="stack">
           <div className="grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))' }}>
-            <StatCard icon={TrendingUp} label="Giá trị đơn trung bình" value={currency(paidOrders.length ? revenue / paidOrders.length : 0)} />
+            <StatCard icon={TrendingUp} label="Giá trị đơn trung bình" value={currency(revenueOrders.length ? revenue / revenueOrders.length : 0)} />
             <StatCard icon={Package} label="Tổng số đơn" value={myOrders.length} sub={`${myOrders.filter((o) => o.status === 'cancelled').length} đơn bị hủy`} color="var(--info)" bg="var(--info-soft)" />
             <StatCard icon={ShoppingBag} label="Số đầu sách" value={myBooks.length} sub={`${myBooks.filter((b) => b.status === 'active').length} đang bán`} color="var(--purple)" bg="var(--purple-soft)" />
           </div>
 
           <div className="card table-wrap">
-            <h3 style={{ margin: '0 0 14px', fontSize: 16 }}>Chi tiết doanh thu theo sản phẩm</h3>
+            <h3 style={{ margin: '0 0 6px', fontSize: 16 }}>Chi tiết doanh thu theo sản phẩm</h3>
+            <p className="tiny muted" style={{ margin: '0 0 14px' }}>
+              Chỉ tính sản phẩm trong các đơn đã thực thu tiền, chưa trừ giảm giá và phí vận chuyển.
+            </p>
             <table className="table">
               <thead>
                 <tr><th>Sản phẩm</th><th>Giá bán</th><th>Đã bán</th><th>Doanh thu ước tính</th><th>Tồn kho</th></tr>
               </thead>
               <tbody>
-                {[...myBooks].sort((a, b) => b.sold * b.price - a.sold * a.price).map((b) => (
+                {[...myBooks].sort((a, b) => soldOf(b) * b.price - soldOf(a) * a.price).map((b) => (
                   <tr key={b.id}>
                     <td className="small truncate" style={{ maxWidth: 260 }}>{b.title}</td>
                     <td className="small">{currency(b.price)}</td>
-                    <td className="small">{b.sold.toLocaleString('vi-VN')}</td>
-                    <td className="small price">{currency(b.sold * b.price)}</td>
+                    <td className="small">{soldOf(b).toLocaleString('vi-VN')}</td>
+                    <td className="small price">{currency(soldOf(b) * b.price)}</td>
                     <td className="small">{b.stock}</td>
                   </tr>
                 ))}

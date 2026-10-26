@@ -68,4 +68,10 @@ public class SellerController {
     public ResponseEntity<OrderResponseDto> confirmOrderPayment(@CurrentUserId Long userId, @PathVariable Long id) {
         return ResponseEntity.ok(orderService.confirmShopOrderPayment(userId, id));
     }
+
+    /** Xác nhận đã hoàn tiền cho đơn trả trước bị hủy. */
+    @PatchMapping("/orders/{id}/refunded")
+    public ResponseEntity<OrderResponseDto> confirmOrderRefund(@CurrentUserId Long userId, @PathVariable Long id) {
+        return ResponseEntity.ok(orderService.confirmShopOrderRefund(userId, id));
+    }
 }

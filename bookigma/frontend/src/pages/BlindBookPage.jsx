@@ -176,7 +176,7 @@ export default function BlindBookPage() {
             <ChevronLeft size={15} /> Đổi mức hộp
           </button>
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) minmax(0,340px)', gap: 20, alignItems: 'start' }}>
+          <div className="split-layout" style={{ '--split-side': '340px' }}>
             <div className="card" style={{ textAlign: 'center', padding: '36px 24px' }}>
               <div style={{ fontSize: 88, marginBottom: 10 }}>{tier.emoji}</div>
 
@@ -235,7 +235,7 @@ export default function BlindBookPage() {
               )}
             </div>
 
-            <div className="card stack" style={{ position: 'sticky', top: 76 }}>
+            <div className="card stack sticky-rail">
               <h4 style={{ margin: 0, fontSize: 16 }}>Tóm tắt đơn</h4>
               <hr className="divider" style={{ margin: 0 }} />
               <div className="row-between small"><span className="muted">Tâm trạng</span><span className="strong">{mood.emoji} {mood.label}</span></div>

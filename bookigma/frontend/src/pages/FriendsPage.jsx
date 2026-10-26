@@ -173,7 +173,7 @@ export default function FriendsPage() {
         <p className="muted small">Danh sách được lấy từ tài khoản thật trong database.</p>
       </div>
 
-      <div className="grid" style={{ gridTemplateColumns: 'minmax(280px, 1fr) minmax(0, 2fr)', gap: 20, alignItems: 'start' }}>
+      <div className="split-layout side-left" style={{ '--split-lead': '280px' }}>
         <aside className="stack" style={{ gap: 16 }}>
           <div className="card" style={{ padding: 16 }}>
             <h3>Thống kê</h3>

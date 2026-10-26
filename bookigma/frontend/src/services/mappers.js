@@ -126,6 +126,8 @@ export function toOrder(dto) {
     total: num(dto.total),
     // toTime(null) trả về giờ hiện tại, nên phải giữ null cho đơn chưa thanh toán
     paidAt: dto.paidAt ? toTime(dto.paidAt) : null,
+    paymentExpiresAt: dto.paymentExpiresAt ? toTime(dto.paymentExpiresAt) : null,
+    refundedAt: dto.refundedAt ? toTime(dto.refundedAt) : null,
     createdAt: toTime(dto.createdAt),
     address: { name: dto.recipientName, phone: dto.recipientPhone, detail: dto.shippingAddress },
     items: (dto.items || []).map((item) => ({

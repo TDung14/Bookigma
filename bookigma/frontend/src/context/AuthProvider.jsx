@@ -13,6 +13,7 @@ export const ROLES = Object.freeze({
   USER: 'user',
   SHOP: 'shop',
   MODERATOR: 'moderator',
+  SUPPORT: 'support',
   ADMIN: 'admin',
 });
 
@@ -29,6 +30,10 @@ function normalizeRole(role) {
 
   if (value === 'SHOP') {
     return ROLES.SHOP;
+  }
+
+  if (value === 'SUPPORT') {
+    return ROLES.SUPPORT;
   }
 
   return ROLES.USER;
@@ -57,6 +62,8 @@ function normalizeUser(apiUser) {
     return null;
   }
 
+  const role = normalizeRole(apiUser.role);
+
   return {
     ...apiUser,
 
@@ -71,11 +78,11 @@ function normalizeUser(apiUser) {
         ? 'suspended'
         : 'active',
 
-    role: normalizeRole(apiUser.role),
+    role,
 
     points: Number(apiUser.points || 0),
 
-    badge: apiUser.badge || 'Thành viên',
+    badge: apiUser.badge || (role === ROLES.SUPPORT ? 'Hỗ trợ viên' : 'Thành viên'),
 
     booksRead: Number(apiUser.booksRead || 0),
 
@@ -142,7 +149,18 @@ export function AuthProvider({ children }) {
         if (cancelled) return;
         const normalized = normalizeUser(apiUser);
         if (normalized) {
-          setUser(normalized);
+          // Chuỗi ngày và số sách đã đọc do backend trả về; chỉ giữ dữ liệu thú ảo lưu trên thiết bị.
+          setUser((current) => {
+            const sameUser = current && String(current.id) === String(normalized.id);
+            return {
+              ...normalized,
+              ...(sameUser ? {
+                petXp: current.petXp ?? 0,
+                petLastFed: current.petLastFed ?? null,
+                petName: current.petName || '',
+              } : {}),
+            };
+          });
         } else {
           clearAuthToken();
           setUser(null);
@@ -382,6 +400,11 @@ export function AuthProvider({ children }) {
             fullName: data.fullName,
             bio: data.bio,
             avatarUrl: data.avatarUrl,
+            bannerUrl: data.bannerUrl,
+            interests: data.interests,
+            hometown: data.hometown,
+            currentLocation: data.currentLocation,
+            maritalStatus: data.maritalStatus,
           },
           { userId: user.id }
         );
@@ -409,13 +432,13 @@ export function AuthProvider({ children }) {
           role: normalized.role || user.role,
 
           points:
-            user.points ?? 0,
+            normalized.points ?? user.points ?? 0,
 
           badge:
             user.badge || 'Thành viên',
 
           booksRead:
-            user.booksRead ?? 0,
+            normalized.booksRead ?? user.booksRead ?? 0,
         };
 
         setUser(updatedUser);

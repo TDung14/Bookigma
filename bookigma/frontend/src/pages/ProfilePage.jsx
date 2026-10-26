@@ -1,24 +1,37 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import {
-  AtSign, BookOpen, Calendar, ChevronRight, Clock, Flame, Image as ImageIcon,
-  KeyRound, Mail, MessageSquare, Package, Pencil, Play, Save, Send, ShieldCheck,
-  ShoppingBag, ThumbsUp, UserRound, Users, X,
+  AtSign, BookOpen, Calendar, ChevronRight, Clock, Flame, Heart, Home,
+  Image as ImageIcon, KeyRound, Mail, MapPin, MessageSquare, Package,
+  Pencil, Play, Save, ShieldCheck, ShoppingBag, Sparkles, UserRound,
+  Users, X,
 } from 'lucide-react';
 import { useApp, useAuth, useToast } from '../hooks/useStore';
 import { currency, dateOnly, duration, timeAgo } from '../lib/format';
 import { EmptyState, ProgressBar, SectionTitle } from '../components/common/ui';
-import { apiCall, uploadAvatar } from '../services/api';
+import { apiCall, uploadAvatar, uploadBanner } from '../services/api';
 import { getFriendsOf } from '../services/friendApi';
 import { avatarSrc, mediaSrc } from '../lib/avatar';
+import { lockBodyScroll, unlockBodyScroll } from '../lib/scrollLock';
+import CommentThread from '../components/social/CommentThread';
+import ReactionButton from '../components/social/ReactionButton';
+import ReactionSummary from '../components/social/ReactionSummary';
 
 const VIDEO_MEDIA_RE = /\.(mp4|webm|ogg|ogv|mov|m4v)(?:[?#].*)?$/i;
 const ROLE_LABELS = {
   user: 'Thành viên',
   shop: 'Đối tác',
   moderator: 'Kiểm duyệt viên',
+  support: 'Hỗ trợ viên',
   admin: 'Quản trị viên',
 };
+
+const MARITAL_STATUS_OPTIONS = ['Độc thân', 'Đang hẹn hò', 'Đã kết hôn', 'Đã ly hôn', 'Góa', 'Phức tạp'];
+
+const splitInterests = (value) => String(value || '')
+  .split(',')
+  .map((item) => item.trim())
+  .filter(Boolean);
 
 const isVideoMedia = (url) => /^data:video\//i.test(url || '') || VIDEO_MEDIA_RE.test(url || '');
 
@@ -40,20 +53,38 @@ export default function ProfilePage() {
   const { user: authUser, updateProfile, loading } = useAuth();
   const {
     users, orders, posts, getProgress, getFriends, books,
-    findOrCreateConversation, openFloatingChat, toggleLike, addComment,
+    findOrCreateConversation, openFloatingChat, reactToPost, addComment, reactToComment,
   } = useApp();
   const toast = useToast();
   const [editing, setEditing] = useState(false);
-  const [form, setForm] = useState({ email: '', fullName: '', bio: '', avatarUrl: '' });
+  const [form, setForm] = useState({
+    email: '', fullName: '', bio: '', avatarUrl: '', bannerUrl: '',
+    interests: '', hometown: '', currentLocation: '', maritalStatus: '',
+  });
   const [passwordForm, setPasswordForm] = useState({ currentPassword: '', newPassword: '', confirmPassword: '' });
   const [changingPassword, setChangingPassword] = useState(false);
   const [avatarFile, setAvatarFile] = useState(null);
   const [avatarPreview, setAvatarPreview] = useState('');
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  const [bannerFile, setBannerFile] = useState(null);
+  const [bannerPreview, setBannerPreview] = useState('');
+  const [uploadingBanner, setUploadingBanner] = useState(false);
   const [friendSnapshot, setFriendSnapshot] = useState({ profileId: null, list: [] });
   const [openComments, setOpenComments] = useState({});
-  const [commentDraft, setCommentDraft] = useState({});
   const [mediaViewer, setMediaViewer] = useState(null);
+
+  useEffect(() => {
+    if (!mediaViewer) return undefined;
+    lockBodyScroll();
+    const onKey = (e) => {
+      if (e.key === 'Escape') setMediaViewer(null);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => {
+      unlockBodyScroll();
+      window.removeEventListener('keydown', onKey);
+    };
+  }, [mediaViewer]);
 
   const isOwnProfile = !userId || String(userId) === String(authUser?.id ?? '');
   const profileUser = useMemo(() => {
@@ -69,6 +100,11 @@ export default function ProfilePage() {
       fullName: profileUser.name || '',
       bio: profileUser.bio || '',
       avatarUrl: profileUser.avatar || '',
+      bannerUrl: profileUser.bannerUrl || '',
+      interests: profileUser.interests || '',
+      hometown: profileUser.hometown || '',
+      currentLocation: profileUser.currentLocation || '',
+      maritalStatus: profileUser.maritalStatus || '',
     };
     apiCall(`/users/${currentUserId}/profile`)
       .then((profile) => setForm({
@@ -76,6 +112,11 @@ export default function ProfilePage() {
         fullName: profile.fullName || '',
         bio: profile.bio || '',
         avatarUrl: profile.avatarUrl || '',
+        bannerUrl: profile.bannerUrl || '',
+        interests: profile.interests || '',
+        hometown: profile.hometown || '',
+        currentLocation: profile.currentLocation || '',
+        maritalStatus: profile.maritalStatus || '',
       }))
       .catch(() => setForm(fallback));
   }, [profileUser, editing]);
@@ -108,7 +149,7 @@ export default function ProfilePage() {
   }
 
   const myOrders = orders.filter((o) => String(o.userId) === String(profileUser.id));
-  const myPosts = posts.filter((p) => String(p.authorId) === String(profileUser.id) && !p.hidden);
+  const myPosts = posts.filter((p) => String(p.authorId) === String(profileUser.id) && !p.hidden && !p.clubId);
   const mediaPosts = myPosts.filter((p) => p.image);
   const progress = getProgress(profileUser.id);
 
@@ -165,6 +206,7 @@ export default function ProfilePage() {
   const submitProfile = async (e) => {
     e.preventDefault();
     let avatarUrl = form.avatarUrl;
+    let bannerUrl = form.bannerUrl;
     if (avatarFile) {
       setUploadingAvatar(true);
       try {
@@ -176,10 +218,23 @@ export default function ProfilePage() {
       }
       setUploadingAvatar(false);
     }
-    const result = await updateProfile({ ...form, avatarUrl });
+    if (bannerFile) {
+      setUploadingBanner(true);
+      try {
+        const uploaded = await uploadBanner(bannerFile, authUser.id);
+        bannerUrl = uploaded.bannerUrl;
+      } catch (error) {
+        setUploadingBanner(false);
+        return toast(error.message || 'Không thể tải ảnh bìa lên.', 'error');
+      }
+      setUploadingBanner(false);
+    }
+    const result = await updateProfile({ ...form, avatarUrl, bannerUrl });
     if (!result.ok) return toast(result.error, 'error');
     setAvatarFile(null);
     setAvatarPreview('');
+    setBannerFile(null);
+    setBannerPreview('');
     setEditing(false);
     toast('Đã cập nhật thông tin cá nhân.');
   };
@@ -201,29 +256,51 @@ export default function ProfilePage() {
     setAvatarPreview(URL.createObjectURL(file));
   };
 
-  const submitComment = async (postId) => {
-    const text = (commentDraft[postId] || '').trim();
-    if (!text) return;
-    try {
-      await addComment(postId, { text });
-      setCommentDraft((d) => ({ ...d, [postId]: '' }));
-    } catch (error) {
-      toast(error.message || 'Không thể gửi bình luận.', 'error');
+  const handleBannerFile = (event) => {
+    const file = event.target.files?.[0] || null;
+    if (!file) return;
+    if (!['image/jpeg', 'image/png', 'image/webp', 'image/gif'].includes(file.type)) {
+      event.target.value = '';
+      toast('Chỉ chấp nhận ảnh JPG, PNG, WEBP hoặc GIF.', 'error');
+      return;
     }
+    if (file.size > 8 * 1024 * 1024) {
+      event.target.value = '';
+      toast('Ảnh bìa không được vượt quá 8 MB.', 'error');
+      return;
+    }
+    setBannerFile(file);
+    setBannerPreview(URL.createObjectURL(file));
   };
 
-  const handleLike = async (postId) => {
-    try {
-      await toggleLike(postId);
-    } catch (error) {
-      toast(error.message || 'Không thể cập nhật lượt thích.', 'error');
-    }
+  const removeBanner = () => {
+    setBannerFile(null);
+    setBannerPreview('');
+    setForm((current) => ({ ...current, bannerUrl: '' }));
   };
+
+  const toggleEditing = () => {
+    if (editing) {
+      setAvatarFile(null);
+      setAvatarPreview('');
+      setBannerFile(null);
+      setBannerPreview('');
+    }
+    setEditing((value) => !value);
+  };
+
+  const bannerSrc = bannerPreview || mediaSrc(editing ? form.bannerUrl : profileUser.bannerUrl);
+  const interests = splitInterests(profileUser.interests);
 
   return (
     <div className="main-layout profile-page" style={{ maxWidth: 1180 }}>
       <div className="card profile-hero">
-        <div className="profile-cover">
+        <div
+          className={`profile-cover${bannerSrc ? ' has-banner' : ''}`}
+          style={bannerSrc
+            ? { backgroundImage: `linear-gradient(180deg, rgba(6, 32, 22, 0.08) 12%, rgba(6, 32, 22, 0.62) 100%), url("${bannerSrc}")` }
+            : undefined}
+        >
           <div className="profile-cover-brand"><BookOpen size={17} /> Bookigma</div>
           <span className="profile-cover-quote hide-sm">“Mỗi cuốn sách là một chuyến đi.”</span>
         </div>
@@ -245,12 +322,18 @@ export default function ProfilePage() {
               <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
                 <span className="badge row" style={{ gap: 5 }}><Flame size={13} /> {(profileUser.points || 0).toLocaleString('vi-VN')} điểm</span>
                 <span className="badge row" style={{ gap: 5 }}><Calendar size={13} /> Tham gia {joinedDate}</span>
+                {profileUser.currentLocation && (
+                  <span className="badge row" style={{ gap: 5 }}><MapPin size={13} /> {profileUser.currentLocation}</span>
+                )}
+                {profileUser.maritalStatus && (
+                  <span className="badge row" style={{ gap: 5 }}><Heart size={13} /> {profileUser.maritalStatus}</span>
+                )}
               </div>
             </div>
             <div className="profile-actions">
               {isOwnProfile ? (
                 <>
-                  <button className="btn btn-ghost btn-sm" onClick={() => setEditing((v) => !v)}>
+                  <button className="btn btn-ghost btn-sm" onClick={toggleEditing}>
                     {editing ? <X size={15} /> : <Pencil size={15} />} {editing ? 'Đóng' : 'Chỉnh sửa'}
                   </button>
                   <Link to="/orders" className="btn btn-ghost btn-sm"><Package size={15} /> Đơn hàng</Link>
@@ -273,6 +356,14 @@ export default function ProfilePage() {
             </div>
           </div>
           {profileUser.bio && <p className="profile-hero-bio">{profileUser.bio}</p>}
+          {interests.length > 0 && (
+            <div className="profile-interests">
+              <span className="profile-interests-label"><Sparkles size={14} /> Sở thích</span>
+              {interests.map((interest) => (
+                <span key={interest} className="profile-interest-chip">{interest}</span>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 
@@ -280,6 +371,21 @@ export default function ProfilePage() {
         <div className="stack" style={{ marginTop: 18 }}>
           <form onSubmit={submitProfile} className="card">
             <h3 style={{ marginTop: 0 }}>Chỉnh sửa thông tin cá nhân</h3>
+            <div className="field" style={{ marginBottom: 14 }}>
+              <label className="label">Ảnh bìa</label>
+              {bannerSrc && (
+                <div className="profile-banner-picker">
+                  <img src={bannerSrc} alt="Ảnh bìa hồ sơ" />
+                  <button type="button" className="btn btn-ghost btn-sm" onClick={removeBanner}>
+                    <X size={14} /> Xoá ảnh bìa
+                  </button>
+                </div>
+              )}
+              <input className="input" type="file" accept="image/png,image/jpeg,image/webp,image/gif" onChange={handleBannerFile} />
+              <p className="tiny muted" style={{ margin: '5px 0 0' }}>
+                Ảnh ngang, khuyến nghị tỉ lệ 16:5 (JPG, PNG, WEBP hoặc GIF; tối đa 8 MB).
+              </p>
+            </div>
             <div className="grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))' }}>
               <div className="field">
                 <label className="label">Họ và tên</label>
@@ -295,13 +401,41 @@ export default function ProfilePage() {
                 <p className="tiny muted" style={{ margin: '5px 0 0' }}>Chọn ảnh từ máy tính (JPG, PNG, WEBP hoặc GIF; tối đa 5 MB). Không nhập link ảnh.</p>
                 {avatarFile && <button type="button" className="btn btn-ghost btn-sm" style={{ marginTop: 6 }} onClick={() => { setAvatarFile(null); setAvatarPreview(''); }}>Hủy chọn ảnh</button>}
               </div>
+              <div className="field">
+                <label className="label">Quê quán</label>
+                <input className="input" value={form.hometown} maxLength={120} placeholder="VD: Hà Nội" onChange={(e) => setForm({ ...form, hometown: e.target.value })} />
+              </div>
+              <div className="field">
+                <label className="label">Nơi ở hiện tại</label>
+                <input className="input" value={form.currentLocation} maxLength={120} placeholder="VD: TP. Hồ Chí Minh" onChange={(e) => setForm({ ...form, currentLocation: e.target.value })} />
+              </div>
+              <div className="field">
+                <label className="label">Trạng thái hôn nhân</label>
+                <select className="input" value={form.maritalStatus} onChange={(e) => setForm({ ...form, maritalStatus: e.target.value })}>
+                  <option value="">Chưa cập nhật</option>
+                  {MARITAL_STATUS_OPTIONS.map((status) => (
+                    <option key={status} value={status}>{status}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="field">
+                <label className="label">Sở thích</label>
+                <input
+                  className="input"
+                  value={form.interests}
+                  maxLength={500}
+                  placeholder="VD: Văn học, Kinh doanh, Khoa học"
+                  onChange={(e) => setForm({ ...form, interests: e.target.value })}
+                />
+                <p className="tiny muted" style={{ margin: '5px 0 0' }}>Phân tách từng sở thích bằng dấu phẩy.</p>
+              </div>
             </div>
             <div className="field" style={{ marginTop: 12 }}>
               <label className="label">Giới thiệu</label>
               <textarea className="textarea" value={form.bio} onChange={(e) => setForm({ ...form, bio: e.target.value })} rows={4} />
             </div>
-            <button className="btn btn-primary" type="submit" disabled={loading || uploadingAvatar} style={{ marginTop: 12 }}>
-              <Save size={15} /> {loading || uploadingAvatar ? 'Đang lưu...' : 'Lưu thay đổi'}
+            <button className="btn btn-primary" type="submit" disabled={loading || uploadingAvatar || uploadingBanner} style={{ marginTop: 12 }}>
+              <Save size={15} /> {loading || uploadingAvatar || uploadingBanner ? 'Đang lưu...' : 'Lưu thay đổi'}
             </button>
           </form>
 
@@ -424,18 +558,19 @@ export default function ProfilePage() {
                     )}
 
                     <div className="profile-post-stats">
-                      <span><ThumbsUp size={14} /> {likeCount} lượt thích</span>
+                      <ReactionSummary counts={post.reactionCounts} total={likeCount} />
                       <span><MessageSquare size={14} /> {comments.length} bình luận</span>
                     </div>
 
                     <div className="profile-post-actions">
-                      <button
-                        type="button"
-                        className={`profile-post-action ${post.likedByMe ? 'active' : ''}`}
-                        onClick={() => handleLike(post.id)}
-                      >
-                        <ThumbsUp size={16} fill={post.likedByMe ? 'currentColor' : 'none'} /> Thích
-                      </button>
+                      <ReactionButton
+                        myReaction={post.myReaction}
+                        count={likeCount}
+                        onReact={(type) => {
+                          if (!authUser) return navigate('/login');
+                          reactToPost(post.id, type).catch((error) => toast(error.message || 'Không thể cập nhật cảm xúc.', 'error'));
+                        }}
+                      />
                       <button
                         type="button"
                         className="profile-post-action"
@@ -446,33 +581,17 @@ export default function ProfilePage() {
                     </div>
 
                     {showComments && (
-                      <div className="profile-post-comments">
-                        {comments.length === 0 && <p className="tiny muted" style={{ margin: 0 }}>Chưa có bình luận nào.</p>}
-                        {comments.map((comment) => (
-                          <div key={comment.id} className="profile-comment">
-                            <img src={avatarSrc(comment.avatarUrl)} alt="" className="avatar" style={{ width: 30, height: 30 }} />
-                            <div className="profile-comment-bubble">
-                              <div className="tiny strong">{comment.authorName || comment.username || 'Người dùng'}</div>
-                              <div className="small" style={{ overflowWrap: 'anywhere' }}>{comment.text}</div>
-                              <div className="tiny muted" style={{ marginTop: 2 }}>{timeAgo(comment.time)}</div>
-                            </div>
-                          </div>
-                        ))}
-                        <div className="row" style={{ gap: 8 }}>
-                          <img src={avatarSrc(authUser?.avatar)} alt="" className="avatar" style={{ width: 30, height: 30 }} />
-                          <input
-                            className="input"
-                            style={{ borderRadius: 18, height: 36 }}
-                            placeholder="Viết bình luận..."
-                            value={commentDraft[post.id] || ''}
-                            onChange={(e) => setCommentDraft((d) => ({ ...d, [post.id]: e.target.value }))}
-                            onKeyDown={(e) => e.key === 'Enter' && submitComment(post.id)}
-                          />
-                          <button type="button" className="btn-icon" onClick={() => submitComment(post.id)} aria-label="Gửi bình luận">
-                            <Send size={17} color="var(--accent-green)" />
-                          </button>
-                        </div>
-                      </div>
+                      <CommentThread
+                        post={post}
+                        user={authUser}
+                        onAdd={async (text) => {
+                          await addComment(post.id, { text });
+                          if (authUser) {
+                            toast('Đã bình luận — nhận 10 Điểm Bookigma.');
+                          }
+                        }}
+                        onReactComment={(commentId, type) => reactToComment(post.id, commentId, type)}
+                      />
                     )}
                   </article>
                 );
@@ -490,6 +609,15 @@ export default function ProfilePage() {
               <ProfileInfoRow icon={Calendar} label="Ngày tham gia" value={joinedDate} />
               <ProfileInfoRow icon={Flame} label="Điểm Bookigma" value={(profileUser.points || 0).toLocaleString('vi-VN')} />
               <ProfileInfoRow icon={ShieldCheck} label="Vai trò" value={roleLabel} />
+              {(isOwnProfile || profileUser.hometown) && (
+                <ProfileInfoRow icon={MapPin} label="Quê quán" value={profileUser.hometown || 'Chưa cập nhật'} />
+              )}
+              {(isOwnProfile || profileUser.currentLocation) && (
+                <ProfileInfoRow icon={Home} label="Nơi ở hiện tại" value={profileUser.currentLocation || 'Chưa cập nhật'} />
+              )}
+              {(isOwnProfile || profileUser.maritalStatus) && (
+                <ProfileInfoRow icon={Heart} label="Trạng thái hôn nhân" value={profileUser.maritalStatus || 'Chưa cập nhật'} />
+              )}
             </div>
           </div>
 

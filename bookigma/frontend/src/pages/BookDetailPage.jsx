@@ -17,7 +17,7 @@ export default function BookDetailPage() {
   const toast = useToast();
   const { user } = useAuth();
   const {
-    bookById, shopById, books, addToCart, getProgress, findOrCreateConversation, userById, trackDaily, catalogStatus,
+    bookById, shopById, books, addToCart, getProgress, findOrCreateConversation, userById, recordExploreBook, catalogStatus,
     openFloatingChat,
   } = useApp();
 
@@ -30,10 +30,10 @@ export default function BookDetailPage() {
   const foundBookId = book?.id;
 
   // Mở trang chi tiết một cuốn tính là một lượt "khám phá sách mới" cho nhiệm vụ hằng ngày.
-  // Phụ thuộc vào id (không phải object) để lần tải lại danh mục không bị tính thêm lượt.
+  // Server tự chống trùng nên mở lại cùng một cuốn không tăng tiến độ.
   useEffect(() => {
-    if (viewerId && foundBookId) trackDaily(viewerId, 'explore', 1);
-  }, [viewerId, foundBookId, trackDaily]);
+    if (viewerId && foundBookId) recordExploreBook(viewerId, foundBookId);
+  }, [viewerId, foundBookId, recordExploreBook]);
 
   if (!book && catalogStatus === 'loading') {
     return (
@@ -108,9 +108,9 @@ export default function BookDetailPage() {
         <ChevronLeft size={16} /> Quay lại
       </button>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,330px) minmax(0,1fr)', gap: 24, alignItems: 'start' }}>
+      <div className="split-layout side-left" style={{ '--split-lead': '330px', '--split-gap': '24px' }}>
         {/* Ảnh + shop */}
-        <div className="stack" style={{ position: 'sticky', top: 76 }}>
+        <div className="stack sticky-rail">
           <div className="card">
             <img src={book.cover} alt={book.title} className="book-cover" style={{ width: '100%', height: 380 }} />
           </div>

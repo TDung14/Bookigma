@@ -50,6 +50,11 @@ public class ChatController {
         return chatService.createStrangerConversation(userId);
     }
 
+    @PostMapping("/conversations/support")
+    public ChatDtos.ChatConversationResponse createSupport(@CurrentUserId Long userId) {
+        return chatService.createSupportConversation(userId);
+    }
+
     @PostMapping("/conversations/{conversationId}/messages")
     public ChatDtos.ChatMessageResponse sendMessage(@PathVariable Long conversationId,
                                                    @CurrentUserId Long userId,

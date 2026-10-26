@@ -4,6 +4,7 @@ import com.bookigma.bookigma.dto.CheckoutRequestDto;
 import com.bookigma.bookigma.dto.OrderItemResponseDto;
 import com.bookigma.bookigma.dto.OrderResponseDto;
 import com.bookigma.bookigma.dto.OrderTimelineDto;
+import com.bookigma.bookigma.dto.PointTransactionDto;
 import com.bookigma.bookigma.dto.StatusUpdateRequestDto;
 import com.bookigma.bookigma.entity.BlindBox;
 import com.bookigma.bookigma.entity.Book;
@@ -18,12 +19,15 @@ import com.bookigma.bookigma.repository.BookRepository;
 import com.bookigma.bookigma.repository.CartItemRepository;
 import com.bookigma.bookigma.repository.OrderRepository;
 import com.bookigma.bookigma.repository.VoucherRepository;
+import com.bookigma.bookigma.reward.entity.UserVoucher;
+import com.bookigma.bookigma.reward.repository.UserVoucherRepository;
 import com.bookigma.bookigma.service.AccessGuard;
 import com.bookigma.bookigma.service.DtoMapper;
 import com.bookigma.bookigma.service.InputUtils;
 import com.bookigma.bookigma.service.NotificationService;
 import com.bookigma.bookigma.service.OrderPricing;
 import com.bookigma.bookigma.service.OrderService;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -41,18 +45,28 @@ public class OrderServiceImpl implements OrderService {
     /** Người mua không được thấy sách trong hộp Blind Book chưa mở; shop và admin thì cần thấy để giao hàng. */
     private enum Viewer { BUYER, STAFF }
 
+    private static final int ORDER_REWARD_POINTS = 50;
+    private static final String ORDER_REWARD_TYPE = "ORDER_COMPLETED";
+    /** Đơn cũ từng được cộng điểm ngay lúc đặt hàng. */
+    private static final String LEGACY_ORDER_REWARD_TYPE = "ORDER_PLACED";
+
     private final OrderRepository orderRepository;
     private final CartItemRepository cartItemRepository;
     private final BookRepository bookRepository;
     private final VoucherRepository voucherRepository;
+    private final UserVoucherRepository userVoucherRepository;
     private final AccessGuard accessGuard;
     private final NotificationService notificationService;
     private final com.bookigma.bookigma.service.PointService pointService;
+
+    @Value("${app.orders.unpaid-expiry-hours:24}")
+    private long unpaidExpiryHours;
 
     public OrderServiceImpl(OrderRepository orderRepository,
                             CartItemRepository cartItemRepository,
                             BookRepository bookRepository,
                             VoucherRepository voucherRepository,
+                            UserVoucherRepository userVoucherRepository,
                             AccessGuard accessGuard,
                             NotificationService notificationService,
                             com.bookigma.bookigma.service.PointService pointService) {
@@ -60,6 +74,7 @@ public class OrderServiceImpl implements OrderService {
         this.cartItemRepository = cartItemRepository;
         this.bookRepository = bookRepository;
         this.voucherRepository = voucherRepository;
+        this.userVoucherRepository = userVoucherRepository;
         this.accessGuard = accessGuard;
         this.notificationService = notificationService;
         this.pointService = pointService;
@@ -83,9 +98,11 @@ public class OrderServiceImpl implements OrderService {
         List<BigDecimal> subtotals = parcels.stream().map(Parcel::subtotal).toList();
         BigDecimal subtotal = subtotals.stream().reduce(BigDecimal.ZERO, BigDecimal::add);
 
-        Voucher voucher = resolveVoucher(request.getVoucherCode(), subtotal);
-        List<BigDecimal> discounts = new ArrayList<>(OrderPricing.allocate(OrderPricing.discountFor(voucher, subtotal), subtotals));
-        boolean freeShipping = voucher != null && voucher.getDiscountType() == Voucher.DiscountType.SHIPPING;
+        AppliedVoucher voucher = resolveVoucher(userId, request.getVoucherCode(), subtotal);
+        List<BigDecimal> discounts = new ArrayList<>(OrderPricing.allocate(
+                OrderPricing.discountFor(voucher.discountType(), voucher.discountValue(), voucher.maxDiscount(), subtotal),
+                subtotals));
+        boolean freeShipping = voucher.discountType() == Voucher.DiscountType.SHIPPING;
 
         // 1 điểm = 1đ, chỉ trừ vào tiền hàng còn lại sau voucher (không trừ phí ship) và không trừ quá số đó
         List<Integer> pointsPerOrder = new ArrayList<>(parcels.stream().map(parcel -> 0).toList());
@@ -125,13 +142,16 @@ public class OrderServiceImpl implements OrderService {
                     .shippingAddress(request.getShippingAddress().trim())
                     .note(InputUtils.blankToNull(request.getNote()))
                     .paymentMethod(paymentMethod)
-                    .voucherCode(voucher == null ? null : voucher.getCode())
+                    .voucherCode(voucher.code())
                     .subtotal(money(subtotals.get(i)))
                     .shippingFee(money(shippingFee))
                     .discountAmount(money(discount))
                     .pointsUsed(pointsPerOrder.get(i))
                     .totalAmount(money(subtotals.get(i).subtract(discount).add(shippingFee).max(BigDecimal.ZERO)))
                     .status(Order.Status.PENDING)
+                    .paymentExpiresAt(paymentMethod.isPrepaid()
+                            ? LocalDateTime.now().plusHours(unpaidExpiryHours)
+                            : null)
                     .build();
 
             for (CartItem line : parcel.lines) {
@@ -143,9 +163,19 @@ public class OrderServiceImpl implements OrderService {
 
         cartItemRepository.deleteAll(cart);
 
+        // Voucher đổi bằng điểm chỉ dùng một lần, áp cho toàn bộ các đơn tách ra từ lần thanh toán này.
+        if (voucher.personal() != null && !orders.isEmpty()) {
+            UserVoucher personal = voucher.personal();
+            personal.setUsed(true);
+            personal.setUsedAt(LocalDateTime.now());
+            personal.setOrderId(orders.get(0).getId());
+            userVoucherRepository.save(personal);
+        }
+
         for (Order order : orders) {
             notificationService.createNotification(buyer.getId(),
-                    "Đơn hàng " + order.getCode() + " đã được tạo và đang chờ shop xác nhận.",
+                    "Đơn hàng " + order.getCode() + " đã được tạo và đang chờ shop xác nhận. "
+                            + "Bạn sẽ được cộng Điểm Bookigma khi đơn hoàn tất.",
                     "/orders/" + order.getId());
             notifyShop(order, "Bạn có đơn hàng mới " + order.getCode() + " đang chờ xác nhận.");
         }
@@ -191,25 +221,7 @@ public class OrderServiceImpl implements OrderService {
         }
         changeStatus(order, Order.Status.COMPLETED, "Khách xác nhận đã nhận hàng");
         notifyShop(order, "Đơn " + order.getCode() + " đã hoàn thành — khách xác nhận đã nhận hàng.");
-        awardPointsForCompletedOrder(order);
         return toDto(order, Viewer.BUYER);
-    }
-
-    private void awardPointsForCompletedOrder(Order order) {
-        if (order.getTotalAmount() != null && order.getTotalAmount().compareTo(BigDecimal.ZERO) > 0) {
-            int rewardPoints = order.getTotalAmount().multiply(new BigDecimal("0.01")).intValue();
-            if (rewardPoints > 0) {
-                try {
-                    pointService.addPoints(
-                            order.getUser().getId(),
-                            rewardPoints,
-                            "ORDER_REWARD",
-                            order.getCode(),
-                            "Thưởng Điểm từ đơn hàng #" + order.getCode()
-                    );
-                } catch (Exception ignored) {}
-            }
-        }
     }
 
     @Override
@@ -251,10 +263,10 @@ public class OrderServiceImpl implements OrderService {
 
         Order.Status next = InputUtils.parseEnum(Order.Status.class, request.getStatus(),
                 "Trạng thái đơn hàng không hợp lệ.");
-        // Shop chỉ đẩy đơn đi tiếp, hoặc từ chối đơn chưa xác nhận. Hoàn thành là việc của người mua.
+        // Shop được xác nhận, giao hàng hoặc hủy đơn trước khi bàn giao vận chuyển. Hoàn thành là việc của người mua.
         boolean allowedForShop = switch (next) {
             case CONFIRMED, SHIPPING, DELIVERED -> true;
-            case CANCELLED -> order.getStatus() == Order.Status.PENDING;
+            case CANCELLED -> order.getStatus() == Order.Status.PENDING || order.getStatus() == Order.Status.CONFIRMED;
             case PENDING, COMPLETED -> false;
         };
         if (!allowedForShop || !order.getStatus().canMoveTo(next)) {
@@ -267,9 +279,10 @@ public class OrderServiceImpl implements OrderService {
         }
 
         String note = InputUtils.blankToNull(request.getNote());
+        // Tính lời nhắn trước khi đổi trạng thái để còn phân biệt đơn bị từ chối hay đơn đã xác nhận bị hủy.
+        String message = buyerMessage(order, next, note);
         changeStatus(order, next, note == null ? defaultShopNote(order, next) : note);
-        notificationService.createNotification(order.getUser().getId(),
-                buyerMessage(order, next, note), "/orders/" + order.getId());
+        notificationService.createNotification(order.getUser().getId(), message, "/orders/" + order.getId());
         return toDto(order, Viewer.STAFF);
     }
 
@@ -293,6 +306,61 @@ public class OrderServiceImpl implements OrderService {
         notificationService.createNotification(order.getUser().getId(),
                 "Shop đã nhận được thanh toán cho đơn " + order.getCode() + ".", "/orders/" + order.getId());
         return toDto(order, Viewer.STAFF);
+    }
+
+    @Override
+    @Transactional
+    public OrderResponseDto confirmShopOrderRefund(Long userId, Long orderId) {
+        Order order = findShopOrder(userId, orderId);
+        if (order.getStatus() != Order.Status.CANCELLED) {
+            throw ApiException.conflict("Chỉ xác nhận hoàn tiền cho đơn đã hủy.");
+        }
+        if (order.getPaidAt() == null) {
+            throw ApiException.badRequest("Đơn " + order.getCode() + " chưa thanh toán, không cần hoàn tiền.");
+        }
+        if (order.getRefundedAt() != null) {
+            throw ApiException.conflict("Đơn " + order.getCode() + " đã được xác nhận hoàn tiền.");
+        }
+
+        order.setRefundedAt(LocalDateTime.now());
+        order.addHistory(Order.Status.CANCELLED,
+                "Shop đã hoàn " + DtoMapper.formatVnd(order.getTotalAmount()) + " cho khách");
+        notificationService.createNotification(order.getUser().getId(),
+                "Shop đã hoàn lại " + DtoMapper.formatVnd(order.getTotalAmount())
+                        + " cho đơn " + order.getCode() + ".",
+                "/orders/" + order.getId());
+        return toDto(order, Viewer.STAFF);
+    }
+
+    @Override
+    @Transactional
+    public int expireUnpaidOrders() {
+        LocalDateTime now = LocalDateTime.now();
+        List<Long> candidates = orderRepository.findExpiredUnpaidOrderIds(
+                List.of(Order.Status.PENDING, Order.Status.CONFIRMED),
+                List.of(Order.PaymentMethod.BANK, Order.PaymentMethod.MOMO),
+                now);
+        int expired = 0;
+        for (Long orderId : candidates) {
+            Order order = orderRepository.findWithDetailsById(orderId).orElse(null);
+            // Kiểm tra lại trong transaction: shop có thể vừa xác nhận thanh toán.
+            if (order == null || order.getPaidAt() != null
+                    || (order.getStatus() != Order.Status.PENDING && order.getStatus() != Order.Status.CONFIRMED)
+                    || !order.getPaymentMethod().isPrepaid()
+                    || order.getPaymentExpiresAt() == null
+                    || !order.getPaymentExpiresAt().isBefore(now)) {
+                continue;
+            }
+
+            changeStatus(order, Order.Status.CANCELLED, "Hết hạn thanh toán");
+            notificationService.createNotification(order.getUser().getId(),
+                    "Đơn hàng " + order.getCode()
+                            + " đã tự hủy vì chưa được thanh toán trước hạn.",
+                    "/orders/" + order.getId());
+            notifyShop(order, "Đơn " + order.getCode() + " đã tự hủy vì khách chưa thanh toán.");
+            expired++;
+        }
+        return expired;
     }
 
     // ---------- Quản trị ----------
@@ -397,18 +465,47 @@ public class OrderServiceImpl implements OrderService {
         }
     }
 
-    private Voucher resolveVoucher(String code, BigDecimal subtotal) {
+    private record AppliedVoucher(String code,
+                                  Voucher.DiscountType discountType,
+                                  BigDecimal discountValue,
+                                  BigDecimal maxDiscount,
+                                  UserVoucher personal) {
+        static AppliedVoucher none() {
+            return new AppliedVoucher(null, null, null, null, null);
+        }
+    }
+
+    /** Voucher cá nhân (đổi bằng điểm) được ưu tiên trước mã công khai cùng tên. */
+    private AppliedVoucher resolveVoucher(Long userId, String code, BigDecimal subtotal) {
         String normalized = InputUtils.blankToNull(code);
         if (normalized == null) {
-            return null;
+            return AppliedVoucher.none();
         }
+
+        UserVoucher personal = userVoucherRepository.findByUser_IdAndCodeIgnoreCase(userId, normalized).orElse(null);
+        if (personal != null) {
+            if (Boolean.TRUE.equals(personal.getUsed())) {
+                throw ApiException.badRequest("Mã " + personal.getCode() + " đã được sử dụng.");
+            }
+            if (personal.getExpiresAt() != null && personal.getExpiresAt().isBefore(LocalDateTime.now())) {
+                throw ApiException.badRequest("Mã " + personal.getCode() + " đã hết hạn.");
+            }
+            if (subtotal.compareTo(personal.getMinOrderAmount()) < 0) {
+                throw ApiException.badRequest("Đơn tối thiểu " + DtoMapper.formatVnd(personal.getMinOrderAmount())
+                        + " mới dùng được mã " + personal.getCode() + ".");
+            }
+            return new AppliedVoucher(personal.getCode(), personal.getDiscountType(),
+                    personal.getDiscountValue(), personal.getMaxDiscount(), personal);
+        }
+
         Voucher voucher = voucherRepository.findByCodeIgnoreCaseAndActiveTrue(normalized)
                 .orElseThrow(() -> ApiException.badRequest("Mã giảm giá không tồn tại hoặc đã hết hạn."));
         if (subtotal.compareTo(voucher.getMinOrderAmount()) < 0) {
             throw ApiException.badRequest("Đơn tối thiểu " + DtoMapper.formatVnd(voucher.getMinOrderAmount())
                     + " mới dùng được mã " + voucher.getCode() + ".");
         }
-        return voucher;
+        return new AppliedVoucher(voucher.getCode(), voucher.getDiscountType(),
+                voucher.getDiscountValue(), voucher.getMaxDiscount(), null);
     }
 
     private String generateOrderCode() {
@@ -460,6 +557,11 @@ public class OrderServiceImpl implements OrderService {
                     item.getBlindBox().setStatus(BlindBox.Status.CANCELLED);
                 }
             }
+            // Đơn cũ từng được cộng điểm lúc đặt hàng; đơn mới chỉ nhận điểm khi hoàn tất nên không cần trừ.
+            if (hasOrderReward(order)) {
+                pointService.deductPointsUpTo(order.getUser().getId(), ORDER_REWARD_POINTS, "ORDER_CANCELLED",
+                        order.getCode(), "Trừ " + ORDER_REWARD_POINTS + " Điểm Bookigma do hủy đơn hàng #" + order.getCode());
+            }
             int points = order.getPointsUsed() == null ? 0 : order.getPointsUsed();
             if (points > 0) {
                 pointService.refundPoints(order.getUser().getId(), points, "ORDER_REFUND", order.getCode(),
@@ -468,6 +570,47 @@ public class OrderServiceImpl implements OrderService {
         }
         order.setStatus(next);
         order.addHistory(next, InputUtils.truncate(note, 255));
+
+        // Trả voucher cá nhân về ví nếu không còn đơn nào khác trong lần thanh toán đó đang dùng mã này.
+        if (next == Order.Status.CANCELLED && order.getVoucherCode() != null) {
+            restorePersonalVoucher(order);
+        }
+        if (next == Order.Status.COMPLETED) {
+            awardOrderPoints(order);
+        }
+    }
+
+    private boolean hasOrderReward(Order order) {
+        Long userId = order.getUser().getId();
+        return pointService.hasTransaction(userId, ORDER_REWARD_TYPE, order.getCode())
+                || pointService.hasTransaction(userId, LEGACY_ORDER_REWARD_TYPE, order.getCode());
+    }
+
+    private void awardOrderPoints(Order order) {
+        if (hasOrderReward(order)) {
+            return;
+        }
+        PointTransactionDto reward = pointService.addRewardPoints(order.getUser().getId(), ORDER_REWARD_POINTS,
+                ORDER_REWARD_TYPE, order.getCode(), "Hoàn tất đơn hàng #" + order.getCode());
+        notificationService.createNotification(order.getUser().getId(),
+                "Đơn hàng " + order.getCode() + " đã hoàn tất. Bạn được cộng " + reward.getAmount()
+                        + " Điểm Bookigma.",
+                "/rewards");
+    }
+
+    private void restorePersonalVoucher(Order order) {
+        userVoucherRepository.findByUser_IdAndCodeIgnoreCase(order.getUser().getId(), order.getVoucherCode())
+                .filter(voucher -> Boolean.TRUE.equals(voucher.getUsed()))
+                .ifPresent(voucher -> {
+                    boolean stillInUse = orderRepository.existsByVoucherCodeAndStatusNotAndIdNot(
+                            order.getVoucherCode(), Order.Status.CANCELLED, order.getId());
+                    if (!stillInUse) {
+                        voucher.setUsed(false);
+                        voucher.setUsedAt(null);
+                        voucher.setOrderId(null);
+                        userVoucherRepository.save(voucher);
+                    }
+                });
     }
 
     private boolean hasBlindBox(Order order) {
@@ -481,7 +624,7 @@ public class OrderServiceImpl implements OrderService {
             case DELIVERED -> hasBlindBox(order)
                     ? "Giao hàng thành công — bấm \"Mở hộp\" để xem sách bên trong"
                     : "Giao hàng thành công";
-            case CANCELLED -> "Shop từ chối đơn hàng";
+            case CANCELLED -> order.getStatus() == Order.Status.PENDING ? "Shop từ chối đơn hàng" : "Shop hủy đơn hàng";
             default -> next.getLabel();
         };
     }
@@ -494,7 +637,9 @@ public class OrderServiceImpl implements OrderService {
             case DELIVERED -> hasBlindBox(order)
                     ? "Đơn hàng " + code + " đã giao thành công. Mở hộp Blind Book xem bên trong có gì nhé!"
                     : "Đơn hàng " + code + " đã giao thành công. Hãy xác nhận khi bạn nhận được hàng.";
-            case CANCELLED -> "Đơn hàng " + code + " đã bị shop từ chối" + (note == null ? "." : ": " + note)
+            case CANCELLED -> "Đơn hàng " + code
+                    + (order.getStatus() == Order.Status.PENDING ? " đã bị shop từ chối" : " đã bị shop hủy")
+                    + (note == null ? "." : ": " + note)
                     + (order.getPaidAt() != null ? " Shop sẽ hoàn lại tiền bạn đã thanh toán." : "");
             default -> "Đơn hàng " + code + ": " + next.getLabel().toLowerCase() + ".";
         };
@@ -529,6 +674,8 @@ public class OrderServiceImpl implements OrderService {
                 .discount(order.getDiscountAmount())
                 .total(order.getTotalAmount())
                 .paidAt(order.getPaidAt())
+                .paymentExpiresAt(order.getPaymentExpiresAt())
+                .refundedAt(order.getRefundedAt())
                 .createdAt(order.getCreatedAt())
                 .items(order.getItems().stream().map(item -> toItemDto(item, viewer)).toList())
                 .timeline(order.getHistory().stream()

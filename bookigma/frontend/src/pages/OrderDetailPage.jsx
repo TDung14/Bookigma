@@ -3,9 +3,10 @@ import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { CheckCircle2, ChevronLeft, Circle, Gift, MapPin, MessageSquare, Receipt, Sparkles } from 'lucide-react';
 import { useApp, useAuth, useToast } from '../hooks/useStore';
+import useVisibleInterval from '../hooks/useVisibleInterval';
 import { currency, dateTime, ORDER_FLOW, ORDER_STATUS, PAYMENT_LABEL } from '../lib/format';
 import { isPrepaid } from '../lib/payment';
-import PaymentQr, { PaymentBadge } from '../components/common/PaymentQr';
+import { PaymentBadge } from '../components/common/PaymentQr';
 
 export default function OrderDetailPage() {
   const { id } = useParams();
@@ -21,6 +22,9 @@ export default function OrderDetailPage() {
   useEffect(() => {
     refreshOrders();
   }, [refreshOrders]);
+
+  // Trạng thái giao hàng / thanh toán do shop cập nhật, nên tự làm mới khi trang đang mở.
+  useVisibleInterval(refreshOrders, 10000);
 
   // id trên URL là chuỗi, id đơn từ backend là số
   const order = orders.find((o) => String(o.id) === id);
@@ -110,7 +114,7 @@ export default function OrderDetailPage() {
         )}
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) minmax(0,330px)', gap: 18, alignItems: 'start' }}>
+      <div className="split-layout" style={{ '--split-gap': '18px' }}>
         <div className="stack">
           <div className="card">
             <h3 style={{ margin: '0 0 14px', fontSize: 16 }}>Sản phẩm</h3>
@@ -198,7 +202,7 @@ export default function OrderDetailPage() {
           </div>
         </div>
 
-        <div className="stack" style={{ position: 'sticky', top: 76 }}>
+        <div className="stack sticky-rail">
           <div className="card">
             <div className="row" style={{ marginBottom: 12 }}>
               <MapPin size={17} color="var(--accent-green)" />
@@ -222,10 +226,31 @@ export default function OrderDetailPage() {
             {order.paidAt && (
               <div className="tiny muted" style={{ marginTop: 4 }}>Shop đã nhận tiền lúc {dateTime(order.paidAt)}</div>
             )}
+            {cancelled && order.paidAt && (
+              order.refundedAt ? (
+                <div className="tiny" style={{ marginTop: 4, color: 'var(--accent-green)' }}>
+                  Shop đã hoàn tiền lúc {dateTime(order.refundedAt)}
+                </div>
+              ) : (
+                <div className="tiny muted" style={{ marginTop: 4 }}>Shop đang xử lý hoàn tiền cho bạn.</div>
+              )
+            )}
             {isPrepaid(order.payment) && !order.paidAt && !cancelled && (
-              <div style={{ marginTop: 12 }}>
-                <PaymentQr order={order} />
-              </div>
+              <>
+                {order.paymentExpiresAt && (
+                  <div className="tiny muted" style={{ marginTop: 6 }}>
+                    Hạn thanh toán: {dateTime(order.paymentExpiresAt)}
+                  </div>
+                )}
+                <button
+                  type="button"
+                  className="btn btn-primary btn-block"
+                  style={{ marginTop: 12 }}
+                  onClick={() => navigate(`/order-payment/${order.id}?ids=${order.id}`)}
+                >
+                  Thanh toán đơn hàng
+                </button>
+              </>
             )}
             {shop && (
               <>
@@ -249,7 +274,7 @@ export default function OrderDetailPage() {
                 disabled={busy}
                 onClick={() => {
                   const question = order.paidAt
-                    ? `Đơn ${order.code} đã thanh toán. Hủy đơn thì shop sẽ liên hệ hoàn tiền cho bạn. Tiếp tục hủy?`
+                    ? `Đơn ${order.code} đã thanh toán. Hủy đơn thì shop sẽ hoàn tiền cho bạn. Tiếp tục hủy?`
                     : `Hủy đơn hàng ${order.code}?`;
                   if (!window.confirm(question)) return;
                   run(() => cancelOrder(order.id), 'Đã hủy đơn hàng.', 'info');

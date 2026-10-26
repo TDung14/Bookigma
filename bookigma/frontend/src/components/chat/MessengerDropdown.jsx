@@ -240,7 +240,7 @@ export default function MessengerDropdown({ isOpen, onClose }) {
                 <img src={avatarSrc(u.avatar)} alt="" className="avatar" style={{ width: 40, height: 40 }} />
                 <div style={{ flex: 1, minWidth: 0, textAlign: 'left' }}>
                   <div className="small strong truncate">{u.name}</div>
-                  <div className="tiny muted">{u.role === 'shop' ? 'Shop đối tác' : u.badge || 'Độc giả'}</div>
+                  <div className="tiny muted">{u.role === 'shop' ? 'Shop đối tác' : u.role === 'support' ? 'Hỗ trợ viên' : u.badge || 'Độc giả'}</div>
                 </div>
               </button>
             ))}

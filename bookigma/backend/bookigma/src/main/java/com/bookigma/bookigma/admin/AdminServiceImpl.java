@@ -191,7 +191,7 @@ public class AdminServiceImpl implements AdminService {
         try {
             newRole = User.Role.valueOf(role == null ? "" : role.trim().toUpperCase(Locale.ROOT));
         } catch (IllegalArgumentException ex) {
-            throw new IllegalArgumentException("Role không hợp lệ. Chỉ hỗ trợ USER, SHOP, MODERATOR, ADMIN.");
+            throw new IllegalArgumentException("Role không hợp lệ. Chỉ hỗ trợ USER, SHOP, MODERATOR, SUPPORT, ADMIN.");
         }
 
         validateRole(newRole);
@@ -325,8 +325,9 @@ public class AdminServiceImpl implements AdminService {
     }
 
     private void validateRole(User.Role role) {
-        if (role != User.Role.USER && role != User.Role.SHOP && role != User.Role.MODERATOR && role != User.Role.ADMIN) {
-            throw new IllegalArgumentException("Role không hợp lệ. Chỉ hỗ trợ USER, SHOP, MODERATOR, ADMIN.");
+        if (role != User.Role.USER && role != User.Role.SHOP && role != User.Role.MODERATOR
+                && role != User.Role.SUPPORT && role != User.Role.ADMIN) {
+            throw new IllegalArgumentException("Role không hợp lệ. Chỉ hỗ trợ USER, SHOP, MODERATOR, SUPPORT, ADMIN.");
         }
     }
 

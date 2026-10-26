@@ -22,16 +22,26 @@ public final class OrderPricing {
 
     /** Tổng số tiền được giảm của cả lần thanh toán (voucher SHIPPING giảm phí ship chứ không giảm tiền hàng). */
     public static BigDecimal discountFor(Voucher voucher, BigDecimal subtotal) {
-        if (voucher == null || subtotal.signum() <= 0) {
+        if (voucher == null) {
             return BigDecimal.ZERO;
         }
-        BigDecimal discount = switch (voucher.getDiscountType()) {
+        return discountFor(voucher.getDiscountType(), voucher.getDiscountValue(),
+                voucher.getMaxDiscount(), subtotal);
+    }
+
+    /** Cùng quy tắc trên nhưng nhận thẳng thuộc tính, dùng được cho voucher cá nhân (không thuộc bảng vouchers). */
+    public static BigDecimal discountFor(Voucher.DiscountType type, BigDecimal discountValue,
+                                         BigDecimal maxDiscount, BigDecimal subtotal) {
+        if (type == null || discountValue == null || subtotal.signum() <= 0) {
+            return BigDecimal.ZERO;
+        }
+        BigDecimal discount = switch (type) {
             case PERCENT -> {
-                BigDecimal percent = subtotal.multiply(voucher.getDiscountValue())
+                BigDecimal percent = subtotal.multiply(discountValue)
                         .divide(HUNDRED, 0, RoundingMode.HALF_UP);
-                yield voucher.getMaxDiscount() == null ? percent : percent.min(voucher.getMaxDiscount());
+                yield maxDiscount == null ? percent : percent.min(maxDiscount);
             }
-            case AMOUNT -> voucher.getDiscountValue();
+            case AMOUNT -> discountValue;
             case SHIPPING -> BigDecimal.ZERO;
         };
         return discount.min(subtotal).max(BigDecimal.ZERO);

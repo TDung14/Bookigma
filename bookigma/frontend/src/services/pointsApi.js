@@ -12,8 +12,8 @@ export async function dailyCheckIn(userId) {
   return apiCall('/points/check-in', 'POST', null, { userId });
 }
 
-export async function addPointsApi(userId, amount, type = 'TASK_REWARD', description = 'Thưởng điểm') {
-  return apiCall('/points/add', 'POST', { amount, type, description }, { userId });
+export async function earnActivityPoints(userId, activity, referenceId = null) {
+  return apiCall('/points/earn', 'POST', { activity, referenceId }, { userId });
 }
 
 export async function deductPointsApi(userId, amount, type = 'REDEEM', description = 'Dùng điểm') {

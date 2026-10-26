@@ -102,6 +102,49 @@ public class UserController {
         }
     }
 
+    /** Upload ảnh bìa hồ sơ; giới hạn 8 MB và lưu tách khỏi ảnh đại diện. */
+    @PostMapping(value = "/{id}/banner", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<?> uploadBanner(
+            @PathVariable Long id,
+            @CurrentUserId Long currentUserId,
+            @RequestParam("file") MultipartFile file
+    ) {
+        if (!id.equals(currentUserId)) {
+            return ResponseEntity.status(403).body(Map.of("message", "Bạn chỉ có thể đổi ảnh bìa của chính mình."));
+        }
+        if (file == null || file.isEmpty()) {
+            return ResponseEntity.badRequest().body(Map.of("message", "Vui lòng chọn ảnh bìa."));
+        }
+        if (file.getSize() > 8L * 1024 * 1024) {
+            return ResponseEntity.badRequest().body(Map.of("message", "Ảnh bìa không được vượt quá 8 MB."));
+        }
+
+        String extension;
+        String contentType = file.getContentType();
+        if ("image/jpeg".equalsIgnoreCase(contentType)) extension = ".jpg";
+        else if ("image/png".equalsIgnoreCase(contentType)) extension = ".png";
+        else if ("image/webp".equalsIgnoreCase(contentType)) extension = ".webp";
+        else if ("image/gif".equalsIgnoreCase(contentType)) extension = ".gif";
+        else return ResponseEntity.badRequest().body(Map.of("message", "Chỉ chấp nhận ảnh JPG, PNG, WEBP hoặc GIF."));
+
+        Path bannerDirectory = Paths.get(uploadDir).toAbsolutePath().normalize().resolve("banners").normalize();
+        String filename = UUID.randomUUID() + extension;
+        Path destination = bannerDirectory.resolve(filename).normalize();
+        if (!destination.startsWith(bannerDirectory)) {
+            return ResponseEntity.badRequest().body(Map.of("message", "Tên file không hợp lệ."));
+        }
+        try {
+            Files.createDirectories(bannerDirectory);
+            file.transferTo(destination);
+            return ResponseEntity.ok(userService.updateUserBanner(id, "/uploads/banners/" + filename));
+        } catch (IOException ex) {
+            return ResponseEntity.internalServerError().body(Map.of("message", "Không thể lưu ảnh bìa trên máy chủ."));
+        } catch (IllegalArgumentException ex) {
+            try { Files.deleteIfExists(destination); } catch (IOException ignored) { }
+            return ResponseEntity.badRequest().body(Map.of("message", ex.getMessage()));
+        }
+    }
+
     @PutMapping("/{id}/password")
     public ResponseEntity<?> changePassword(
             @PathVariable Long id,

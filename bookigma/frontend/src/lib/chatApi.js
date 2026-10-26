@@ -57,6 +57,12 @@ export async function createStrangerConversation() {
   });
 }
 
+export async function createSupportConversation() {
+  return request('/chat/conversations/support', {
+    method: 'POST',
+  });
+}
+
 export async function sendChatMessage(conversationId, content) {
   return request(`/chat/conversations/${conversationId}/messages`, {
     method: 'POST',

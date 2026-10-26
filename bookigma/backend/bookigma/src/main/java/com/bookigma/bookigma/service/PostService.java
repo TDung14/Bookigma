@@ -9,7 +9,10 @@ import java.util.List;
 public interface PostService {
     List<PostResponseDto> getAllPosts(Long currentUserId);
     List<PostResponseDto> getPostsByUser(Long userId, Long currentUserId);
+    List<PostResponseDto> getClubPosts(Long currentUserId, Long clubId);
     PostResponseDto createPost(Long currentUserId, PostRequestDto request);
-    PostResponseDto toggleLike(Long currentUserId, Long postId);
+    PostResponseDto createClubPost(Long currentUserId, Long clubId, PostRequestDto request);
+    PostResponseDto reactToPost(Long currentUserId, Long postId, String reactionType);
     CommentResponseDto addComment(Long currentUserId, Long postId, String content, Long parentCommentId);
+    CommentResponseDto reactToComment(Long currentUserId, Long commentId, String reactionType);
 }

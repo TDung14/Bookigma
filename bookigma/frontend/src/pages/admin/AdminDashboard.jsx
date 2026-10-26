@@ -1433,6 +1433,9 @@ export default function AdminDashboard() {
                             : u.role ===
                               'shop'
                             ? 'badge-blue'
+                            : u.role ===
+                              'support'
+                            ? 'badge-green'
                             : ''
                         }`}
                       >
@@ -1442,6 +1445,9 @@ export default function AdminDashboard() {
                           : u.role ===
                             'shop'
                           ? 'Chủ shop'
+                          : u.role ===
+                            'support'
+                          ? 'Hỗ trợ viên'
                           : 'Độc giả'}
                       </span>
                     </td>
@@ -1531,6 +1537,10 @@ export default function AdminDashboard() {
 
                             <option value="moderator">
                               MODERATOR
+                            </option>
+
+                            <option value="support">
+                              SUPPORT
                             </option>
 
                             <option value="admin">

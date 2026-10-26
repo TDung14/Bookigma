@@ -7,7 +7,9 @@ import com.bookigma.bookigma.chat.entity.ChatType;
 import com.bookigma.bookigma.chat.entity.MessageType;
 import com.bookigma.bookigma.chat.repository.ChatConversationRepository;
 import com.bookigma.bookigma.chat.repository.ChatMessageRepository;
+import com.bookigma.bookigma.entity.User;
 import com.bookigma.bookigma.exception.ApiException;
+import com.bookigma.bookigma.repository.UserRepository;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -25,13 +27,16 @@ public class ChatService {
 
     private final ChatConversationRepository conversationRepository;
     private final ChatMessageRepository messageRepository;
+    private final UserRepository userRepository;
     private final SimpMessagingTemplate messagingTemplate;
 
     public ChatService(ChatConversationRepository conversationRepository,
                        ChatMessageRepository messageRepository,
+                       UserRepository userRepository,
                        SimpMessagingTemplate messagingTemplate) {
         this.conversationRepository = conversationRepository;
         this.messageRepository = messageRepository;
+        this.userRepository = userRepository;
         this.messagingTemplate = messagingTemplate;
     }
 
@@ -98,6 +103,41 @@ public class ChatService {
         ids.forEach(conversation::addParticipant);
         conversationRepository.save(conversation);
 
+        return toConversationResponse(conversation);
+    }
+
+    @Transactional
+    public ChatDtos.ChatConversationResponse createSupportConversation(Long userId) {
+        User support = userRepository.findFirstByRoleAndActiveTrueOrderByIdAsc(User.Role.SUPPORT)
+                .orElseThrow(() -> ApiException.notFound("Hiện chưa có hỗ trợ viên nào trực tuyến."));
+
+        if (Objects.equals(userId, support.getId())) {
+            throw ApiException.badRequest("Tài khoản hỗ trợ không thể tự mở phiên hỗ trợ.");
+        }
+
+        Optional<ChatConversation> existing = conversationRepository.findDirectConversation(
+                ChatType.DIRECT, userId, support.getId());
+        if (existing.isPresent()) {
+            return toConversationResponse(existing.get());
+        }
+
+        ChatConversation conversation = new ChatConversation();
+        conversation.setType(ChatType.DIRECT);
+        conversation.setCreatedBy(userId);
+        conversation.setName("Hỗ trợ Bookigma");
+        conversation.addParticipant(userId);
+        conversation.addParticipant(support.getId());
+        conversationRepository.save(conversation);
+
+        ChatMessage greeting = new ChatMessage();
+        greeting.setConversation(conversation);
+        greeting.setSenderId(support.getId());
+        greeting.setContent("Xin chào 👋 Mình là hỗ trợ viên Bookigma. Bạn cần giúp gì hôm nay?");
+        greeting.setType(MessageType.TEXT);
+        messageRepository.save(greeting);
+
+        conversation.setUpdatedAt(Instant.now());
+        conversationRepository.save(conversation);
         return toConversationResponse(conversation);
     }
 

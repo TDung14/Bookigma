@@ -21,6 +21,12 @@ public interface OrderService {
     OrderResponseDto updateShopOrderStatus(Long userId, Long orderId, StatusUpdateRequestDto request);
     /** Shop xác nhận đã nhận tiền chuyển khoản / MoMo cho đơn. */
     OrderResponseDto confirmShopOrderPayment(Long userId, Long orderId);
+    /** Shop xác nhận đã hoàn tiền cho đơn trả trước đã hủy. */
+    OrderResponseDto confirmShopOrderRefund(Long userId, Long orderId);
+
+    // Hệ thống
+    /** Tự hủy các đơn trả trước chưa thanh toán quá hạn. Trả về số đơn đã hủy. */
+    int expireUnpaidOrders();
 
     // Quản trị
     List<OrderResponseDto> getAllOrders(Long adminId);

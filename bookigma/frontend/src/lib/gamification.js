@@ -9,16 +9,20 @@
  * Bốn thành phần: điểm Bookigma, cấp độ người đọc, nhiệm vụ hằng ngày, và thú ảo.
  */
 
-/** Điểm thưởng cho từng hành vi. Mọi nơi cộng điểm đều phải dùng hằng số ở đây. */
+/** Điểm thưởng cho từng hành vi. Server cũng dùng đúng các mức này khi cộng điểm. */
 export const POINT_RULES = {
-  readMinute: 2,        // mỗi phút đọc thực tế
-  finishChapter: 30,    // đọc xong một chương
-  finishBook: 200,      // đọc xong cả cuốn
-  createPost: 15,
-  createComment: 5,
+  readMinute: 1,
+  finishChapter: 10,
+  finishBook: 50,
+  createPost: 10,
+  createComment: 10,
   placeOrder: 50,
+  cancelOrder: 50,
+  dailyCheckIn: 30,
+  dailyStreak: 5,
+  quizCorrect: 10,
+  pomodoro: 20,
   exchangeOffer: 20,
-  dailyStreak: 25,      // thưởng thêm mỗi ngày giữ được chuỗi
 };
 
 /* ------------------------------------------------------------------ */
@@ -98,7 +102,15 @@ export function petMood(lastFed) {
 /*  Nhiệm vụ hằng ngày                                                 */
 /* ------------------------------------------------------------------ */
 
-export const todayKey = () => new Date().toISOString().slice(0, 10);
+const VN_DAY_FORMAT = new Intl.DateTimeFormat('en-CA', {
+  timeZone: 'Asia/Ho_Chi_Minh',
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+});
+
+/** Ngày theo giờ Việt Nam — nhiệm vụ và chuỗi phải đổi ngày lúc 00:00, không phải 07:00. */
+export const todayKey = (date = new Date()) => VN_DAY_FORMAT.format(date);
 
 /**
  * Bốn nhiệm vụ cố định mỗi ngày, tự đặt lại lúc nửa đêm.

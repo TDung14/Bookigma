@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import {
   BookOpen, Bookmark, Flag, Image as ImageIcon, X, MessageSquare, MoreHorizontal,
-  Send, Share2, ThumbsUp, UserCheck, Users, Sparkles, TrendingUp, Gift, Zap,
+  Send, Share2, UserCheck, Users, Sparkles, TrendingUp, Gift, Zap,
 } from 'lucide-react';
 import { useApp, useAuth, useToast } from '../hooks/useStore';
 import { timeAgo, currency } from '../lib/format';
@@ -11,9 +11,13 @@ import { POINT_RULES } from '../lib/gamification';
 import { uploadPostImage } from '../services/api';
 import ReportModal from '../components/common/ReportModal';
 import { ProgressBar } from '../components/common/ui';
+import CommentThread from '../components/social/CommentThread';
+import ReactionButton from '../components/social/ReactionButton';
+import ReactionSummary from '../components/social/ReactionSummary';
+import VipUpsell from '../components/vip/VipUpsell';
 
 const LEFT_MENU = [
-  { icon: Users, label: 'Nhóm đọc sách', color: '#3b82f6', to: '/' },
+  { icon: Users, label: 'Nhóm đọc sách', color: '#3b82f6', to: '/clubs' },
   { icon: UserCheck, label: 'Bạn bè', color: '#10b981', to: '/friends' },
   { icon: Bookmark, label: 'Đã lưu', color: '#8b5cf6', to: '/library' },
   { icon: BookOpen, label: 'Tủ sách cá nhân', color: '#ef4444', to: '/library' },
@@ -23,7 +27,7 @@ const LEFT_MENU = [
 ];
 
 export default function FeedPage() {
-  const { posts, userById, toggleLike, addComment, addPost, books, getProgress, trackDaily } = useApp();
+  const { posts, userById, reactToPost, addComment, reactToComment, addPost, books, getProgress } = useApp();
   const { user } = useAuth();
   const toast = useToast();
   const navigate = useNavigate();
@@ -35,7 +39,6 @@ export default function FeedPage() {
   const [imageInputKey, setImageInputKey] = useState(0);
   const [posting, setPosting] = useState(false);
   const [openComments, setOpenComments] = useState({});
-  const [commentDraft, setCommentDraft] = useState({});
   const [reportTarget, setReportTarget] = useState(null);
   const [menuOpen, setMenuOpen] = useState(null);
 
@@ -49,7 +52,7 @@ export default function FeedPage() {
     return () => URL.revokeObjectURL(objectUrl);
   }, [draftImage]);
 
-  const visiblePosts = useMemo(() => posts.filter((p) => !p.hidden), [posts]);
+  const visiblePosts = useMemo(() => posts.filter((p) => !p.hidden && !p.clubId), [posts]);
   const continueReading = useMemo(
     () =>
       Object.values(user ? getProgress(user.id) : {})
@@ -87,28 +90,14 @@ export default function FeedPage() {
     setDraftImage(null);
     setDraftBookId('');
     setImageInputKey((key) => key + 1);
-    trackDaily(user.id, 'social', 1);
     toast(`Đã đăng bài — nhận ${POINT_RULES.createPost} điểm Bookigma.`);
-  };
-
-  const submitComment = async (postId) => {
-    if (!user) return navigate('/login');
-    const text = (commentDraft[postId] || '').trim();
-    if (!text) return;
-    try {
-      await addComment(postId, { text });
-      setCommentDraft((d) => ({ ...d, [postId]: '' }));
-      trackDaily(user.id, 'social', 1);
-    } catch (error) {
-      toast(error.message || 'Không thể gửi bình luận.', 'error');
-    }
   };
 
   return (
     <div className="main-layout">
-      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,230px) minmax(0,1fr) minmax(0,300px)', gap: 20, alignItems: 'start' }}>
+      <div className="feed-layout">
         {/* ---------- Cột trái ---------- */}
-        <aside className="stack hide-lg" style={{ position: 'sticky', top: 76 }}>
+        <aside className="stack hide-lg sticky-rail">
           <div className="card card-tight">
             <h4 className="tiny muted" style={{ margin: '4px 0 8px 8px', textTransform: 'uppercase', letterSpacing: .5 }}>Khám phá</h4>
             {LEFT_MENU.map(({ icon: Icon, label, color, to }) => (
@@ -117,6 +106,8 @@ export default function FeedPage() {
               </Link>
             ))}
           </div>
+
+          <VipUpsell showPlans />
 
           {continueReading.length > 0 && (
             <div className="card card-tight">
@@ -216,7 +207,6 @@ export default function FeedPage() {
               avatar: post.avatarUrl || localAuthor?.avatar || '/default-avatar.svg',
               role: localAuthor?.role || 'user',
             };
-            const liked = user && post.likedByMe;
             const showComments = openComments[post.id];
 
             return (
@@ -228,6 +218,7 @@ export default function FeedPage() {
                       <div className="row" style={{ gap: 6 }}>
                         <h4 style={{ margin: 0, fontSize: 15 }}>{author?.name}</h4>
                         {author?.role === 'shop' && <span className="badge badge-blue">Đối tác</span>}
+                        {author?.role === 'support' && <span className="badge badge-green">Hỗ trợ viên</span>}
                       </div>
                       <span className="tiny muted">{timeAgo(post.time)}</span>
                     </div>
@@ -284,22 +275,20 @@ export default function FeedPage() {
                   );
                 })()}
 
-                <div className="row-between tiny muted" style={{ paddingBottom: 8 }}>
-                  <span>{post.likeCount ?? post.likedBy.length} lượt thích</span>
+                <div className="row-between tiny muted post-stats" style={{ paddingBottom: 8 }}>
+                  <ReactionSummary counts={post.reactionCounts} total={post.likeCount} />
                   <span>{post.comments.length} bình luận</span>
                 </div>
 
-                <div className="row" style={{ borderTop: '1px solid var(--border-color)', paddingTop: 8, gap: 0 }}>
-                  <button
-                    className="btn btn-ghost btn-sm"
-                    style={{ flex: 1, border: 'none', color: liked ? 'var(--accent-green)' : 'var(--text-sub)', fontWeight: liked ? 700 : 600 }}
-                    onClick={async () => {
+                <div className="row post-actions" style={{ borderTop: '1px solid var(--border-color)', paddingTop: 8, gap: 0 }}>
+                  <ReactionButton
+                    myReaction={post.myReaction}
+                    count={post.likeCount}
+                    onReact={(type) => {
                       if (!user) return navigate('/login');
-                      try { await toggleLike(post.id); } catch (error) { toast(error.message || 'Không thể cập nhật lượt thích.', 'error'); }
+                      reactToPost(post.id, type).catch((error) => toast(error.message || 'Không thể cập nhật cảm xúc.', 'error'));
                     }}
-                  >
-                    <ThumbsUp size={17} fill={liked ? 'currentColor' : 'none'} /> Thích
-                  </button>
+                  />
                   <button
                     className="btn btn-ghost btn-sm"
                     style={{ flex: 1, border: 'none', color: 'var(--text-sub)' }}
@@ -317,38 +306,14 @@ export default function FeedPage() {
                 </div>
 
                 {showComments && (
-                  <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid var(--border-color)' }} className="stack">
-                    {post.comments.map((c) => {
-                      const cAuthor = userById(c.authorId);
-                      const commentName = c.authorName || cAuthor?.name || c.username || 'Người dùng';
-                      const commentAvatar = c.avatarUrl || cAuthor?.avatar || '/default-avatar.svg';
-                      return (
-                        <div key={c.id} className="row" style={{ alignItems: 'flex-start', gap: 8 }}>
-                          <img src={avatarSrc(commentAvatar)} alt="" className="avatar" style={{ width: 30, height: 30 }} />
-                          <div style={{ background: 'var(--bg-soft)', borderRadius: 12, padding: '8px 12px', flex: 1 }}>
-                            <div className="tiny strong">{commentName}</div>
-                            <div className="small">{c.text}</div>
-                            <div className="tiny muted" style={{ marginTop: 3 }}>{timeAgo(c.time)}</div>
-                          </div>
-                        </div>
-                      );
-                    })}
-
-                    <div className="row" style={{ gap: 8 }}>
-                      <img src={avatarSrc(user?.avatar)} alt="" className="avatar" style={{ width: 30, height: 30 }} />
-                      <input
-                        className="input"
-                        style={{ borderRadius: 18, height: 36 }}
-                        placeholder="Viết bình luận..."
-                        value={commentDraft[post.id] || ''}
-                        onChange={(e) => setCommentDraft((d) => ({ ...d, [post.id]: e.target.value }))}
-                        onKeyDown={(e) => e.key === 'Enter' && submitComment(post.id)}
-                      />
-                      <button className="btn-icon" onClick={() => submitComment(post.id)} aria-label="Gửi bình luận">
-                        <Send size={17} color="var(--accent-green)" />
-                      </button>
-                    </div>
-                  </div>
+                  <CommentThread
+                    post={post}
+                    user={user}
+                    onAdd={async (text) => {
+                      await addComment(post.id, { text });
+                    }}
+                    onReactComment={(commentId, type) => reactToComment(post.id, commentId, type)}
+                  />
                 )}
               </article>
             );
@@ -356,7 +321,7 @@ export default function FeedPage() {
         </div>
 
         {/* ---------- Cột phải ---------- */}
-        <aside className="stack hide-lg" style={{ position: 'sticky', top: 76 }}>
+        <aside className="stack hide-lg sticky-rail">
           <div className="card" style={{ background: 'linear-gradient(135deg, #16a34a, #15803d)', color: '#fff', border: 'none' }}>
             <div className="row" style={{ gap: 8, marginBottom: 6 }}>
               <Sparkles size={18} />

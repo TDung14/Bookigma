@@ -1,12 +1,21 @@
 /**
- * Bộ tạo âm thanh thư giãn (Ambient Chill Sounds) cho Góc Đọc Bookigma.
- * Sử dụng Web Audio API: 100% không phụ thuộc file mạng, hoạt động offline,
- * không bao giờ lỗi CORS / 404, âm thanh mượt mà liên tục không giật lag.
+ * Âm thanh thư giãn (Ambient Chill Sounds) cho Góc Đọc Bookigma.
+ *
+ * File .mp3 đặt trong frontend/src/assets/audio sẽ tự động trở thành lựa chọn
+ * trong Góc đọc, tên file chính là tên bản nhạc. Khi thư mục chưa có file,
+ * module dùng Web Audio API để tổng hợp âm thanh dự phòng, hoạt động offline.
  */
+
+const customTrackUrls = import.meta.glob('../assets/audio/*.mp3', {
+  eager: true,
+  query: '?url',
+  import: 'default',
+});
 
 let audioCtx = null;
 let currentNodes = null;
 let currentGainNode = null;
+let currentAudio = null;
 let currentSoundType = null;
 let currentVolume = 0.5;
 
@@ -227,32 +236,69 @@ function startLofiChords(ctx, masterGain) {
   };
 }
 
-export const AMBIENT_SOUNDS = [
-  { id: 'rain', name: 'Mưa rả rích', icon: '🌧️', desc: 'Tiếng mưa rơi nhẹ bên khung cửa kính' },
-  { id: 'lofi', name: 'Lofi Piano Chill', icon: '☕', desc: 'Hợp âm Rhodes ấm áp cho không gian đọc', premium: true },
-  { id: 'fireplace', name: 'Lò sưởi thư viện', icon: '🔥', desc: 'Than hồng nổ tí tách ấm cúng', premium: true },
-  { id: 'waves', name: 'Sóng biển đêm', icon: '🌊', desc: 'Nhịp sóng vỗ bờ êm dịu, tĩnh tâm' },
+const BUILTIN_SOUNDS = [
+  { id: 'rain', name: 'Mưa rả rích', icon: '🌧️', desc: 'Tiếng mưa rơi nhẹ bên khung cửa kính', group: 'builtin' },
+  { id: 'lofi', name: 'Lofi Piano Chill', icon: '☕', desc: 'Hợp âm Rhodes ấm áp cho không gian đọc', premium: true, group: 'builtin' },
+  { id: 'fireplace', name: 'Lò sưởi thư viện', icon: '🔥', desc: 'Than hồng nổ tí tách ấm cúng', premium: true, group: 'builtin' },
+  { id: 'waves', name: 'Sóng biển đêm', icon: '🌊', desc: 'Nhịp sóng vỗ bờ êm dịu, tĩnh tâm', group: 'builtin' },
 ];
+
+function trackNameFromPath(path) {
+  const fileName = path.split('/').pop() || '';
+  return fileName
+    .replace(/\.mp3$/i, '')
+    .replace(/[_-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+const FILE_SOUNDS = Object.entries(customTrackUrls)
+  .sort(([a], [b]) => a.localeCompare(b, 'vi'))
+  .map(([path, src]) => ({
+    id: `file:${path}`,
+    name: trackNameFromPath(path) || 'Bản nhạc',
+    icon: '🎵',
+    desc: 'Bản nhạc của bạn',
+    src,
+    group: 'file',
+  }));
+
+export const AMBIENT_SOUNDS = [...FILE_SOUNDS, ...BUILTIN_SOUNDS];
 
 /** Bật âm thanh chill */
 export function playAmbient(soundId = 'rain', volume = 0.5) {
   stopAmbient();
+
+  const sound = AMBIENT_SOUNDS.find((item) => item.id === soundId) || AMBIENT_SOUNDS[0];
+  if (!sound) return;
+
+  currentVolume = volume;
+
+  if (sound.src) {
+    const audio = new Audio(sound.src);
+    audio.loop = true;
+    audio.volume = Math.min(1, Math.max(0, volume));
+    currentAudio = audio;
+    currentSoundType = sound.id;
+    audio.play().catch(() => {});
+    return;
+  }
+
   const ctx = getAudioContext();
   if (!ctx) return;
 
-  currentVolume = volume;
   currentGainNode = ctx.createGain();
   currentGainNode.gain.setValueAtTime(Math.max(0.001, volume * 0.7), ctx.currentTime);
   currentGainNode.connect(ctx.destination);
-  currentSoundType = soundId;
+  currentSoundType = sound.id;
 
-  if (soundId === 'rain') {
+  if (sound.id === 'rain') {
     currentNodes = startRain(ctx, currentGainNode);
-  } else if (soundId === 'fireplace') {
+  } else if (sound.id === 'fireplace') {
     currentNodes = startFireplace(ctx, currentGainNode);
-  } else if (soundId === 'waves') {
+  } else if (sound.id === 'waves') {
     currentNodes = startWaves(ctx, currentGainNode);
-  } else if (soundId === 'lofi') {
+  } else if (sound.id === 'lofi') {
     currentNodes = startLofiChords(ctx, currentGainNode);
   }
 }
@@ -265,14 +311,24 @@ export function stopAmbient() {
     } catch (e) {}
     currentNodes = null;
   }
+  if (currentAudio) {
+    currentAudio.pause();
+    currentAudio.src = '';
+    currentAudio = null;
+  }
+  currentGainNode = null;
   currentSoundType = null;
 }
 
 /** Chỉnh âm lượng */
 export function setAmbientVolume(volume) {
   currentVolume = volume;
+  const safeVolume = Math.min(1, Math.max(0, volume));
+  if (currentAudio) {
+    currentAudio.volume = safeVolume;
+  }
   if (currentGainNode && audioCtx) {
-    currentGainNode.gain.setValueAtTime(Math.max(0.001, volume * 0.7), audioCtx.currentTime);
+    currentGainNode.gain.setValueAtTime(Math.max(0.001, safeVolume * 0.7), audioCtx.currentTime);
   }
 }
 

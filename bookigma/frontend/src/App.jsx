@@ -10,6 +10,7 @@ import { useAuth } from './hooks/useStore';
 
 import Navbar, { MobileNav } from './components/layout/Navbar';
 import FloatingChatContainer from './components/chat/FloatingChatContainer';
+import SupportWidget from './components/support/SupportWidget';
 
 import FeedPage from './pages/FeedPage';
 import ShopPage from './pages/ShopPage';
@@ -18,6 +19,7 @@ import CartPage from './pages/CartPage';
 import PaymentPage from './pages/PaymentPage';
 import CheckoutPage from './pages/CheckoutPage';
 import OrderSuccessPage from './pages/OrderSuccessPage';
+import OrderPaymentPage from './pages/OrderPaymentPage';
 import OrdersPage from './pages/OrdersPage';
 import OrderDetailPage from './pages/OrderDetailPage';
 import ExchangePage from './pages/ExchangePage';
@@ -29,6 +31,8 @@ import BlindBookPage from './pages/BlindBookPage';
 import LeaderboardPage from './pages/LeaderboardPage';
 import FriendsPage from './pages/FriendsPage';
 import ChatPage from './pages/ChatPage';
+import ClubsPage from './pages/ClubsPage';
+import ClubDetailPage from './pages/ClubDetailPage';
 import ProfilePage from './pages/ProfilePage';
 import SettingsPage from './pages/SettingsPage';
 import UpgradePage from './pages/UpgradePage';
@@ -37,11 +41,11 @@ import VerifyEmailPage from './pages/auth/VerifyEmailPage';
 import AdminDashboard from './pages/admin/AdminDashboard';
 import ShopDashboard from './pages/shop/ShopDashboard';
 
-/** Cuộn lên đầu trang mỗi khi đổi route — trừ trang chat vốn có vùng cuộn riêng. */
+/** Cuộn lên đầu trang mỗi khi đổi route. Các trang có vùng cuộn riêng vẫn giữ nguyên vùng đó. */
 function ScrollToTop() {
   const { pathname } = useLocation();
   useEffect(() => {
-    if (!pathname.startsWith('/chat')) window.scrollTo(0, 0);
+    window.scrollTo(0, 0);
   }, [pathname]);
   return null;
 }
@@ -109,10 +113,13 @@ function Shell() {
         <Route path="/recommend" element={<RecommendationPage />} />
         <Route path="/blind-book" element={<BlindBookPage />} />
         <Route path="/friends" element={<RequireAuth><FriendsPage /></RequireAuth>} />
+        <Route path="/clubs" element={<ClubsPage />} />
+        <Route path="/clubs/:clubId" element={<ClubDetailPage />} />
 
         <Route path="/cart" element={<RequireAuth><CartPage /></RequireAuth>} />
         <Route path="/payment" element={<RequireAuth><PaymentPage /></RequireAuth>} />
         <Route path="/checkout" element={<RequireAuth><CheckoutPage /></RequireAuth>} />
+        <Route path="/order-payment/:id" element={<RequireAuth><OrderPaymentPage /></RequireAuth>} />
         <Route path="/order-success/:id" element={<RequireAuth><OrderSuccessPage /></RequireAuth>} />
         <Route path="/orders" element={<RequireAuth><OrdersPage /></RequireAuth>} />
         <Route path="/orders/:id" element={<RequireAuth><OrderDetailPage /></RequireAuth>} />
@@ -139,6 +146,7 @@ function Shell() {
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
       <FloatingChatContainer />
+      <SupportWidget />
       <MobileNav />
     </div>
   );
