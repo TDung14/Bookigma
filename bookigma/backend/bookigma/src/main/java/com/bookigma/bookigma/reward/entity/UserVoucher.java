@@ -65,6 +65,20 @@ public class UserVoucher {
     @Column(name = "created_at", nullable = false)
     private LocalDateTime createdAt;
 
+    /** Nguồn phát (SOURCE_*). Null = voucher đổi điểm tạo trước khi có cột này. */
+    @Column(name = "source", length = 20)
+    private String source;
+
+    public static final String SOURCE_REWARD = "REWARD";
+    public static final String SOURCE_VIP_PERK = "VIP_PERK";
+    public static final String SOURCE_VIP_DAILY = "VIP_DAILY";
+    public static final String SOURCE_VIP_RENEWAL = "VIP_RENEWAL";
+
+    /** Mã gia hạn chỉ giảm giá khi mua VIP, không dùng cho đơn sách. */
+    public boolean isVipRenewal() {
+        return SOURCE_VIP_RENEWAL.equals(source);
+    }
+
     @PrePersist
     protected void onCreate() {
         if (createdAt == null) createdAt = LocalDateTime.now();

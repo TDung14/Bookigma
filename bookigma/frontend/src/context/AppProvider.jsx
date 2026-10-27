@@ -379,10 +379,12 @@ export function AppProvider({ children }) {
   // ---------- Tra cứu ----------
   const books = useMemo(
     () =>
-      mergeById(catalog.books, account.sellerBooks, account.adminBooks).map((book) =>
-        chaptersByBook[book.id] ? { ...book, chapters: chaptersByBook[book.id] } : book
-      ),
-    [catalog.books, account.sellerBooks, account.adminBooks, chaptersByBook]
+      mergeById(catalog.books, account.sellerBooks, account.adminBooks).map((book) => {
+        // Chi tiết (chương + quyền đọc ebook premium) gắn với người đang đăng nhập
+        const detail = chaptersByBook[`${userId}:${book.id}`];
+        return detail ? { ...book, ...detail } : book;
+      }),
+    [catalog.books, account.sellerBooks, account.adminBooks, chaptersByBook, userId]
   );
 
   const exchanges = useMemo(
@@ -637,7 +639,16 @@ export function AppProvider({ children }) {
   const loadBook = useCallback(
     async (id) => {
       const book = await shopApi.fetchBook(id, userId);
-      setChaptersByBook((prev) => ({ ...prev, [book.id]: book.chapters || [] }));
+      setChaptersByBook((prev) => ({
+        ...prev,
+        [`${userId}:${book.id}`]: {
+          chapters: book.chapters || [],
+          premium: book.premium,
+          ebookUnlocked: book.ebookUnlocked,
+          previewChapters: book.previewChapters,
+          unlockPoints: book.unlockPoints,
+        },
+      }));
       return book;
     },
     [userId]
@@ -718,6 +729,8 @@ export function AppProvider({ children }) {
       refreshCatalog();
       refreshNotifications();
       syncPoints();
+      // Voucher trong ví đã dùng cho đơn thì biến mất khỏi ví
+      rewardApi.fetchMyVouchers().then((list) => Array.isArray(list) && setMyVouchers(list)).catch(() => {});
       return created;
     },
     [userId, patchAccount, refreshCatalog, refreshNotifications, syncPoints]
@@ -729,6 +742,8 @@ export function AppProvider({ children }) {
       replaceOrder(order);
       refreshCatalog();
       syncPoints();
+      // Hủy đơn hoàn lại voucher trong ví
+      rewardApi.fetchMyVouchers().then((list) => Array.isArray(list) && setMyVouchers(list)).catch(() => {});
       return order;
     },
     [userId, replaceOrder, refreshCatalog, syncPoints]
@@ -1038,18 +1053,22 @@ export function AppProvider({ children }) {
     async (listingId, form) => {
       const offer = await exchangeApi.sendOffer(userId, listingId, form);
       await refreshExchanges();
+      // Gửi đề nghị trừ phí điểm (hoặc lượt đổi miễn phí VIP)
+      syncPoints();
       return offer;
     },
-    [userId, refreshExchanges]
+    [userId, refreshExchanges, syncPoints]
   );
 
   const respondExchangeOffer = useCallback(
     async (offerId, action) => {
       const offer = await exchangeApi.respondToOffer(userId, offerId, action);
       await refreshExchanges();
+      // Rút lại đề nghị được hoàn phí điểm
+      if (action === 'cancel') syncPoints();
       return offer;
     },
-    [userId, refreshExchanges]
+    [userId, refreshExchanges, syncPoints]
   );
 
   const setExchangeStatus = useCallback(
@@ -1364,6 +1383,14 @@ export function AppProvider({ children }) {
     })();
     return () => { cancelled = true; };
   }, [userId, applyServerProgress, applyServerMissions]);
+
+  /** Tải lại ví voucher (sau khi nhận voucher VIP hằng ngày, kích hoạt VIP, hủy đơn...). */
+  const refreshMyVouchers = useCallback(async () => {
+    if (!userId) return [];
+    const list = await rewardApi.fetchMyVouchers();
+    if (Array.isArray(list)) setMyVouchers(list);
+    return list;
+  }, [userId]);
 
   const getProgress = useCallback((uId) => progressAll[uId] || {}, [progressAll]);
 
@@ -1717,6 +1744,7 @@ export function AppProvider({ children }) {
       redemptions,
       rewardCatalog,
       myVouchers,
+      refreshMyVouchers,
       matchBlindBox,
       addBlindBox,
       revealBlindBox,
@@ -1839,6 +1867,7 @@ export function AppProvider({ children }) {
       redemptions,
       rewardCatalog,
       myVouchers,
+      refreshMyVouchers,
       matchBlindBox,
       addBlindBox,
       revealBlindBox,

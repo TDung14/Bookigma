@@ -29,19 +29,3 @@ export function groupCartLines(lines) {
   if (blindLines.length) groups.set('blind', { key: 'blind', shopId: null, shopName: null, blind: true, lines: blindLines });
   return [...groups.values()];
 }
-
-/** Tiền giảm và phí ship theo voucher, cùng quy tắc với backend. */
-export function applyVoucher(voucher, subtotal, parcels) {
-  let discount = 0;
-  let shipping = parcels * SHIPPING_FEE;
-  if (voucher) {
-    if (voucher.type === 'percent') {
-      discount = Math.min(Math.round((subtotal * voucher.value) / 100), voucher.maxDiscount);
-    } else if (voucher.type === 'amount') {
-      discount = voucher.value;
-    } else if (voucher.type === 'shipping') {
-      shipping = 0;
-    }
-  }
-  return { discount: Math.min(discount, subtotal), shipping };
-}

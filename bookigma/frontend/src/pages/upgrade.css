@@ -693,3 +693,37 @@
     grid-template-columns: minmax(0, 1fr);
   }
 }
+
+.vip-checkout-price {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+}
+
+.vip-checkout-price s {
+  font-size: 13px;
+  color: var(--text-sub);
+}
+
+.vip-coupon-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.vip-coupon-chips button {
+  padding: 5px 10px;
+  border: 1px dashed #d97706;
+  border-radius: 8px;
+  background: var(--warning-soft);
+  color: var(--text-main);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.vip-coupon-chips b {
+  color: #d97706;
+}

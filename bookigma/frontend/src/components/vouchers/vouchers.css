@@ -1,0 +1,196 @@
+/* Vé voucher kiểu Shopee */
+.voucher-ticket {
+  --stub: #16a34a;
+  position: relative;
+  display: flex;
+  align-items: stretch;
+  min-height: 96px;
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  background: var(--bg-card);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.voucher-ticket[role='radio'] { cursor: pointer; }
+.voucher-ticket[role='radio']:hover { border-color: var(--stub); }
+.voucher-ticket.is-selected {
+  border-color: var(--stub);
+  box-shadow: 0 0 0 1px var(--stub);
+}
+.voucher-ticket.is-disabled { cursor: not-allowed; }
+.voucher-ticket.is-disabled .voucher-ticket-stub { filter: grayscale(1); opacity: 0.55; }
+.voucher-ticket.is-disabled .voucher-ticket-title,
+.voucher-ticket.is-disabled .voucher-ticket-sub,
+.voucher-ticket.is-disabled .voucher-ticket-meta { opacity: 0.55; }
+.voucher-ticket.is-ship { --stub: #0d9488; }
+.voucher-ticket.is-vip { --stub: #d97706; }
+.voucher-ticket.is-reward { --stub: #7c3aed; }
+
+.voucher-ticket-stub {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 92px;
+  flex-shrink: 0;
+  border-radius: 9px 0 0 9px;
+  background: var(--stub);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.4px;
+  text-align: center;
+}
+/* Hai vết khuyết hình tròn ở mép răng cưa của vé */
+.voucher-ticket-stub::before,
+.voucher-ticket-stub::after {
+  content: '';
+  position: absolute;
+  right: -7px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--bg-soft);
+  border: 1px solid var(--border-color);
+}
+.voucher-ticket-stub::before { top: -8px; }
+.voucher-ticket-stub::after { bottom: -8px; }
+
+.voucher-ticket-body {
+  flex: 1;
+  min-width: 0;
+  padding: 10px 12px 10px 16px;
+  border-left: 1px dashed var(--border-color);
+}
+.voucher-ticket-title { font-size: 15px; font-weight: 700; color: var(--text-main); }
+.voucher-ticket-sub { margin-top: 2px; font-size: 12px; color: var(--text-sub); }
+.voucher-ticket-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  font-size: 11.5px;
+  color: var(--text-sub);
+}
+.voucher-ticket-tag {
+  padding: 1px 6px;
+  border: 1px solid var(--stub);
+  border-radius: 4px;
+  color: var(--stub);
+  font-weight: 700;
+}
+.voucher-ticket-code { margin-top: 4px; font-size: 11px; color: var(--text-sub); letter-spacing: 0.3px; }
+.voucher-ticket-warn {
+  margin-top: 6px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: var(--warning-soft);
+  color: var(--warning);
+  font-size: 11.5px;
+  font-weight: 600;
+}
+.voucher-ticket-action {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 64px;
+  padding: 0 12px;
+}
+.voucher-radio {
+  width: 18px;
+  height: 18px;
+  border: 2px solid var(--border-color);
+  border-radius: 50%;
+}
+.voucher-radio.is-on {
+  border-color: var(--stub, #16a34a);
+  background: radial-gradient(circle, var(--stub, #16a34a) 0 45%, transparent 50%);
+}
+.voucher-ticket .voucher-radio.is-on { border-color: var(--stub); }
+
+/* Hộp chọn voucher */
+.voucher-picker { display: flex; flex-direction: column; gap: 16px; }
+.voucher-picker-input {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px;
+  border-radius: 10px;
+  background: var(--bg-soft);
+}
+.voucher-picker-input .input { flex: 1; }
+.voucher-picker-error { margin: -8px 0 0; color: var(--danger); font-size: 12.5px; }
+.voucher-picker-heading { margin: 0 0 10px; font-size: 14px; }
+.voucher-picker-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  flex-wrap: wrap;
+}
+.voucher-daily-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid #f59e0b;
+  border-radius: 10px;
+  background: var(--warning-soft);
+  color: var(--text-main);
+}
+.voucher-daily-banner svg { color: #d97706; flex-shrink: 0; }
+.voucher-daily-banner.is-upsell { text-decoration: none; }
+
+/* Dòng "Bookigma Voucher" ở trang thanh toán */
+.checkout-voucher-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 12px;
+  border: 1px dashed var(--accent-green);
+  border-radius: 10px;
+  background: var(--accent-soft);
+  color: var(--text-main);
+  cursor: pointer;
+  text-align: left;
+}
+.checkout-voucher-chips { display: flex; flex-wrap: wrap; gap: 6px; flex: 1; justify-content: flex-end; }
+.checkout-voucher-chip {
+  padding: 2px 8px;
+  border: 1px solid var(--danger);
+  border-radius: 4px;
+  color: var(--danger);
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.checkout-voucher-chip.is-ship { border-color: #0d9488; color: #0d9488; }
+
+@media (max-width: 520px) {
+  .voucher-ticket-stub { width: 74px; font-size: 10px; }
+  .voucher-ticket-action { min-width: 48px; padding: 0 8px; }
+}
+
+/* Trang Kho voucher */
+.voucher-daily-card { border-color: #f59e0b; background: linear-gradient(135deg, var(--warning-soft), var(--bg-card) 70%); }
+.voucher-daily-card.is-upsell { display: block; color: var(--text-main); text-decoration: none; }
+.voucher-daily-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 42px;
+  height: 42px;
+  flex-shrink: 0;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #f59e0b, #b45309);
+  color: #fff;
+}
+.voucher-wallet-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 12px; }
+@media (max-width: 520px) {
+  .voucher-wallet-grid { grid-template-columns: 1fr; }
+}

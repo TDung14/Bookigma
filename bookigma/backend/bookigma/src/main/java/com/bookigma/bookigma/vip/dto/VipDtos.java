@@ -8,7 +8,8 @@ public final class VipDtos {
     private VipDtos() {
     }
 
-    public record CreatePurchaseRequest(String planId) {
+    /** couponCode: mã gia hạn VIP (giảm %), có thể bỏ trống. */
+    public record CreatePurchaseRequest(String planId, String couponCode) {
     }
 
     public record AdminActionRequest(String note, String reference) {
@@ -54,7 +55,9 @@ public final class VipDtos {
             LocalDateTime expiresAt,
             LocalDateTime paidAt,
             String note,
-            SubscriptionResponse vip
+            SubscriptionResponse vip,
+            long originalAmount,
+            String couponCode
     ) {
     }
 

@@ -53,6 +53,14 @@ public class VipPurchase {
     @Column(name = "amount", nullable = false)
     private long amount;
 
+    /** Giá gói trước khi áp mã gia hạn; null với đơn cũ (bằng amount). */
+    @Column(name = "original_amount")
+    private Long originalAmount;
+
+    /** Mã gia hạn VIP đã áp cho đơn này (đánh dấu đã dùng khi đơn được xác nhận thanh toán). */
+    @Column(name = "coupon_code", length = 30)
+    private String couponCode;
+
     @Column(name = "duration_days", nullable = false)
     private int durationDays;
 

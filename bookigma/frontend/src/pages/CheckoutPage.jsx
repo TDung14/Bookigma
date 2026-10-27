@@ -1,11 +1,15 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Banknote, Check, CreditCard, MapPin, QrCode, Tag, Truck, Wallet, Zap } from 'lucide-react';
+import { Banknote, Check, ChevronRight, CreditCard, MapPin, QrCode, Ticket, Truck, Wallet, Zap } from 'lucide-react';
 import { useApp, useAuth, useToast } from '../hooks/useStore';
+import { useVipPerks } from '../hooks/useVipPerks';
 import { currency } from '../lib/format';
 import { Field } from '../components/common/ui';
-import { SHIPPING_FEE, applyVoucher, cartSubtotal, countParcels, linePrice } from '../lib/cart';
+import VoucherPicker from '../components/vouchers/VoucherPicker';
+import { SHIPPING_FEE, cartSubtotal, countParcels, linePrice } from '../lib/cart';
+import { normalizeVoucher, pickBestVouchers, voucherBlocker, voucherDiscount } from '../lib/vouchers';
 import { getPointsSummary } from '../services/pointsApi';
+import { claimDailyVoucher } from '../services/perkApi';
 import { isPrepaid } from '../lib/payment';
 
 const PAYMENTS = [
@@ -15,7 +19,7 @@ const PAYMENTS = [
 ];
 
 export default function CheckoutPage() {
-  const { getCart, vouchers, placeOrder, refreshCart } = useApp();
+  const { getCart, vouchers, placeOrder, refreshCart, refreshMyVouchers } = useApp();
   const { user } = useAuth();
   const toast = useToast();
   const navigate = useNavigate();
@@ -28,8 +32,12 @@ export default function CheckoutPage() {
     detail: '',
   });
   const [payment, setPayment] = useState('cod');
-  const [voucherCode, setVoucherCode] = useState('');
-  const [appliedVoucher, setAppliedVoucher] = useState(null);
+  // undefined = tự chọn voucher tốt nhất (như Shopee), null = bỏ chọn, chuỗi = mã người dùng chọn
+  const [discountPick, setDiscountPick] = useState(undefined);
+  const [shippingPick, setShippingPick] = useState(undefined);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [claimingDaily, setClaimingDaily] = useState(false);
+  const { perks, refresh: refreshPerks } = useVipPerks(user.id);
   const [note, setNote] = useState('');
   const [placing, setPlacing] = useState(false);
   
@@ -49,8 +57,25 @@ export default function CheckoutPage() {
 
   const subtotal = cartSubtotal(lines);
   const parcels = countParcels(lines);
+  const shippingTotal = parcels * SHIPPING_FEE;
 
-  const { discount, shipping } = applyVoucher(appliedVoucher, subtotal, parcels);
+  // Voucher toàn sàn + voucher trong ví; mã gia hạn VIP không dùng cho đơn sách
+  const orderVouchers = useMemo(
+    () => vouchers.map(normalizeVoucher).filter((v) => v.code && v.scope !== 'vip'),
+    [vouchers]
+  );
+  const best = pickBestVouchers(orderVouchers, subtotal, shippingTotal);
+  const resolvePick = (pick, fallback) => {
+    if (pick === undefined) return fallback;
+    const found = pick && orderVouchers.find((v) => v.code === pick);
+    return found && !voucherBlocker(found, subtotal) ? found : null;
+  };
+  const discountVoucher = resolvePick(discountPick, best.discount);
+  const shippingVoucher = resolvePick(shippingPick, best.shipping);
+  const usableCount = orderVouchers.filter((v) => !voucherBlocker(v, subtotal)).length;
+
+  const discount = voucherDiscount(discountVoucher, subtotal);
+  const shipping = shippingVoucher ? 0 : shippingTotal;
 
   const rawTotal = Math.max(0, subtotal - discount) + shipping;
   // Giống backend: điểm chỉ trừ vào tiền hàng còn lại sau voucher, không trừ phí vận chuyển
@@ -58,15 +83,23 @@ export default function CheckoutPage() {
   const pointsDiscount = usePoints ? Math.min(maxPoints, pointsToUse > 0 ? pointsToUse : maxPoints) : 0;
   const total = Math.max(0, rawTotal - pointsDiscount);
 
-  const applyVoucherCode = (code) => {
-    const v = vouchers.find((x) => x.code.toLowerCase() === code.trim().toLowerCase());
-    if (!v) return toast('Mã giảm giá không tồn tại.', 'error');
-    if (subtotal < v.minOrder) {
-      return toast(`Đơn tối thiểu ${currency(v.minOrder)} mới dùng được mã này.`, 'error');
+  const applyPicked = ({ discount: discountCode, shipping: shippingCode }) => {
+    setDiscountPick(discountCode);
+    setShippingPick(shippingCode);
+    setPickerOpen(false);
+  };
+
+  const claimDaily = async () => {
+    setClaimingDaily(true);
+    try {
+      const res = await claimDailyVoucher();
+      await Promise.all([refreshMyVouchers(), refreshPerks()]);
+      toast(`Bạn nhận được voucher giảm ${Number(res?.voucher?.value) || ''}% hôm nay 🎉`);
+    } catch (error) {
+      toast(error.message || 'Không nhận được voucher hôm nay.', 'error');
+    } finally {
+      setClaimingDaily(false);
     }
-    setAppliedVoucher(v);
-    setVoucherCode(v.code);
-    toast(`Đã áp dụng mã ${v.code}.`);
   };
 
   const submit = async () => {
@@ -88,7 +121,8 @@ export default function CheckoutPage() {
         recipientPhone: address.phone.trim(),
         shippingAddress: address.detail.trim(),
         paymentMethod: payment,
-        voucherCode: appliedVoucher?.code || null,
+        voucherCode: discountVoucher?.code || null,
+        shippingVoucherCode: shippingVoucher?.code || null,
         note: note.trim(),
         pointsToUse: usePoints ? pointsDiscount : null,
       });
@@ -223,33 +257,36 @@ export default function CheckoutPage() {
         <div className="card stack sticky-rail">
           <h3 style={{ margin: 0, fontSize: 17 }}>Tóm tắt thanh toán</h3>
 
-          <div>
-            <label className="label"><Tag size={13} style={{ verticalAlign: -2 }} /> Mã giảm giá</label>
-            <div className="row" style={{ gap: 8 }}>
-              <input className="input" placeholder="Nhập mã" value={voucherCode} onChange={(e) => setVoucherCode(e.target.value)} />
-              <button className="btn btn-soft btn-sm" onClick={() => applyVoucherCode(voucherCode)}>Áp dụng</button>
-            </div>
-            <div className="stack" style={{ gap: 6, marginTop: 10 }}>
-              {vouchers.map((v) => (
-                <button
-                  key={v.code}
-                  className="row"
-                  onClick={() => applyVoucherCode(v.code)}
-                  style={{
-                    padding: '7px 10px', borderRadius: 8, cursor: 'pointer', width: '100%', textAlign: 'left',
-                    background: appliedVoucher?.code === v.code ? 'var(--accent-soft)' : 'var(--bg-soft)',
-                    border: `1px dashed ${appliedVoucher?.code === v.code ? 'var(--accent-green)' : 'var(--border-color)'}`,
-                  }}
-                >
-                  <div style={{ flex: 1 }}>
-                    <div className="tiny strong" style={{ color: 'var(--accent-green)' }}>{v.code}</div>
-                    <div className="tiny muted">{v.label}</div>
-                  </div>
-                  {appliedVoucher?.code === v.code && <Check size={15} color="var(--accent-green)" />}
-                </button>
-              ))}
-            </div>
-          </div>
+          {/* Bookigma Voucher (như Shopee): 1 mã giảm giá + 1 mã miễn phí vận chuyển */}
+          <button type="button" className="checkout-voucher-row" onClick={() => setPickerOpen(true)}>
+            <Ticket size={18} color="var(--accent-green)" />
+            <span className="small strong">Bookigma Voucher</span>
+            <span className="checkout-voucher-chips">
+              {discountVoucher && <span className="checkout-voucher-chip">-{currency(discount)}</span>}
+              {shippingVoucher && <span className="checkout-voucher-chip is-ship">Miễn phí ship</span>}
+              {!discountVoucher && !shippingVoucher && (
+                <span className="tiny muted">{usableCount > 0 ? `${usableCount} mã dùng được` : 'Chọn hoặc nhập mã'}</span>
+              )}
+            </span>
+            <ChevronRight size={16} />
+          </button>
+          {pickerOpen && (
+            <VoucherPicker
+              vouchers={orderVouchers}
+              subtotal={subtotal}
+              shippingTotal={shippingTotal}
+              initialDiscount={discountVoucher?.code}
+              initialShipping={shippingVoucher?.code}
+              onApply={applyPicked}
+              onClose={() => setPickerOpen(false)}
+              daily={perks ? {
+                eligible: perks.vip,
+                claimedToday: perks.dailyVoucher?.claimedToday,
+                claiming: claimingDaily,
+                onClaim: claimDaily,
+              } : null}
+            />
+          )}
 
           {/* Dùng Điểm Bookigma */}
           <div style={{ marginTop: 12, padding: 12, borderRadius: 10, background: 'var(--bg-soft)', border: '1px solid var(--border-color)' }}>
@@ -277,11 +314,16 @@ export default function CheckoutPage() {
           <div className="row-between small"><span className="muted">Tạm tính</span><span>{currency(subtotal)}</span></div>
           <div className="row-between small">
             <span className="muted">Phí vận chuyển ({parcels} đơn × {currency(SHIPPING_FEE)})</span>
-            <span>{shipping === 0 ? 'Miễn phí' : currency(shipping)}</span>
+            <span>{currency(shippingTotal)}</span>
           </div>
+          {shippingVoucher && (
+            <div className="row-between small" style={{ color: '#0d9488' }}>
+              <span>Voucher vận chuyển ({shippingVoucher.code})</span><span>-{currency(shippingTotal)}</span>
+            </div>
+          )}
           {discount > 0 && (
             <div className="row-between small" style={{ color: 'var(--danger)' }}>
-              <span>Giảm giá ({appliedVoucher.code})</span><span>-{currency(discount)}</span>
+              <span>Voucher giảm giá ({discountVoucher.code})</span><span>-{currency(discount)}</span>
             </div>
           )}
           {usePoints && pointsDiscount > 0 && (

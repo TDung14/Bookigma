@@ -23,4 +23,8 @@ public class ExchangeOfferResponseDto {
     private LocalDateTime respondedAt;
     /** Email của bên còn lại, chỉ có khi đề nghị đã được chấp nhận để hai bên hẹn trao đổi. */
     private String contactEmail;
+    /** Phí gửi đề nghị: số điểm đã trừ / dùng lượt miễn phí VIP / đã được hoàn. */
+    private Integer feePoints;
+    private Boolean freeSwapUsed;
+    private Boolean feeRefunded;
 }

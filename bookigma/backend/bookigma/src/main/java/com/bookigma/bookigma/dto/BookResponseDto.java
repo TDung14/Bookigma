@@ -31,6 +31,12 @@ public class BookResponseDto {
     /** pending | active | hidden */
     private String status;
     private Integer chapterCount;
+    /** Ebook premium: người chưa mở khoá chỉ đọc thử vài chương đầu. */
+    private Boolean premium;
+    /** Chỉ có ở API chi tiết: người đang xem đọc được toàn bộ cuốn chưa. */
+    private Boolean ebookUnlocked;
+    private Integer previewChapters;
+    private Integer unlockPoints;
     /** Chỉ có ở API chi tiết GET /api/books/{id}. */
     private List<BookChapterDto> chapters;
     private LocalDateTime createdAt;

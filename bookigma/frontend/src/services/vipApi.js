@@ -6,8 +6,9 @@ export const getVipMe = (userId) =>
 export const getVipPlans = () =>
   apiCall('/vip/plans', 'GET');
 
-export const createVipPurchase = (userId, planId) =>
-  apiCall('/vip/purchases', 'POST', { planId }, { userId });
+/** couponCode: mã gia hạn VIP (giảm %), có thể bỏ trống. */
+export const createVipPurchase = (userId, planId, couponCode = null) =>
+  apiCall('/vip/purchases', 'POST', { planId, couponCode }, { userId });
 
 export const getVipPurchase = (userId, purchaseId) =>
   apiCall(`/vip/purchases/${purchaseId}`, 'GET', null, { userId });

@@ -44,11 +44,22 @@ export function toBook(dto) {
     forSale: dto.forSale ?? true,
     status: lower(dto.status) || 'active',
     chapterCount: dto.chapterCount ?? 0,
+    // Ebook premium: người chưa mở khoá chỉ đọc thử vài chương đầu
+    premium: !!dto.premium,
     createdAt: toTime(dto.createdAt),
   };
-  // Chỉ API chi tiết mới có nội dung chương.
+  // Chỉ API chi tiết mới có nội dung chương và quyền đọc của người đang xem.
   if (Array.isArray(dto.chapters)) {
-    book.chapters = dto.chapters.map((chapter) => ({ title: chapter.title, paragraphs: chapter.paragraphs || [] }));
+    book.chapters = dto.chapters.map((chapter) => ({
+      title: chapter.title,
+      paragraphs: chapter.paragraphs || [],
+      locked: !!chapter.locked,
+      // Chương bị khoá không có nội dung nhưng vẫn tính vào độ dài cuốn sách
+      paragraphCount: chapter.paragraphCount ?? (chapter.paragraphs || []).length,
+    }));
+    book.ebookUnlocked = dto.ebookUnlocked !== false;
+    book.previewChapters = dto.previewChapters ?? 0;
+    book.unlockPoints = dto.unlockPoints ?? 0;
   }
   return book;
 }
@@ -119,6 +130,7 @@ export function toOrder(dto) {
     status: lower(dto.status),
     payment: lower(dto.paymentMethod),
     voucher: dto.voucherCode || null,
+    shippingVoucher: dto.shippingVoucherCode || null,
     note: dto.note || '',
     subtotal: num(dto.subtotal),
     shippingFee: num(dto.shippingFee),
@@ -166,6 +178,10 @@ export function toOffer(dto) {
     createdAt: toTime(dto.createdAt),
     respondedAt: dto.respondedAt ? toTime(dto.respondedAt) : null,
     contactEmail: dto.contactEmail || null,
+    // Phí gửi đề nghị: điểm đã trừ, hoặc dùng lượt miễn phí VIP; hoàn lại nếu không được chấp nhận
+    feePoints: dto.feePoints ?? 0,
+    freeSwapUsed: !!dto.freeSwapUsed,
+    feeRefunded: !!dto.feeRefunded,
   };
 }
 

@@ -501,3 +501,49 @@
   }
 }
 
+
+/* Chương của ebook premium chưa mở khoá */
+.ebook-lock {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 36px 20px;
+  margin: 8px 0;
+  border: 1px dashed rgba(0, 0, 0, 0.18);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.35);
+  text-align: center;
+  text-indent: 0;
+}
+.ebook-lock h3 {
+  margin: 0;
+  font-size: 18px;
+}
+.ebook-lock p {
+  margin: 0;
+  max-width: 460px;
+  font-size: 14px;
+  line-height: 1.6;
+  opacity: 0.85;
+}
+.ebook-lock-icon {
+  display: grid;
+  place-items: center;
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  background: var(--warning-soft);
+  color: var(--warning);
+}
+.ebook-lock-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px;
+  margin-top: 6px;
+}
+.theme-midnight .ebook-lock {
+  border-color: rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.06);
+}

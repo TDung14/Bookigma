@@ -171,7 +171,7 @@ export default function OrderDetailPage() {
 
             <div className="stack" style={{ gap: 8, marginTop: 14 }}>
               <div className="row-between small"><span className="muted">Tạm tính</span><span>{currency(order.subtotal)}</span></div>
-              <div className="row-between small"><span className="muted">Phí vận chuyển</span><span>{order.shippingFee === 0 ? 'Miễn phí' : currency(order.shippingFee)}</span></div>
+              <div className="row-between small"><span className="muted">Phí vận chuyển</span><span>{order.shippingFee === 0 ? `Miễn phí${order.shippingVoucher ? ` (${order.shippingVoucher})` : ''}` : currency(order.shippingFee)}</span></div>
               {order.discount > 0 && (
                 <div className="row-between small" style={{ color: 'var(--danger)' }}>
                   <span>Giảm giá{order.voucher ? ` (${order.voucher})` : ''}</span><span>-{currency(order.discount)}</span>

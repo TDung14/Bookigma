@@ -29,6 +29,9 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
     /** Còn đơn nào khác (chưa hủy) đang dùng mã này không — dùng để hoàn voucher cá nhân khi hủy đơn. */
     boolean existsByVoucherCodeAndStatusNotAndIdNot(String voucherCode, Order.Status status, Long id);
 
+    /** Như trên, cho voucher miễn phí vận chuyển. */
+    boolean existsByShippingVoucherCodeAndStatusNotAndIdNot(String shippingVoucherCode, Order.Status status, Long id);
+
     /** Các đơn trả trước chưa nhận được tiền và đã quá hạn thanh toán. */
     @Query("""
             select o.id from Order o

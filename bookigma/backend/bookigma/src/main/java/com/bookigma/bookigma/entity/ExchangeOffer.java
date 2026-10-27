@@ -50,6 +50,21 @@ public class ExchangeOffer {
     @Column(name = "responded_at")
     private LocalDateTime respondedAt;
 
+    /** Số điểm phí đã trừ khi gửi (0 nếu dùng lượt miễn phí VIP hoặc đề nghị gửi trước khi có phí). */
+    @Column(name = "fee_points", nullable = false, columnDefinition = "int default 0")
+    @Builder.Default
+    private Integer feePoints = 0;
+
+    /** Đề nghị dùng một lượt trao đổi miễn phí của VIP thay cho phí điểm. */
+    @Column(name = "free_swap_used", nullable = false, columnDefinition = "boolean default false")
+    @Builder.Default
+    private Boolean freeSwapUsed = false;
+
+    /** Phí (điểm hoặc lượt VIP) đã được hoàn vì đề nghị không được chấp nhận. */
+    @Column(name = "fee_refunded", nullable = false, columnDefinition = "boolean default false")
+    @Builder.Default
+    private Boolean feeRefunded = false;
+
     @PrePersist
     protected void onCreate() {
         if (createdAt == null) {

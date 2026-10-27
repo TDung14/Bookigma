@@ -13,7 +13,6 @@ import com.bookigma.bookigma.reward.repository.UserVoucherRepository;
 import com.bookigma.bookigma.reward.service.RewardItem;
 import com.bookigma.bookigma.reward.service.RewardService;
 import com.bookigma.bookigma.service.AccessGuard;
-import com.bookigma.bookigma.service.DtoMapper;
 import com.bookigma.bookigma.service.PointService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -170,14 +169,6 @@ public class RewardServiceImpl implements RewardService {
     }
 
     private RewardDtos.UserVoucherDto toDto(UserVoucher voucher) {
-        return RewardDtos.UserVoucherDto.builder()
-                .code(voucher.getCode())
-                .label(voucher.getLabel())
-                .type(DtoMapper.lower(voucher.getDiscountType()))
-                .value(voucher.getDiscountValue())
-                .maxDiscount(voucher.getMaxDiscount())
-                .minOrder(voucher.getMinOrderAmount())
-                .expiresAt(voucher.getExpiresAt())
-                .build();
+        return RewardDtos.UserVoucherDto.from(voucher);
     }
 }

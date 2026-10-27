@@ -10,6 +10,7 @@ import {
   petMood, petStage, taskState, titleForLevel,
 } from '../lib/gamification';
 import { currency, duration, timeAgo } from '../lib/format';
+import { normalizeVoucher, voucherTitle } from '../lib/vouchers';
 import { ProgressBar, StatCard } from '../components/common/ui';
 import { dailyCheckIn, getPointsSummary } from '../services/pointsApi';
 
@@ -421,7 +422,10 @@ export default function RewardsPage() {
 
           <div className="stack sticky-rail">
             <div className="card">
-              <h4 style={{ margin: '0 0 12px', fontSize: 15 }}>Voucher của tôi</h4>
+              <div className="row-between" style={{ marginBottom: 12 }}>
+                <h4 style={{ margin: 0, fontSize: 15 }}>Voucher của tôi</h4>
+                <Link to="/vouchers" className="tiny strong" style={{ color: 'var(--accent-green)' }}>Kho voucher</Link>
+              </div>
               {myVouchers.length === 0 ? (
                 <p className="small muted" style={{ margin: 0 }}>Chưa có voucher. Đổi voucher bằng điểm để nhận mã dùng khi thanh toán.</p>
               ) : (
@@ -430,7 +434,7 @@ export default function RewardsPage() {
                     <div key={v.code} style={{ paddingBottom: 9, borderBottom: '1px solid var(--border-color)' }}>
                       <div className="row-between" style={{ gap: 8 }}>
                         <span className="small strong" style={{ fontFamily: 'monospace', letterSpacing: 0.5 }}>{v.code}</span>
-                        <span className="badge badge-blue">{currency(v.value)}</span>
+                        <span className="badge badge-blue">{voucherTitle(normalizeVoucher(v))}</span>
                       </div>
                       <div className="tiny muted" style={{ marginTop: 3 }}>{v.label}</div>
                       {v.minOrder > 0 && <div className="tiny muted">Đơn tối thiểu {currency(v.minOrder)}</div>}

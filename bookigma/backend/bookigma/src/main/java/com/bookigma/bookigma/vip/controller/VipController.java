@@ -38,7 +38,8 @@ public class VipController {
             @RequestBody(required = false) CreatePurchaseRequest request
     ) {
         String planId = request == null ? null : request.planId();
-        return ResponseEntity.ok(vipService.createPurchase(userId, planId));
+        String couponCode = request == null ? null : request.couponCode();
+        return ResponseEntity.ok(vipService.createPurchase(userId, planId, couponCode));
     }
 
     @GetMapping("/purchases/{purchaseId}")

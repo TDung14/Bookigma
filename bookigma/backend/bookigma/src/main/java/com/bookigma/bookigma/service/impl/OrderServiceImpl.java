@@ -34,6 +34,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -98,11 +99,25 @@ public class OrderServiceImpl implements OrderService {
         List<BigDecimal> subtotals = parcels.stream().map(Parcel::subtotal).toList();
         BigDecimal subtotal = subtotals.stream().reduce(BigDecimal.ZERO, BigDecimal::add);
 
-        AppliedVoucher voucher = resolveVoucher(userId, request.getVoucherCode(), subtotal);
+        // Như Shopee: tối đa 1 voucher giảm giá + 1 voucher miễn phí vận chuyển cho mỗi lần thanh toán.
+        // Client cũ gửi mã vận chuyển vào voucherCode: vẫn hiểu là voucher vận chuyển.
+        AppliedVoucher first = resolveVoucher(userId, request.getVoucherCode(), subtotal);
+        AppliedVoucher second = resolveVoucher(userId, request.getShippingVoucherCode(), subtotal);
+        AppliedVoucher voucher = first.isShipping() ? AppliedVoucher.none() : first;
+        AppliedVoucher shippingVoucher = first.isShipping() ? first : AppliedVoucher.none();
+        if (second.isPresent()) {
+            if (!second.isShipping()) {
+                throw ApiException.badRequest("Mã " + second.code() + " không phải voucher miễn phí vận chuyển.");
+            }
+            if (shippingVoucher.isPresent()) {
+                throw ApiException.badRequest("Mỗi lần thanh toán chỉ dùng được một voucher vận chuyển.");
+            }
+            shippingVoucher = second;
+        }
         List<BigDecimal> discounts = new ArrayList<>(OrderPricing.allocate(
                 OrderPricing.discountFor(voucher.discountType(), voucher.discountValue(), voucher.maxDiscount(), subtotal),
                 subtotals));
-        boolean freeShipping = voucher.discountType() == Voucher.DiscountType.SHIPPING;
+        boolean freeShipping = shippingVoucher.isPresent();
 
         // 1 điểm = 1đ, chỉ trừ vào tiền hàng còn lại sau voucher (không trừ phí ship) và không trừ quá số đó
         List<Integer> pointsPerOrder = new ArrayList<>(parcels.stream().map(parcel -> 0).toList());
@@ -143,6 +158,7 @@ public class OrderServiceImpl implements OrderService {
                     .note(InputUtils.blankToNull(request.getNote()))
                     .paymentMethod(paymentMethod)
                     .voucherCode(voucher.code())
+                    .shippingVoucherCode(shippingVoucher.code())
                     .subtotal(money(subtotals.get(i)))
                     .shippingFee(money(shippingFee))
                     .discountAmount(money(discount))
@@ -163,13 +179,15 @@ public class OrderServiceImpl implements OrderService {
 
         cartItemRepository.deleteAll(cart);
 
-        // Voucher đổi bằng điểm chỉ dùng một lần, áp cho toàn bộ các đơn tách ra từ lần thanh toán này.
-        if (voucher.personal() != null && !orders.isEmpty()) {
-            UserVoucher personal = voucher.personal();
-            personal.setUsed(true);
-            personal.setUsedAt(LocalDateTime.now());
-            personal.setOrderId(orders.get(0).getId());
-            userVoucherRepository.save(personal);
+        // Voucher cá nhân chỉ dùng một lần, áp cho toàn bộ các đơn tách ra từ lần thanh toán này.
+        for (AppliedVoucher applied : List.of(voucher, shippingVoucher)) {
+            if (applied.personal() != null && !orders.isEmpty()) {
+                UserVoucher personal = applied.personal();
+                personal.setUsed(true);
+                personal.setUsedAt(LocalDateTime.now());
+                personal.setOrderId(orders.get(0).getId());
+                userVoucherRepository.save(personal);
+            }
         }
 
         for (Order order : orders) {
@@ -473,6 +491,14 @@ public class OrderServiceImpl implements OrderService {
         static AppliedVoucher none() {
             return new AppliedVoucher(null, null, null, null, null);
         }
+
+        boolean isPresent() {
+            return code != null;
+        }
+
+        boolean isShipping() {
+            return discountType == Voucher.DiscountType.SHIPPING;
+        }
     }
 
     /** Voucher cá nhân (đổi bằng điểm) được ưu tiên trước mã công khai cùng tên. */
@@ -484,10 +510,15 @@ public class OrderServiceImpl implements OrderService {
 
         UserVoucher personal = userVoucherRepository.findByUser_IdAndCodeIgnoreCase(userId, normalized).orElse(null);
         if (personal != null) {
+            if (personal.isVipRenewal()) {
+                throw ApiException.badRequest("Mã " + personal.getCode() + " chỉ dùng để giảm giá khi nâng cấp VIP.");
+            }
             if (Boolean.TRUE.equals(personal.getUsed())) {
                 throw ApiException.badRequest("Mã " + personal.getCode() + " đã được sử dụng.");
             }
-            if (personal.getExpiresAt() != null && personal.getExpiresAt().isBefore(LocalDateTime.now())) {
+            // Hạn voucher cá nhân được ghi theo giờ Việt Nam (xem RewardServiceImpl, VipPerkService)
+            if (personal.getExpiresAt() != null
+                    && personal.getExpiresAt().isBefore(LocalDateTime.now(ZoneId.of("Asia/Ho_Chi_Minh")))) {
                 throw ApiException.badRequest("Mã " + personal.getCode() + " đã hết hạn.");
             }
             if (subtotal.compareTo(personal.getMinOrderAmount()) < 0) {
@@ -572,8 +603,17 @@ public class OrderServiceImpl implements OrderService {
         order.addHistory(next, InputUtils.truncate(note, 255));
 
         // Trả voucher cá nhân về ví nếu không còn đơn nào khác trong lần thanh toán đó đang dùng mã này.
-        if (next == Order.Status.CANCELLED && order.getVoucherCode() != null) {
-            restorePersonalVoucher(order);
+        if (next == Order.Status.CANCELLED) {
+            if (order.getVoucherCode() != null) {
+                restorePersonalVoucher(order, order.getVoucherCode(),
+                        orderRepository.existsByVoucherCodeAndStatusNotAndIdNot(
+                                order.getVoucherCode(), Order.Status.CANCELLED, order.getId()));
+            }
+            if (order.getShippingVoucherCode() != null) {
+                restorePersonalVoucher(order, order.getShippingVoucherCode(),
+                        orderRepository.existsByShippingVoucherCodeAndStatusNotAndIdNot(
+                                order.getShippingVoucherCode(), Order.Status.CANCELLED, order.getId()));
+            }
         }
         if (next == Order.Status.COMPLETED) {
             awardOrderPoints(order);
@@ -598,12 +638,10 @@ public class OrderServiceImpl implements OrderService {
                 "/rewards");
     }
 
-    private void restorePersonalVoucher(Order order) {
-        userVoucherRepository.findByUser_IdAndCodeIgnoreCase(order.getUser().getId(), order.getVoucherCode())
+    private void restorePersonalVoucher(Order order, String code, boolean stillInUse) {
+        userVoucherRepository.findByUser_IdAndCodeIgnoreCase(order.getUser().getId(), code)
                 .filter(voucher -> Boolean.TRUE.equals(voucher.getUsed()))
                 .ifPresent(voucher -> {
-                    boolean stillInUse = orderRepository.existsByVoucherCodeAndStatusNotAndIdNot(
-                            order.getVoucherCode(), Order.Status.CANCELLED, order.getId());
                     if (!stillInUse) {
                         voucher.setUsed(false);
                         voucher.setUsedAt(null);
@@ -665,6 +703,7 @@ public class OrderServiceImpl implements OrderService {
                 .status(DtoMapper.lower(order.getStatus()))
                 .paymentMethod(DtoMapper.lower(order.getPaymentMethod()))
                 .voucherCode(order.getVoucherCode())
+                .shippingVoucherCode(order.getShippingVoucherCode())
                 .note(order.getNote())
                 .recipientName(order.getRecipientName())
                 .recipientPhone(order.getRecipientPhone())

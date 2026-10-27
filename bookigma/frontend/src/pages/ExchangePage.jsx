@@ -1,10 +1,11 @@
 import { avatarSrc } from '../lib/avatar';
 import { useEffect, useMemo, useState } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import {
-  Check, Flag, Inbox, Mail, MapPin, MessageSquare, Plus, RefreshCw, Search, Send, Trash2, X,
+  Check, Coins, Crown, Flag, Inbox, Mail, MapPin, MessageSquare, Plus, RefreshCw, Search, Send, Trash2, X,
 } from 'lucide-react';
 import { useApp, useAuth, useToast } from '../hooks/useStore';
+import { useVipPerks } from '../hooks/useVipPerks';
 import Modal from '../components/common/Modal';
 import ReportModal from '../components/common/ReportModal';
 import { EmptyState, Field } from '../components/common/ui';
@@ -38,6 +39,10 @@ export default function ExchangePage() {
   const [offerForm, setOfferForm] = useState({ offeredBook: '', message: '' });
   const [reportTarget, setReportTarget] = useState(null);
   const [busy, setBusy] = useState(false);
+  // Phí gửi đề nghị (điểm) và lượt trao đổi miễn phí của VIP do server quyết định
+  const { perks, refresh: refreshPerks } = useVipPerks(user?.id);
+  const offerFee = perks?.rules?.exchangeOfferFee ?? 500;
+  const freeSwapsLeft = perks?.freeSwapsLeft ?? 0;
 
   // Tải lại mỗi khi mở trang
   useEffect(() => {
@@ -109,11 +114,22 @@ export default function ExchangePage() {
 
   const sendOffer = async () => {
     if (!offerForm.offeredBook.trim()) return toast('Hãy cho biết cuốn sách bạn mang ra đổi.', 'error');
-    const ok = await run(() => sendExchangeOffer(offerTarget.id, {
-      offeredBook: offerForm.offeredBook.trim(),
-      message: offerForm.message.trim() || null,
-    }), 'Đã gửi đề nghị. Chủ tin sẽ nhận được thông báo.');
-    if (ok) setOfferTarget(null);
+    let sent = null;
+    const ok = await run(async () => {
+      sent = await sendExchangeOffer(offerTarget.id, {
+        offeredBook: offerForm.offeredBook.trim(),
+        message: offerForm.message.trim() || null,
+      });
+    });
+    if (!ok) return;
+    setOfferTarget(null);
+    refreshPerks();
+    const feeText = sent?.freeSwapUsed
+      ? ' Đã dùng 1 lượt trao đổi miễn phí VIP.'
+      : sent?.feePoints > 0
+        ? ` Đã trừ ${sent.feePoints.toLocaleString('vi-VN')} điểm phí, hoàn lại nếu đề nghị không được chấp nhận.`
+        : '';
+    toast(`Đã gửi đề nghị. Chủ tin sẽ nhận được thông báo.${feeText}`);
   };
 
   const accept = (listing, offer) => {
@@ -402,6 +418,13 @@ export default function ExchangePage() {
                     <div className="tiny muted" style={{ marginBottom: 4 }}>Chủ tin: {offer.owner?.name} · gửi {timeAgo(offer.createdAt)}</div>
                     <div className="small">Bạn đề nghị đổi bằng: <b>{offer.offeredBook}</b></div>
                     {offer.message && <div className="tiny muted" style={{ marginTop: 2 }}>“{offer.message}”</div>}
+                    {(offer.freeSwapUsed || offer.feePoints > 0) && (
+                      <div className="tiny muted row" style={{ gap: 4, marginTop: 4 }}>
+                        {offer.freeSwapUsed ? <Crown size={12} color="#d97706" /> : <Coins size={12} color="#eab308" />}
+                        {offer.freeSwapUsed ? 'Lượt trao đổi miễn phí VIP' : `Phí ${offer.feePoints.toLocaleString('vi-VN')} điểm`}
+                        {offer.feeRefunded && ' · đã hoàn lại'}
+                      </div>
+                    )}
                     {offer.status === 'accepted' && (
                       <div className="badge badge-green" style={{ marginTop: 6 }}>
                         <Mail size={12} /> Chủ tin đã đồng ý! Liên hệ: {offer.contactEmail}
@@ -489,6 +512,18 @@ export default function ExchangePage() {
           Bạn muốn đổi lấy <b>{offerTarget?.bookTitle}</b> của <b>{offerTarget?.owner?.name}</b>.
           Chủ sách đang tìm: <b>{offerTarget?.wanted}</b>.
         </p>
+        <div className="row small" style={{ gap: 10, alignItems: 'flex-start', padding: 12, borderRadius: 10, background: 'var(--bg-soft)', marginBottom: 14 }}>
+          {freeSwapsLeft > 0 ? <Crown size={17} color="#d97706" style={{ flexShrink: 0 }} /> : <Coins size={17} color="#eab308" style={{ flexShrink: 0 }} />}
+          {freeSwapsLeft > 0 ? (
+            <span>Đề nghị này dùng <b>1 lượt trao đổi miễn phí VIP</b> (còn {freeSwapsLeft} lượt). Lượt được hoàn lại nếu đề nghị không được chấp nhận.</span>
+          ) : (
+            <span>
+              Phí gửi đề nghị: <b>{offerFee.toLocaleString('vi-VN')} điểm</b> (bạn đang có {(user?.points || 0).toLocaleString('vi-VN')} điểm),
+              hoàn lại nếu đề nghị bị từ chối, bị rút lại hoặc tin đóng.{' '}
+              <Link to="/upgrade" className="link" onClick={() => setOfferTarget(null)}>VIP được đổi sách miễn phí</Link>.
+            </span>
+          )}
+        </div>
         <Field label="Cuốn sách bạn mang ra đổi">
           {(id) => (
             <input

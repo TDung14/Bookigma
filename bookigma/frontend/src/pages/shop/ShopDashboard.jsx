@@ -51,7 +51,7 @@ function buildDailyBuckets() {
 
 const EMPTY_FORM = {
   title: '', author: '', price: '', originalPrice: '', stock: '', category: 'Truyền cảm hứng',
-  cover: '', description: '', pages: '', tags: '',
+  cover: '', description: '', pages: '', tags: '', premium: false,
 };
 
 export default function ShopDashboard() {
@@ -184,6 +184,7 @@ export default function ShopDashboard() {
       category: book.category || '', cover: book.cover || '', description: book.description || '',
       pages: String(book.pages || ''), tags: (book.tags || []).join(', '),
       blindBook: !!book.blindBook,
+      premium: !!book.premium,
     });
     setEditing(book.id);
   };
@@ -224,6 +225,7 @@ export default function ShopDashboard() {
         description: form.description.trim(),
         tags: form.tags.split(',').map((t) => t.trim()).filter(Boolean),
         blindBook: !!form.blindBook,
+        premium: !!form.premium,
       });
       toast(isNew ? (form.blindBook ? 'Đã thêm sách vào kho Blind Book, đang chờ quản trị viên duyệt.' : 'Đã tạo sản phẩm, đang chờ quản trị viên duyệt.') : 'Đã cập nhật sản phẩm.');
       setEditing(null);
@@ -437,6 +439,7 @@ export default function ShopDashboard() {
                         <div style={{ minWidth: 0, maxWidth: 220 }}>
                           <div className="small strong truncate">{b.title}</div>
                           <div className="tiny muted truncate">{b.author}</div>
+                          {b.premium && <span className="badge badge-amber" style={{ marginTop: 3 }}>Ebook premium</span>}
                         </div>
                       </Link>
                     </td>
@@ -768,6 +771,10 @@ export default function ShopDashboard() {
           <label className="row" style={{ gridColumn: '1 / -1', gap: 8, marginTop: 4, cursor: 'pointer' }}>
             <input type="checkbox" checked={!!form.blindBook} onChange={(e) => setForm({ ...form, blindBook: e.target.checked })} />
             <span className="small"><b>Đưa vào kho Blind Book</b><br /><span className="tiny muted">Sách được dùng làm nguồn để thuật toán ghép hộp Blind Book.</span></span>
+          </label>
+          <label className="row" style={{ gridColumn: '1 / -1', gap: 8, cursor: 'pointer' }}>
+            <input type="checkbox" checked={!!form.premium} onChange={(e) => setForm({ ...form, premium: e.target.checked })} />
+            <span className="small"><b>Ebook premium</b><br /><span className="tiny muted">Người đọc xem miễn phí 3 chương đầu, mở khoá cả cuốn bằng 3.000 điểm hoặc lượt ebook VIP mỗi tuần.</span></span>
           </label>
         </div>
       </Modal>

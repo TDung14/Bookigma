@@ -26,6 +26,10 @@ public class CheckoutRequestDto {
     @Size(max = 30, message = "Mã giảm giá không hợp lệ")
     private String voucherCode;
 
+    /** Voucher miễn phí vận chuyển dùng kèm voucher giảm giá (như Shopee); có thể bỏ trống. */
+    @Size(max = 30, message = "Mã vận chuyển không hợp lệ")
+    private String shippingVoucherCode;
+
     @Size(max = 500, message = "Ghi chú tối đa 500 ký tự")
     private String note;
 

@@ -10,6 +10,10 @@ import com.bookigma.bookigma.entity.User;
 import com.bookigma.bookigma.exception.ApiException;
 import com.bookigma.bookigma.repository.ExchangeListingRepository;
 import com.bookigma.bookigma.repository.ExchangeOfferRepository;
+import com.bookigma.bookigma.repository.UserRepository;
+import com.bookigma.bookigma.service.PointService;
+import com.bookigma.bookigma.vip.service.VipPerkRules;
+import com.bookigma.bookigma.vip.service.VipPerkService;
 import com.bookigma.bookigma.service.AccessGuard;
 import com.bookigma.bookigma.service.DtoMapper;
 import com.bookigma.bookigma.service.ExchangeService;
@@ -32,15 +36,24 @@ public class ExchangeServiceImpl implements ExchangeService {
     private final ExchangeOfferRepository offerRepository;
     private final AccessGuard accessGuard;
     private final NotificationService notificationService;
+    private final UserRepository userRepository;
+    private final PointService pointService;
+    private final VipPerkService vipPerkService;
 
     public ExchangeServiceImpl(ExchangeListingRepository listingRepository,
                                ExchangeOfferRepository offerRepository,
                                AccessGuard accessGuard,
-                               NotificationService notificationService) {
+                               NotificationService notificationService,
+                               UserRepository userRepository,
+                               PointService pointService,
+                               VipPerkService vipPerkService) {
         this.listingRepository = listingRepository;
         this.offerRepository = offerRepository;
         this.accessGuard = accessGuard;
         this.notificationService = notificationService;
+        this.userRepository = userRepository;
+        this.pointService = pointService;
+        this.vipPerkService = vipPerkService;
     }
 
     // ---------- Tin đăng ----------
@@ -120,7 +133,16 @@ public class ExchangeServiceImpl implements ExchangeService {
     @Override
     @Transactional
     public void deleteListing(Long userId, Long listingId) {
-        listingRepository.delete(findOwnListing(userId, listingId));
+        ExchangeListing listing = findOwnListing(userId, listingId);
+        // Đề nghị đang chờ bị xoá theo tin: hoàn phí cho người gửi trước khi xoá
+        for (ExchangeOffer pending : offerRepository.findByListing_IdAndStatus(listing.getId(), ExchangeOffer.Status.PENDING)) {
+            String refund = refundOfferFee(pending);
+            notificationService.createNotification(pending.getSender().getId(),
+                    "Tin \"" + listing.getBookTitle() + "\" đã bị chủ tin xoá, đề nghị của bạn không còn hiệu lực."
+                            + refund,
+                    SENT_LINK);
+        }
+        listingRepository.delete(listing);
     }
 
     // ---------- Đề nghị trao đổi ----------
@@ -148,6 +170,7 @@ public class ExchangeServiceImpl implements ExchangeService {
                 .message(InputUtils.blankToNull(request.getMessage()))
                 .status(ExchangeOffer.Status.PENDING)
                 .build());
+        chargeOfferFee(offer);
 
         notificationService.createNotification(listing.getOwner().getId(),
                 DtoMapper.displayName(sender) + " muốn đổi \"" + offer.getOfferedBook() + "\" lấy \""
@@ -193,11 +216,12 @@ public class ExchangeServiceImpl implements ExchangeService {
         ExchangeOffer offer = findPendingOfferForOwner(userId, offerId);
         offer.setStatus(ExchangeOffer.Status.REJECTED);
         offer.setRespondedAt(LocalDateTime.now());
+        String refund = refundOfferFee(offer);
 
         ExchangeListing listing = offer.getListing();
         notificationService.createNotification(offer.getSender().getId(),
                 DtoMapper.displayName(listing.getOwner()) + " đã từ chối đề nghị đổi \"" + offer.getOfferedBook()
-                        + "\" lấy \"" + listing.getBookTitle() + "\".",
+                        + "\" lấy \"" + listing.getBookTitle() + "\"." + refund,
                 SENT_LINK);
         return toOfferDto(offer, userId);
     }
@@ -215,6 +239,7 @@ public class ExchangeServiceImpl implements ExchangeService {
         }
         offer.setStatus(ExchangeOffer.Status.CANCELLED);
         offer.setRespondedAt(LocalDateTime.now());
+        refundOfferFee(offer);
         return toOfferDto(offer, userId);
     }
 
@@ -250,8 +275,56 @@ public class ExchangeServiceImpl implements ExchangeService {
             }
             other.setStatus(ExchangeOffer.Status.REJECTED);
             other.setRespondedAt(LocalDateTime.now());
-            notificationService.createNotification(other.getSender().getId(), message, SENT_LINK);
+            notificationService.createNotification(other.getSender().getId(), message + refundOfferFee(other), SENT_LINK);
         }
+    }
+
+    /**
+     * Phí gửi đề nghị: ưu tiên lượt trao đổi miễn phí của VIP, nếu không thì trừ điểm.
+     * Thiếu điểm thì báo lỗi và cả lần gửi bị huỷ (cùng transaction).
+     */
+    private void chargeOfferFee(ExchangeOffer offer) {
+        Long senderId = offer.getSender().getId();
+        // Khoá dòng người dùng để hai lần gửi cùng lúc không trừ trùng hay vượt số dư.
+        userRepository.findByIdForUpdate(senderId);
+        if (vipPerkService.tryUseFreeSwap(senderId)) {
+            offer.setFreeSwapUsed(true);
+            return;
+        }
+        int fee = VipPerkRules.EXCHANGE_OFFER_FEE;
+        int balance = pointService.getOrCreateUserPoint(senderId).getTotalPoints();
+        if (balance < fee) {
+            throw ApiException.badRequest("Gửi đề nghị trao đổi cần " + fee + " điểm (bạn đang có " + balance
+                    + " điểm). Phí được hoàn lại nếu đề nghị không được chấp nhận.");
+        }
+        pointService.deductPoints(senderId, fee, "EXCHANGE_FEE", "exchange-offer-" + offer.getId(),
+                "Phí gửi đề nghị trao đổi \"" + offer.getListing().getBookTitle() + "\"");
+        offer.setFeePoints(fee);
+    }
+
+    /**
+     * Hoàn phí khi đề nghị kết thúc mà không được chấp nhận. Trả về câu thông báo để nối vào tin nhắn
+     * gửi người đề nghị (rỗng nếu không có gì để hoàn, vd. đề nghị gửi trước khi có phí).
+     */
+    private String refundOfferFee(ExchangeOffer offer) {
+        if (Boolean.TRUE.equals(offer.getFeeRefunded())) {
+            return "";
+        }
+        Long senderId = offer.getSender().getId();
+        String note;
+        if (Boolean.TRUE.equals(offer.getFreeSwapUsed())) {
+            vipPerkService.returnFreeSwap(senderId);
+            note = " Lượt trao đổi miễn phí VIP đã được hoàn lại.";
+        } else if (offer.getFeePoints() != null && offer.getFeePoints() > 0) {
+            pointService.refundPoints(senderId, offer.getFeePoints(), "EXCHANGE_FEE_REFUND",
+                    "exchange-offer-" + offer.getId(),
+                    "Hoàn phí đề nghị trao đổi \"" + offer.getListing().getBookTitle() + "\"");
+            note = " " + offer.getFeePoints() + " điểm phí đã được hoàn lại.";
+        } else {
+            return "";
+        }
+        offer.setFeeRefunded(true);
+        return note;
     }
 
     private ExchangeListingResponseDto toOwnListingDto(ExchangeListing listing, Long ownerId) {
@@ -314,6 +387,9 @@ public class ExchangeServiceImpl implements ExchangeService {
                 .createdAt(offer.getCreatedAt())
                 .respondedAt(offer.getRespondedAt())
                 .contactEmail(contactEmail)
+                .feePoints(offer.getFeePoints() == null ? 0 : offer.getFeePoints())
+                .freeSwapUsed(Boolean.TRUE.equals(offer.getFreeSwapUsed()))
+                .feeRefunded(Boolean.TRUE.equals(offer.getFeeRefunded()))
                 .build();
     }
 }

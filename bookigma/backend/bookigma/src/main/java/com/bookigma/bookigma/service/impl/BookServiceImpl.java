@@ -2,6 +2,7 @@ package com.bookigma.bookigma.service.impl;
 
 import com.bookigma.bookigma.dto.BookRequestDto;
 import com.bookigma.bookigma.dto.BookResponseDto;
+import com.bookigma.bookigma.ebook.service.EbookAccessService;
 import com.bookigma.bookigma.entity.Author;
 import com.bookigma.bookigma.entity.BlindBox;
 import com.bookigma.bookigma.entity.Book;
@@ -49,6 +50,7 @@ public class BookServiceImpl implements BookService {
     private final UserRepository userRepository;
     private final AccessGuard accessGuard;
     private final NotificationService notificationService;
+    private final EbookAccessService ebookAccessService;
 
     public BookServiceImpl(BookRepository bookRepository,
                            BookChapterRepository chapterRepository,
@@ -59,7 +61,9 @@ public class BookServiceImpl implements BookService {
                            OrderItemRepository orderItemRepository,
                            UserRepository userRepository,
                            AccessGuard accessGuard,
-                           NotificationService notificationService) {
+                           NotificationService notificationService,
+                           EbookAccessService ebookAccessService) {
+        this.ebookAccessService = ebookAccessService;
         this.bookRepository = bookRepository;
         this.chapterRepository = chapterRepository;
         this.authorRepository = authorRepository;
@@ -92,7 +96,9 @@ public class BookServiceImpl implements BookService {
         if (book.getStatus() != Book.Status.ACTIVE && !canManage(book, viewerId)) {
             throw ApiException.notFound("Không tìm thấy sách.");
         }
-        return DtoMapper.toBookDto(book, chapterRepository.findByBookIdOrderByChapterIndexAsc(bookId));
+        BookResponseDto dto = DtoMapper.toBookDto(book, chapterRepository.findByBookIdOrderByChapterIndexAsc(bookId));
+        // Ebook premium: cắt nội dung các chương sau phần đọc thử nếu người xem chưa mở khoá
+        return ebookAccessService.applyAccess(dto, book, viewerId, canManage(book, viewerId));
     }
 
     // ---------- Kênh người bán ----------
@@ -256,6 +262,9 @@ public class BookServiceImpl implements BookService {
         book.setTags(normalizeTags(request.getTags()));
         if (request.getBlindBook() != null) {
             book.setBlindBook(request.getBlindBook());
+        }
+        if (request.getPremium() != null) {
+            book.setPremium(request.getPremium());
         }
     }
 

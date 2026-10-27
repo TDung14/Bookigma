@@ -21,6 +21,8 @@ public class OrderResponseDto {
     /** cod | bank | momo */
     private String paymentMethod;
     private String voucherCode;
+    /** Voucher miễn phí vận chuyển (null nếu không dùng). */
+    private String shippingVoucherCode;
     private String note;
     private String recipientName;
     private String recipientPhone;

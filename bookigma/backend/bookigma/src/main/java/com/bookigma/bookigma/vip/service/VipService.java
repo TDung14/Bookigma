@@ -4,6 +4,7 @@ import com.bookigma.bookigma.entity.User;
 import com.bookigma.bookigma.exception.ApiException;
 import com.bookigma.bookigma.repository.UserRepository;
 import com.bookigma.bookigma.service.AccessGuard;
+import com.bookigma.bookigma.reward.entity.UserVoucher;
 import com.bookigma.bookigma.service.PointService;
 import com.bookigma.bookigma.vip.dto.VipDtos.BankTransferResult;
 import com.bookigma.bookigma.vip.dto.VipDtos.PurchaseResponse;
@@ -43,6 +44,7 @@ public class VipService {
     private final UserRepository userRepository;
     private final PointService pointService;
     private final AccessGuard accessGuard;
+    private final VipPerkService vipPerkService;
     private final long purchaseExpiryMinutes;
 
     public VipService(
@@ -51,6 +53,7 @@ public class VipService {
             UserRepository userRepository,
             PointService pointService,
             AccessGuard accessGuard,
+            VipPerkService vipPerkService,
             @Value("${app.vip.purchase-expiry-minutes:1440}") long purchaseExpiryMinutes
     ) {
         this.purchaseRepository = purchaseRepository;
@@ -58,27 +61,43 @@ public class VipService {
         this.userRepository = userRepository;
         this.pointService = pointService;
         this.accessGuard = accessGuard;
+        this.vipPerkService = vipPerkService;
         this.purchaseExpiryMinutes = Math.max(15, purchaseExpiryMinutes);
     }
 
     @Transactional
-    public PurchaseResponse createPurchase(Long userId, String planId) {
+    public PurchaseResponse createPurchase(Long userId, String planId, String couponCode) {
         User user = accessGuard.requireUser(userId);
         VipPlan plan = VipPlan.require(planId);
         LocalDateTime now = now();
+        String coupon = blankToNull(couponCode) == null ? null : couponCode.trim().toUpperCase(Locale.ROOT);
 
         Optional<VipPurchase> reusable = purchaseRepository
-                .findFirstByUser_IdAndPlanIdAndStatusAndExpiresAtAfterOrderByCreatedAtDesc(
-                        user.getId(), plan.id(), VipPurchase.Status.PENDING, now);
+                .findReusable(user.getId(), plan.id(), coupon, VipPurchase.Status.PENDING, now)
+                .stream()
+                .findFirst();
         if (reusable.isPresent()) {
             return toPurchaseResponse(reusable.get(), currentSubscription(user.getId(), now));
+        }
+
+        // Mã gia hạn giảm % giá gói; chỉ đánh dấu đã dùng khi đơn được xác nhận thanh toán.
+        long amount = plan.price();
+        if (coupon != null) {
+            UserVoucher renewal = vipPerkService.requireRenewalCoupon(user.getId(), coupon);
+            if (purchaseRepository.existsByCouponCodeAndStatusAndExpiresAtAfter(
+                    coupon, VipPurchase.Status.PENDING, now)) {
+                throw ApiException.conflict("Mã " + coupon + " đang gắn với một đơn VIP khác chưa thanh toán.");
+            }
+            amount = VipPerkService.applyRenewalDiscount(plan.price(), renewal);
         }
 
         VipPurchase purchase = VipPurchase.builder()
                 .user(user)
                 .planId(plan.id())
                 .planName(plan.name())
-                .amount(plan.price())
+                .amount(amount)
+                .originalAmount(plan.price())
+                .couponCode(coupon)
                 .durationDays(plan.days())
                 .points(plan.points())
                 .pointBonusPercent(plan.pointBonusPercent())
@@ -339,6 +358,9 @@ public class VipService {
                 "Nâng cấp " + purchase.getPlanName()
         );
 
+        // Mã giảm giá mua sách + mã gia hạn theo gói, và đánh dấu mã gia hạn đã áp cho đơn này
+        vipPerkService.grantActivationPerks(lockedUser, purchase, subscription);
+
         return toSubscriptionResponse(subscription, now);
     }
 
@@ -409,7 +431,9 @@ public class VipService {
                 purchase.getExpiresAt(),
                 purchase.getPaidAt(),
                 purchase.getNote(),
-                vip
+                vip,
+                purchase.getOriginalAmount() == null ? purchase.getAmount() : purchase.getOriginalAmount(),
+                purchase.getCouponCode()
         );
     }
 

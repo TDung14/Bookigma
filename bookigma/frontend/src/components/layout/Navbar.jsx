@@ -4,7 +4,7 @@ import { Link, NavLink, useNavigate } from 'react-router-dom';
 import {
   Bell, BookOpen, ChevronDown, Crown, Home, LogOut, Moon, MessageSquare,
   Repeat, Search, Settings, ShieldCheck, ShoppingBag, ShoppingCart, Sparkles, Store,
-  Sun, Trophy, User, Package, Zap,
+  Sun, Ticket, Trophy, User, Package, Zap,
 } from 'lucide-react';
 import { useApp, useAuth, useTheme } from '../../hooks/useStore';
 import { useVip } from '../../hooks/useVip';
@@ -238,6 +238,7 @@ export default function Navbar() {
               <MenuLink to="/orders" icon={Package}>Đơn hàng của tôi</MenuLink>
               <MenuLink to="/library" icon={BookOpen}>Tủ sách & tiến trình đọc</MenuLink>
               <MenuLink to="/rewards" icon={Zap}>Nhiệm vụ & phần thưởng</MenuLink>
+              <MenuLink to="/vouchers" icon={Ticket}>Kho voucher</MenuLink>
               {isSeller && <MenuLink to="/shop-admin" icon={Store}>Kênh người bán</MenuLink>}
               {isAdmin && <MenuLink to="/admin" icon={ShieldCheck}>Quản trị hệ thống</MenuLink>}
               <hr className="divider" style={{ margin: '6px 0' }} />

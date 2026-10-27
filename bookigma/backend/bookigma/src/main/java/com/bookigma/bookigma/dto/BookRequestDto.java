@@ -51,4 +51,7 @@ public class BookRequestDto {
 
     /** Đưa sách vào kho Blind Book. Có thể đồng thời bán ở Bookigma Shop. */
     private Boolean blindBook;
+
+    /** Ebook premium: người đọc chưa mở khoá chỉ đọc thử vài chương đầu. Null = giữ nguyên. */
+    private Boolean premium;
 }

@@ -86,6 +86,7 @@ public final class DtoMapper {
                 .forSale(Boolean.TRUE.equals(book.getForSale()))
                 .status(lower(book.getStatus()))
                 .chapterCount(book.getChapterCount() == null ? 0 : book.getChapterCount())
+                .premium(Boolean.TRUE.equals(book.getPremium()))
                 .chapters(chapters == null ? null : chapters.stream().map(DtoMapper::toChapterDto).toList())
                 .createdAt(book.getCreatedAt())
                 .build();

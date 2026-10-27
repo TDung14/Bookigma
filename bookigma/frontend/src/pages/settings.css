@@ -568,3 +568,18 @@
     width: 100%;
   }
 }
+
+.vip-mini-daily {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: -4px 0 14px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #fde68a;
+  text-decoration: none;
+}
+
+.vip-mini-daily:hover {
+  text-decoration: underline;
+}

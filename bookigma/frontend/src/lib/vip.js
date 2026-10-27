@@ -69,11 +69,13 @@ export function planPerkLabels(plan) {
       ? `Cộng thêm ${plan.pointBonusPercent}% mỗi lần nhận điểm`
       : null,
     `Nhận thêm ${plan.extraShelves} tủ sách trong Góc đọc`,
-    `${plan.privileges.bookDiscounts} mã giảm giá khi mua sách`,
+    `${plan.privileges.bookDiscounts} mã giảm 20% khi mua sách`,
+    'Voucher ngẫu nhiên giảm 10-30% mỗi ngày',
     `${plan.privileges.freeSwaps} lần trao đổi sách miễn phí`,
     `${plan.privileges.renewalCodes} mã giảm 10% cho lần nâng cấp sau`,
+    `Mở khoá ${plan.weeklyEbooks} ebook premium mỗi tuần`,
+    'Đọc tự động tốc độ đến 3x',
     'Mở khoá toàn bộ nhạc trong Góc đọc',
-    'Nhận 1 sách ebook mỗi tuần',
   ].filter(Boolean);
 }
 

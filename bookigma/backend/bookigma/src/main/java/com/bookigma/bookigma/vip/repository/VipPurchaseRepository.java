@@ -26,6 +26,25 @@ public interface VipPurchaseRepository extends JpaRepository<VipPurchase, Long> 
             LocalDateTime now
     );
 
+    /** Đơn chờ thanh toán cùng gói và cùng mã gia hạn (hoặc cùng không có mã) để dùng lại thay vì tạo mới. */
+    @Query("""
+            select p from VipPurchase p
+            where p.user.id = :userId
+              and p.planId = :planId
+              and p.status = :status
+              and p.expiresAt > :now
+              and ((:couponCode is null and p.couponCode is null) or p.couponCode = :couponCode)
+            order by p.createdAt desc
+            """)
+    List<VipPurchase> findReusable(@Param("userId") Long userId,
+                                   @Param("planId") String planId,
+                                   @Param("couponCode") String couponCode,
+                                   @Param("status") VipPurchase.Status status,
+                                   @Param("now") LocalDateTime now);
+
+    /** Mã gia hạn đang gắn với một đơn khác chưa thanh toán thì không dùng lại được. */
+    boolean existsByCouponCodeAndStatusAndExpiresAtAfter(String couponCode, VipPurchase.Status status, LocalDateTime now);
+
     List<VipPurchase> findAllByOrderByCreatedAtDesc();
 
     List<VipPurchase> findByStatusOrderByCreatedAtDesc(VipPurchase.Status status);

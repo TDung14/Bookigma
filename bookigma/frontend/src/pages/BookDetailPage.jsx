@@ -2,7 +2,7 @@ import { avatarSrc } from '../lib/avatar';
 import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import {
-  BookOpen, ChevronLeft, Flag, Minus, MessageSquare, Plus, ShoppingCart,
+  BookOpen, ChevronLeft, Crown, Flag, Minus, MessageSquare, Plus, ShoppingCart,
   Store, Truck, ShieldCheck, Sparkles,
 } from 'lucide-react';
 import { useApp, useAuth, useToast } from '../hooks/useStore';
@@ -93,6 +93,10 @@ export default function BookDetailPage() {
   };
 
   const canPreview = book.chapterCount > 0 || book.chapters?.length > 0;
+  // Ebook premium: đọc thử vài chương đầu, mở khoá cả cuốn bằng điểm hoặc lượt ebook VIP mỗi tuần
+  const premiumLocked = book.premium && book.ebookUnlocked !== true;
+  const previewChapters = book.previewChapters ?? 3;
+  const unlockPoints = book.unlockPoints ?? 3000;
 
   const chatWithShop = async () => {
     if (requireLogin()) return;
@@ -141,7 +145,10 @@ export default function BookDetailPage() {
         {/* Thông tin */}
         <div className="stack" style={{ gap: 18 }}>
           <div className="card">
-            <span className="badge badge-green" style={{ marginBottom: 10 }}>{book.category}</span>
+            <div className="row" style={{ gap: 6, marginBottom: 10, flexWrap: 'wrap' }}>
+              <span className="badge badge-green">{book.category}</span>
+              {book.premium && <span className="badge badge-amber"><Crown size={11} /> Ebook premium</span>}
+            </div>
             <h1 style={{ margin: '0 0 6px', fontSize: 25, lineHeight: 1.3 }}>{book.title}</h1>
             <p className="muted small" style={{ margin: '0 0 12px' }}>Tác giả: <b style={{ color: 'var(--text-main)' }}>{book.author}</b> · {book.pages} trang</p>
 
@@ -162,6 +169,23 @@ export default function BookDetailPage() {
                 </>
               )}
             </div>
+
+            {book.premium && canPreview && (
+              <div className="row" style={{ gap: 10, alignItems: 'flex-start', background: 'var(--warning-soft)', padding: 12, borderRadius: 10, marginBottom: 16 }}>
+                <Crown size={18} color="#d97706" style={{ flexShrink: 0, marginTop: 2 }} />
+                <div className="small">
+                  {premiumLocked ? (
+                    <>
+                      <b>Ebook premium:</b> đọc miễn phí {previewChapters} chương đầu. Mở khoá toàn bộ bằng{' '}
+                      {unlockPoints.toLocaleString('vi-VN')} điểm, hoặc dùng lượt ebook miễn phí mỗi tuần của{' '}
+                      <Link to="/upgrade" className="link">thành viên VIP</Link>.
+                    </>
+                  ) : (
+                    <><b>Bạn đã mở khoá ebook này</b> — đọc trọn bộ trong Góc đọc.</>
+                  )}
+                </div>
+              </div>
+            )}
 
             {progress && (
               <div style={{ background: 'var(--accent-soft)', padding: 12, borderRadius: 10, marginBottom: 16 }}>
@@ -193,7 +217,7 @@ export default function BookDetailPage() {
               </button>
               {canPreview && (
                 <Link to={`/read/${book.id}`} className="btn btn-soft btn-lg">
-                  <BookOpen size={17} /> Đọc thử
+                  <BookOpen size={17} /> {book.premium && !premiumLocked ? 'Đọc ebook' : book.premium ? `Đọc thử ${previewChapters} chương` : 'Đọc thử'}
                 </Link>
               )}
               <button

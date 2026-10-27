@@ -1,13 +1,14 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import {
-  ArrowUpRight, Bell, BookOpen, Crown, LogOut, Minus, Moon, Palette, Plus,
+  ArrowUpRight, Bell, BookOpen, Crown, Gift, LogOut, Minus, Moon, Palette, Plus,
   RotateCcw, Sparkles, Sun, Type, UserRound,
 } from 'lucide-react';
 import { avatarSrc } from '../lib/avatar';
 import { dateOnly } from '../lib/format';
 import { load, resetAll, save } from '../lib/storage';
 import { useVip } from '../hooks/useVip';
+import { useVipPerks } from '../hooks/useVipPerks';
 import { useAuth, useTheme } from '../hooks/useStore';
 import './settings.css';
 
@@ -36,6 +37,9 @@ export default function SettingsPage() {
   const { isDark, toggleTheme } = useTheme();
   const navigate = useNavigate();
   const { record, isVip, plan, daysLeft } = useVip(user.id);
+  // Số quyền lợi còn dùng được (mã chưa dùng, lượt còn lại) lấy từ server; tổng của gói là dự phòng
+  const { perks } = useVipPerks(user.id);
+  const weekly = perks?.weeklyEbooks;
 
   const [fontSize, setFontSize] = useState(() => clampFont(load('readerFontSize', 18)));
   const [readerTheme, setReaderTheme] = useState(() => load('readerTheme', 'bookshelf'));
@@ -296,23 +300,32 @@ export default function SettingsPage() {
                   <span><Sparkles size={12} /> +{record.extraShelves} tủ sách</span>
                   <span>Mở khoá toàn bộ nhạc</span>
                   {record.pointBonusPercent > 0 && <span>+{record.pointBonusPercent}% điểm</span>}
-                  <span>1 ebook mỗi tuần</span>
+                  <span>{weekly ? `Ebook tuần này: còn ${weekly.remaining}/${weekly.limit}` : '1 ebook mỗi tuần'}</span>
+                  <span>Đọc tự động đến 3x</span>
                 </div>
 
                 <div className="vip-mini-counts">
                   <div>
-                    <strong>{record.privileges?.bookDiscounts || 0}</strong>
+                    <strong>{perks ? perks.bookDiscountVouchers : record.privileges?.bookDiscounts || 0}</strong>
                     <span>mã mua sách</span>
                   </div>
                   <div>
-                    <strong>{record.privileges?.freeSwaps || 0}</strong>
+                    <strong>{perks ? perks.freeSwapsLeft : record.privileges?.freeSwaps || 0}</strong>
                     <span>lượt trao đổi</span>
                   </div>
                   <div>
-                    <strong>{record.privileges?.renewalCodes || 0}</strong>
-                    <span>mã giảm 10%</span>
+                    <strong>{perks ? perks.renewalCodes : record.privileges?.renewalCodes || 0}</strong>
+                    <span>mã gia hạn</span>
                   </div>
                 </div>
+
+                <Link to="/vouchers" className="vip-mini-daily">
+                  <Gift size={14} />
+                  {perks?.dailyVoucher?.claimedToday
+                    ? 'Đã nhận voucher hôm nay · Xem kho voucher'
+                    : 'Nhận voucher giảm 10-30% hôm nay'}
+                  <ArrowUpRight size={13} />
+                </Link>
 
                 <Link to="/upgrade" className="btn btn-sm btn-block vip-mini-cta">
                   Gia hạn hoặc đổi gói <ArrowUpRight size={15} />
@@ -328,8 +341,9 @@ export default function SettingsPage() {
                 </p>
                 <ul className="vip-mini-perks">
                   <li>Mở khoá toàn bộ nhạc trong Góc đọc</li>
-                  <li>Thêm tủ sách và 1 ebook mỗi tuần</li>
-                  <li>Nhận điểm thưởng cùng mã giảm giá</li>
+                  <li>Thêm tủ sách và 1 ebook premium mỗi tuần</li>
+                  <li>Voucher giảm 10-30% mỗi ngày, đổi sách miễn phí</li>
+                  <li>Đọc tự động tốc độ đến 3x</li>
                 </ul>
                 <Link to="/upgrade" className="btn btn-primary btn-sm btn-block">
                   <Crown size={15} /> Xem 3 gói nâng cấp

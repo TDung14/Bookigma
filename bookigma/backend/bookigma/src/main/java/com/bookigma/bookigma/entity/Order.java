@@ -94,6 +94,10 @@ public class Order {
     @Column(name = "voucher_code", length = 30)
     private String voucherCode;
 
+    /** Voucher miễn phí vận chuyển dùng kèm voucher giảm giá (mỗi loại tối đa một mã, như Shopee). */
+    @Column(name = "shipping_voucher_code", length = 30)
+    private String shippingVoucherCode;
+
     @Column(name = "subtotal", nullable = false, precision = 10, scale = 2)
     private BigDecimal subtotal;
 

@@ -66,6 +66,11 @@ public class Book {
     @Builder.Default
     private Boolean blindBook = false;
 
+    /** Ebook premium: người chưa mở khoá chỉ đọc thử vài chương đầu (xem VipPerkRules). */
+    @Column(name = "is_premium", nullable = false, columnDefinition = "boolean default false")
+    @Builder.Default
+    private Boolean premium = false;
+
     @Column(name = "sale_price", nullable = false, precision = 10, scale = 2)
     private BigDecimal salePrice;
 

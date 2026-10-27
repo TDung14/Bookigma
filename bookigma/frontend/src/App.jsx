@@ -36,6 +36,7 @@ import ClubDetailPage from './pages/ClubDetailPage';
 import ProfilePage from './pages/ProfilePage';
 import SettingsPage from './pages/SettingsPage';
 import UpgradePage from './pages/UpgradePage';
+import VoucherWalletPage from './pages/VoucherWalletPage';
 import LoginPage from './pages/auth/LoginPage';
 import VerifyEmailPage from './pages/auth/VerifyEmailPage';
 import AdminDashboard from './pages/admin/AdminDashboard';
@@ -125,6 +126,7 @@ function Shell() {
         <Route path="/orders/:id" element={<RequireAuth><OrderDetailPage /></RequireAuth>} />
         <Route path="/library" element={<RequireAuth><LibraryPage /></RequireAuth>} />
         <Route path="/rewards" element={<RequireAuth><RewardsPage /></RequireAuth>} />
+        <Route path="/vouchers" element={<RequireAuth><VoucherWalletPage /></RequireAuth>} />
         <Route path="/read/:bookId" element={<RequireAuth><ReaderPage /></RequireAuth>} />
         <Route path="/chat" element={<RequireAuth><ChatPage /></RequireAuth>} />
         <Route path="/chat/:convId" element={<RequireAuth><ChatPage /></RequireAuth>} />

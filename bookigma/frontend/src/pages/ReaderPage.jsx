@@ -7,6 +7,8 @@ import {
 } from 'lucide-react';
 import { useApp, useAuth, useToast } from '../hooks/useStore';
 import { useVip } from '../hooks/useVip';
+import { useVipPerks } from '../hooks/useVipPerks';
+import { unlockEbook } from '../services/perkApi';
 import { duration } from '../lib/format';
 import { load, save } from '../lib/storage';
 import { POINT_RULES } from '../lib/gamification';
@@ -31,9 +33,14 @@ const SPINE_COLORS = [
 ];
 
 const PARAGRAPHS_PER_PAGE = 3; // Mỗi trang sách hiển thị 3 đoạn văn vừa mắt
-const AUDIO_RATES = [0.8, 1, 1.2, 1.5, 2];
+// Tốc độ đọc tự động: mọi người 1x-2x, thành viên VIP lên tới 3x (khớp VipPerkRules ở backend)
+const AUDIO_RATES = [1, 1.25, 1.5, 1.75, 2, 2.5, 3];
+const FREE_AUDIO_RATE_MAX = 2;
 const WORDS_PER_MINUTE = 165;
 const AUDIO_CHUNK_LIMIT = 340;
+
+// Chương premium bị khoá không gửi nội dung, nên độ dài lấy theo paragraphCount
+const paragraphCountOf = (chapter) => chapter.paragraphCount ?? (chapter.paragraphs?.length || 0);
 
 const countWords = (value) =>
   typeof value === 'string' && value.trim() ? value.trim().split(/\s+/).length : 0;
@@ -125,7 +132,9 @@ function ReaderContent() {
   const toast = useToast();
   const { user } = useAuth();
   const { isVip } = useVip(user.id);
-  const { bookById, getProgress, saveProgress, completeChapterReading, earnPoints, growPet } = useApp();
+  const { bookById, getProgress, saveProgress, completeChapterReading, earnPoints, growPet, loadBook } = useApp();
+  const { perks, refresh: refreshPerks } = useVipPerks(user.id);
+  const [unlocking, setUnlocking] = useState(false);
 
   const book = bookById(bookId);
   const saved = getProgress(user.id)[bookId];
@@ -204,9 +213,33 @@ function ReaderContent() {
 
   const currentPageParagraphs = pages[pageIndex] || [];
   const totalPagesInChapter = pages.length;
+  // Chương của ebook premium chưa mở khoá: server không gửi nội dung
+  const chapterLocked = Boolean(chapter?.locked);
+  const weeklyEbook = perks?.weeklyEbooks;
+
+  // Người không phải VIP bị giới hạn tốc độ đọc tự động ở 2x
+  const allowedRate = (rate) => (isVip ? rate : Math.min(rate, FREE_AUDIO_RATE_MAX));
+
+  const unlockBook = async (method) => {
+    setUnlocking(true);
+    try {
+      const res = await unlockEbook(book.id, method);
+      await loadBook(book.id);
+      refreshPerks();
+      toast(res?.source === 'VIP_WEEKLY'
+        ? 'Đã mở khoá cả cuốn bằng lượt ebook VIP tuần này 🎉'
+        : res?.alreadyUnlocked
+          ? 'Bạn đã mở khoá cuốn này rồi.'
+          : `Đã mở khoá cả cuốn (-${(res?.pointsSpent || 0).toLocaleString('vi-VN')} điểm) 🎉`);
+    } catch (error) {
+      toast(error.message || 'Không mở khoá được ebook.', 'error');
+    } finally {
+      setUnlocking(false);
+    }
+  };
 
   const totalParagraphs = useMemo(
-    () => chapters.reduce((s, c) => s + (c.paragraphs?.length || 0), 0),
+    () => chapters.reduce((s, c) => s + paragraphCountOf(c), 0),
     [chapters]
   );
 
@@ -214,7 +247,7 @@ function ReaderContent() {
   const computePercent = useCallback(
     (chapIdx, pageIdx) => {
       if (!totalParagraphs) return 0;
-      const beforeChap = chapters.slice(0, chapIdx).reduce((s, c) => s + (c.paragraphs?.length || 0), 0);
+      const beforeChap = chapters.slice(0, chapIdx).reduce((s, c) => s + paragraphCountOf(c), 0);
       const inChap = (pageIdx + 1) * PARAGRAPHS_PER_PAGE;
       const totalPassed = Math.min(beforeChap + inChap, totalParagraphs);
       return Math.min(100, Math.round((totalPassed / totalParagraphs) * 100));
@@ -371,7 +404,8 @@ function ReaderContent() {
   // Điều hướng chương
   const goChapter = (idx) => {
     if (idx < 0 || idx >= chapters.length) return;
-    const newPercent = Math.max(percent, computePercent(idx, 0));
+    // Mở chương còn khoá không tính là đã đọc tới đó
+    const newPercent = chapters[idx]?.locked ? percent : Math.max(percent, computePercent(idx, 0));
     // Chốt vị trí chương mới lên server ngay, kể cả khi chưa đủ một phút đọc.
     flushReading({ chapterIndex: idx, pageIndex: 0, percent: newPercent, force: true });
     setChapterIndex(idx);
@@ -402,7 +436,7 @@ function ReaderContent() {
 
     const utterance = new SpeechSynthesisUtterance(chunks[index]);
     utterance.lang = 'vi-VN';
-    utterance.rate = audioRateRef.current;
+    utterance.rate = allowedRate(audioRateRef.current);
     utterance.onend = () => {
       if (audioQueueRef.current.token !== token) return;
       audioQueueRef.current.index = index + 1;
@@ -434,6 +468,11 @@ function ReaderContent() {
     }
 
     synth.cancel();
+    if (chapter?.locked) {
+      setAudioStatus('idle');
+      toast('Mở khoá ebook để nghe tiếp chương này.', 'error');
+      return;
+    }
     const chunks = buildAudioChunks(chapter?.paragraphs || []);
     if (!chunks.length) {
       toast('Chương này chưa có nội dung để nghe.', 'error');
@@ -477,6 +516,10 @@ function ReaderContent() {
   const changeAudioRate = (value) => {
     const rate = Number(value);
     if (!AUDIO_RATES.includes(rate)) return;
+    if (rate > FREE_AUDIO_RATE_MAX && !isVip) {
+      toast('Tốc độ trên 2x dành cho thành viên VIP. Nâng cấp để đọc tự động tới 3x.', 'error');
+      return;
+    }
     audioRateRef.current = rate;
     setAudioRate(rate);
     save('audioRate', rate);
@@ -524,6 +567,10 @@ function ReaderContent() {
 
   // Xử lý khi bấm "Lật trang tiếp theo"
   const handleNextPageClick = () => {
+    if (chapterLocked) {
+      toast('Mở khoá ebook để đọc tiếp các chương sau.', 'error');
+      return;
+    }
     const pageKey = `c${chapterIndex}-p${pageIndex}`;
 
     // Nếu đã trả lời đúng trang này trước đó hoặc tắt chế độ câu hỏi -> cho qua luôn
@@ -613,9 +660,11 @@ function ReaderContent() {
       stopAmbient();
       setAmbientPlaying(false);
     }
+    if (chapterLocked) return toast('Mở khoá ebook để nghe chương này.', 'error');
     const textToRead = currentPageParagraphs.join(' ');
     const utter = new SpeechSynthesisUtterance(textToRead);
     utter.lang = language === 'vi' ? 'vi-VN' : 'en-US';
+    utter.rate = allowedRate(audioRateRef.current);
     utter.onend = () => setSpeaking(false);
     utter.onerror = () => setSpeaking(false);
     window.speechSynthesis.speak(utter);
@@ -713,7 +762,7 @@ function ReaderContent() {
                 onClick={() => goChapter(i)}
                 style={{ color: i === chapterIndex ? 'var(--accent-green)' : undefined, fontWeight: i === chapterIndex ? 700 : 400 }}
               >
-                {c.title}
+                {c.title}{c.locked ? ' 🔒' : ''}
               </button>
             ))}
           </div>
@@ -745,7 +794,7 @@ function ReaderContent() {
                   <div className="book-spine-gold-line" />
                   <div className="book-spine-text">{c.title}</div>
                   <div className="tiny" style={{ fontSize: 9.5, opacity: 0.9 }}>
-                    {isCurrent ? 'Đang đọc' : `C.${i + 1}`}
+                    {isCurrent ? 'Đang đọc' : `C.${i + 1}`}{c.locked ? ' 🔒' : ''}
                   </div>
                 </div>
               );
@@ -801,11 +850,43 @@ function ReaderContent() {
 
             {/* Nội dung trang sách */}
             <div style={{ fontSize, lineHeight: 1.9, textAlign: 'justify', minHeight: 320 }}>
-              {currentPageParagraphs.map((p, i) => (
-                <p key={i} style={{ marginBottom: 20, textIndent: '1.8em' }}>
-                  {p}
-                </p>
-              ))}
+              {chapterLocked ? (
+                <div className="ebook-lock">
+                  <div className="ebook-lock-icon"><Lock size={26} /></div>
+                  <h3>Bạn đã đọc hết {book.previewChapters || 3} chương thử</h3>
+                  <p>
+                    "{book.title}" là ebook premium. Mở khoá để đọc trọn {chapters.length} chương,
+                    kèm sách nói và tóm tắt.
+                  </p>
+                  <div className="ebook-lock-actions">
+                    {weeklyEbook?.vip ? (
+                      <button
+                        className="btn btn-primary"
+                        disabled={unlocking || weeklyEbook.remaining <= 0}
+                        onClick={() => unlockBook('vip')}
+                      >
+                        <Crown size={15} /> Nhận miễn phí · còn {weeklyEbook.remaining} lượt VIP tuần này
+                      </button>
+                    ) : (
+                      <Link to="/upgrade" className="btn btn-soft">
+                        <Crown size={15} /> VIP nhận 1 ebook miễn phí mỗi tuần
+                      </Link>
+                    )}
+                    <button className="btn btn-soft" disabled={unlocking} onClick={() => unlockBook('points')}>
+                      <Sparkles size={15} /> Mở khoá bằng {(book.unlockPoints || 3000).toLocaleString('vi-VN')} điểm
+                    </button>
+                  </div>
+                  {weeklyEbook?.vip && weeklyEbook.remaining <= 0 && (
+                    <p className="tiny muted">Bạn đã dùng lượt ebook VIP của tuần này, lượt mới mở vào thứ Hai.</p>
+                  )}
+                </div>
+              ) : (
+                currentPageParagraphs.map((p, i) => (
+                  <p key={i} style={{ marginBottom: 20, textIndent: '1.8em' }}>
+                    {p}
+                  </p>
+                ))
+              )}
             </div>
           </div>
 
@@ -829,6 +910,7 @@ function ReaderContent() {
               <button
                 className="btn btn-primary flip-page-btn"
                 onClick={handleNextPageClick}
+                disabled={chapterLocked}
               >
                 {chapterIndex === chapters.length - 1 && pageIndex === totalPagesInChapter - 1 ? (
                   <>Hoàn thành sách 🎉</>
@@ -911,13 +993,18 @@ function ReaderContent() {
               <select
                 className="select"
                 style={{ width: 'auto', padding: '4px 6px', fontSize: 12 }}
-                value={audioRate}
+                value={allowedRate(audioRate)}
                 onChange={(event) => changeAudioRate(event.target.value)}
-                title="Tốc độ đọc"
+                title="Tốc độ đọc tự động (VIP tới 3x)"
               >
-                {AUDIO_RATES.map((rate) => (
-                  <option key={rate} value={rate}>{rate}x</option>
-                ))}
+                {AUDIO_RATES.map((rate) => {
+                  const vipOnly = rate > FREE_AUDIO_RATE_MAX && !isVip;
+                  return (
+                    <option key={rate} value={rate} disabled={vipOnly}>
+                      {rate}x{vipOnly ? ' · VIP' : ''}
+                    </option>
+                  );
+                })}
               </select>
             </div>
 

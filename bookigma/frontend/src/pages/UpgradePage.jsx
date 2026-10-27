@@ -8,14 +8,24 @@ import Modal from '../components/common/Modal';
 import { currency, dateOnly, dateTime } from '../lib/format';
 import { PAYEE, vietQrUrl } from '../lib/payment';
 import { VIP_PLANS, planPerkLabels, syncVipFromServer } from '../lib/vip';
+import { normalizeVoucher, voucherExpiryText } from '../lib/vouchers';
 import { useVip } from '../hooks/useVip';
-import { useAuth, useToast } from '../hooks/useStore';
+import { useApp, useAuth, useToast } from '../hooks/useStore';
 import { getPointsSummary } from '../services/pointsApi';
 import { createVipPurchase, getVipMe, getVipPurchase } from '../services/vipApi';
 import './upgrade.css';
 
+/** Giá sau mã gia hạn, cùng công thức với VipPerkService.applyRenewalDiscount (làm tròn xuống). */
+function renewalPrice(price, voucher) {
+  if (!voucher) return price;
+  let discount = Math.floor((price * voucher.value) / 100);
+  if (voucher.maxDiscount !== null) discount = Math.min(discount, voucher.maxDiscount);
+  return Math.max(0, price - discount);
+}
+
 export default function UpgradePage() {
   const { user, updateUserFields } = useAuth();
+  const { myVouchers, refreshMyVouchers } = useApp();
   const { record, isVip, plan: activePlan, daysLeft } = useVip(user.id);
   const toast = useToast();
 
@@ -23,6 +33,7 @@ export default function UpgradePage() {
   const [purchase, setPurchase] = useState(null);
   const [method, setMethod] = useState('bank');
   const [coupon, setCoupon] = useState('');
+  const [appliedCoupon, setAppliedCoupon] = useState(null);
   const [couponMessage, setCouponMessage] = useState('');
   const [couponTone, setCouponTone] = useState('info');
   const [lastPurchase, setLastPurchase] = useState(null);
@@ -32,6 +43,14 @@ export default function UpgradePage() {
   const preselectedPlan = useRef(false);
   const [searchParams] = useSearchParams();
   const requestedPlanId = searchParams.get('plan');
+  const requestedCoupon = searchParams.get('coupon');
+
+  // Mã gia hạn VIP nhận được khi kích hoạt gói trước, chỉ dùng được ở trang này
+  const renewalCodes = (myVouchers || []).map(normalizeVoucher).filter((v) => v.scope === 'vip');
+  const findRenewalCode = (code) => renewalCodes.find(
+    (v) => v.code.toLowerCase() === String(code || '').trim().toLowerCase()
+  );
+  const presetCoupon = findRenewalCode(requestedCoupon);
 
   useEffect(() => {
     let cancelled = false;
@@ -58,15 +77,18 @@ export default function UpgradePage() {
     getPointsSummary(user.id)
       .then((summary) => updateUserFields({ points: summary.balance }))
       .catch(() => {});
-  }, [toast, updateUserFields, user.id]);
+    // Mã gia hạn đã dùng biến mất, voucher quyền lợi của gói mới được thêm vào ví
+    refreshMyVouchers().catch(() => {});
+  }, [toast, updateUserFields, user.id, refreshMyVouchers]);
 
   const openCheckout = (plan) => {
     paidNotified.current = false;
     setSelectedPlan(plan);
     setPurchase(null);
     setMethod('bank');
-    setCoupon('');
-    setCouponMessage('');
+    setCoupon(presetCoupon?.code || '');
+    setAppliedCoupon(presetCoupon || null);
+    setCouponMessage(presetCoupon ? `Đã áp dụng mã gia hạn ${presetCoupon.code}.` : '');
     setCouponTone('info');
     setChecking(false);
   };
@@ -77,24 +99,39 @@ export default function UpgradePage() {
     setPurchase(null);
   };
 
-  const applyCoupon = () => {
-    const code = coupon.trim();
+  const applyCoupon = (rawCode = coupon) => {
+    const code = String(rawCode || '').trim();
     if (!code) {
       setCouponTone('error');
-      setCouponMessage('Vui lòng nhập mã giảm giá.');
+      setCouponMessage('Vui lòng nhập mã gia hạn VIP.');
       return;
     }
+    const voucher = findRenewalCode(code);
+    if (!voucher) {
+      setAppliedCoupon(null);
+      setCouponTone('error');
+      setCouponMessage('Mã không hợp lệ, đã dùng hoặc không phải mã gia hạn VIP của bạn.');
+      return;
+    }
+    setPurchase(null);
+    setCoupon(voucher.code);
+    setAppliedCoupon(voucher);
     setCouponTone('info');
-    setCouponMessage(
-      `Mã "${code}" chưa được mở trong phiên bản này. Số tiền chuyển khoản do hệ thống tạo và không thay đổi.`
-    );
+    setCouponMessage(`Đã áp dụng mã ${voucher.code}: giảm ${voucher.value}% giá gói.`);
+  };
+
+  const removeCoupon = () => {
+    setPurchase(null);
+    setCoupon('');
+    setAppliedCoupon(null);
+    setCouponMessage('');
   };
 
   const startPayment = async () => {
     if (!selectedPlan || creating) return;
     setCreating(true);
     try {
-      const created = await createVipPurchase(user.id, selectedPlan.id);
+      const created = await createVipPurchase(user.id, selectedPlan.id, appliedCoupon?.code || null);
       setPurchase(created);
       if (created.vip) syncVipFromServer(user.id, created.vip);
       if (created.status === 'PAID') markPaid(created);
@@ -150,7 +187,9 @@ export default function UpgradePage() {
   }, [requestedPlanId, openCheckout]);
 
   const transferCode = purchase?.transferCode || purchase?.qrContent || '';
-  const checkoutAmount = purchase?.amount ?? selectedPlan?.price ?? 0;
+  const originalAmount = purchase?.originalAmount ?? selectedPlan?.price ?? 0;
+  const checkoutAmount = purchase?.amount ?? renewalPrice(selectedPlan?.price ?? 0, appliedCoupon);
+  const couponLocked = purchase?.status === 'PENDING';
   const renewing = Boolean(isVip && record?.planId === selectedPlan?.id);
 
   return (
@@ -202,8 +241,18 @@ export default function UpgradePage() {
               thêm {lastPurchase.extraShelves} tủ sách và mở khoá toàn bộ nhạc trong Góc đọc.
             </p>
           </div>
-          <Link to="/settings" className="btn btn-soft btn-sm">Xem quyền lợi</Link>
+          <div className="row" style={{ gap: 8 }}>
+            <Link to="/vouchers" className="btn btn-soft btn-sm">Kho voucher</Link>
+            <Link to="/settings" className="btn btn-soft btn-sm">Xem quyền lợi</Link>
+          </div>
         </div>
+      )}
+
+      {presetCoupon && !selectedPlan && (
+        <p className="vip-payment-note">
+          <Ticket size={15} />
+          Mã gia hạn {presetCoupon.code} (giảm {presetCoupon.value}%) sẽ được áp dụng khi bạn chọn gói.
+        </p>
       )}
 
       <div className="vip-section-head">
@@ -315,11 +364,14 @@ export default function UpgradePage() {
                   {renewing ? ' · gia hạn cộng dồn' : ''}
                 </small>
               </div>
-              <b>{currency(checkoutAmount)}</b>
+              <div className="vip-checkout-price">
+                {checkoutAmount < originalAmount && <s>{currency(originalAmount)}</s>}
+                <b>{currency(checkoutAmount)}</b>
+              </div>
             </div>
 
             <div className="vip-coupon">
-              <label className="label" htmlFor="vip-coupon-input">Mã giảm giá</label>
+              <label className="label" htmlFor="vip-coupon-input">Mã gia hạn VIP</label>
               <div className="vip-coupon-row">
                 <div className="vip-coupon-input">
                   <Ticket size={15} />
@@ -327,21 +379,42 @@ export default function UpgradePage() {
                     id="vip-coupon-input"
                     value={coupon}
                     onChange={(event) => setCoupon(event.target.value)}
-                    placeholder="Nhập mã giảm giá (nếu có)"
+                    onKeyDown={(event) => event.key === 'Enter' && applyCoupon()}
+                    placeholder="Nhập mã gia hạn (nếu có)"
                     autoComplete="off"
+                    disabled={couponLocked}
                   />
                 </div>
-                <button type="button" className="btn btn-soft" onClick={applyCoupon}>
-                  Áp dụng
-                </button>
+                {appliedCoupon ? (
+                  <button type="button" className="btn btn-soft" onClick={removeCoupon} disabled={couponLocked}>
+                    Bỏ mã
+                  </button>
+                ) : (
+                  <button type="button" className="btn btn-soft" onClick={() => applyCoupon()} disabled={couponLocked}>
+                    Áp dụng
+                  </button>
+                )}
               </div>
               {couponMessage && (
                 <p className={`vip-coupon-msg ${couponTone === 'error' ? 'is-error' : ''}`}>
                   {couponMessage}
                 </p>
               )}
+              {renewalCodes.length > 0 && !appliedCoupon && !couponLocked && (
+                <div className="vip-coupon-chips">
+                  {renewalCodes.map((v) => (
+                    <button key={v.code} type="button" onClick={() => applyCoupon(v.code)}>
+                      <b>-{v.value}%</b> {v.code} · {voucherExpiryText(v)}
+                    </button>
+                  ))}
+                </div>
+              )}
               <p className="vip-coupon-hint">
-                Khu vực mã giảm giá đã sẵn sàng. Hiện chưa có mã khả dụng trong bản này.
+                {couponLocked
+                  ? 'Mã đã gắn với mã QR hiện tại. Đóng và mở lại để đổi mã.'
+                  : renewalCodes.length > 0
+                    ? `Bạn có ${renewalCodes.length} mã gia hạn, mỗi mã dùng một lần.`
+                    : 'Mỗi gói VIP tặng mã giảm 10% cho lần gia hạn sau.'}
               </p>
             </div>
 
